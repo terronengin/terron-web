@@ -1,44 +1,39 @@
-import { hashToUnitFloat, normalish } from "./hash";
+function getRealEstateSim(p: Property) {
+  if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
 
-export function simulatePropertyPriceTRY(
-  property: any,
-  simDayOffset: number,
-  seedScope: string
-) {
-  const days = Math.max(0, Math.floor(simDayOffset));
-  const area = property.area;
+  const seedScope = userId ?? "global";
 
-  const muAnnual =
-    area.expected_real_return_annual +
-    property.development_score * 0.03 +
-    property.rental_yield_annual * 0.4 +
-    area.inflation_annual;
+  const risk01 = clamp01((p.risk_score ?? 50) / 100);
+  const dev01 = clamp01((p.development_score ?? 50) / 100);
 
-  const muDaily = Math.log(1 + muAnnual) / 365;
+  const quality01 =
+    p.quality_score != null ? clamp01(p.quality_score) : clamp01(0.55 + dev01 * 0.2 - risk01 * 0.1);
 
-  const sigmaAnnual =
-    area.vol_annual * (0.75 + 0.7 * property.risk_score);
+  const rentalYield = p.rental_yield_annual != null ? clamp01(p.rental_yield_annual) : 0.05;
 
-  const sigmaDaily = sigmaAnnual / Math.sqrt(365);
+  const propertyForSim = {
+    id: p.id,
+    area_m2: Number(p.total_area_m2),
+    quality_score: quality01,
+    development_score: dev01,
+    risk_score: risk01,
+    rental_yield_annual: rentalYield,
+    area: {
+      id: p.area.id,
+      base_m2_price: Number(p.area.base_m2_price),
+      expected_real_return_annual: Number(p.area.expected_real_return_annual ?? 0.03),
+      inflation_annual: Number(p.area.inflation_annual ?? 0.0),
+      vol_annual: Number(p.area.vol_annual ?? 0.12),
+      cycle_strength: Number(p.area.cycle_strength ?? 0.6),
+      shock_prob_annual: Number(p.area.shock_prob_annual ?? 0.06),
+      shock_size: Number(p.area.shock_size ?? -0.08),
+    },
+  };
 
-  const P0 =
-    property.area_m2 *
-    area.base_m2_price *
-    (0.85 + 0.3 * property.quality_score);
+  const out = simulatePropertyPriceTRY(propertyForSim as any, simDayOffset, seedScope);
 
-  let logP = Math.log(P0);
+  const totalShares = Number(p.total_shares ?? 100000);
+  const sharePrice = out.price / Math.max(1, totalShares);
 
-  for (let t = 1; t <= days; t++) {
-    const baseSeed = `${seedScope}|${property.id}|day:${t}`;
-
-    const z = normalish(baseSeed);
-    const eps = sigmaDaily * z;
-
-    logP += muDaily + eps;
-  }
-
-  const price = Math.exp(logP);
-  const pricePerM2 = price / property.area_m2;
-
-  return { price, pricePerM2 };
+  return { ...out, sharePrice, totalShares };
 }

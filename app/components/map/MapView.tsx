@@ -1,5 +1,6 @@
 "use client";
 
+import type { Feature, FeatureCollection, Point } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import MapGL, { Layer, MapRef, NavigationControl, Source } from "react-map-gl/mapbox";
@@ -16,12 +17,18 @@ type MapItem = {
 
 type Level = "city" | "district" | "parcel";
 
-function safeStr(x: any) {
+type CountPointProps = {
+  name: string;
+  count: number;
+  district?: string;
+};
+
+function safeStr(x: unknown) {
   return typeof x === "string" ? x : "";
 }
 
 // ✅ TR normalize: İstanbul/Istanbul, Şanlıurfa/Sanliurfa vb. eşleşsin
-function normTR(s: any) {
+function normTR(s: unknown) {
   const x = (typeof s === "string" ? s : "").trim().toLowerCase();
   return x
     .replaceAll("İ", "i")
@@ -33,7 +40,7 @@ function normTR(s: any) {
     .replaceAll("ö", "o")
     .replaceAll("ç", "c");
 }
-function sameTR(a: any, b: any) {
+function sameTR(a: unknown, b: unknown) {
   return normTR(a) === normTR(b);
 }
 
@@ -267,8 +274,13 @@ export default function MapView(props: {
   }, [props.items, pickedCity]);
 
   // İlçe balonlarını items’tan üret (isim uyuşmazlığı olmasın) ✅ normalize
-  const districtCentersFromItems = useMemo(() => {
-    if (!pickedCity) return { type: "FeatureCollection", features: [] as any[] };
+  const districtCentersFromItems = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+    if (!pickedCity) {
+      return {
+        type: "FeatureCollection",
+        features: [],
+      };
+    }
 
     const pickedK = normTR(pickedCity);
     const m = new Map<string, { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
@@ -289,14 +301,17 @@ export default function MapView(props: {
       m.set(dK, cur);
     }
 
-    const features = Array.from(m.entries()).map(([districtKey, v]) => ({
+    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([districtKey, v]) => ({
       type: "Feature",
       id: `cnt_itemdist_${normTR(pickedCity)}_${districtKey}`,
       properties: { name: v.districtRaw, count: v.count, district: v.districtRaw },
       geometry: { type: "Point", coordinates: [v.sumLng / v.n, v.sumLat / v.n] },
     }));
 
-    return { type: "FeatureCollection", features };
+    return {
+      type: "FeatureCollection",
+      features,
+    };
   }, [props.items, pickedCity]);
 
   // ---------- ACTIVE POLY ----------
@@ -305,7 +320,7 @@ export default function MapView(props: {
 
     if (level === "district") {
       const filtered = {
-        type: "FeatureCollection",
+        type: "FeatureCollection" as const,
         features: (distGeo.features || []).filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity)),
       };
       return { src: SRC_DIST, geo: filtered, fill: L_DIST_FILL, out: L_DIST_OUT };
@@ -315,10 +330,10 @@ export default function MapView(props: {
   }, [level, provGeo, distGeo, pickedCity]);
 
   // ---------- COUNT GEO (arsa adedi balonu) ----------
-  const countGeo = useMemo(() => {
+  const countGeo = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     // İL seviyesinde: polygon centroid’e balon
     if (level === "city") {
-      const features = (provGeo.features || [])
+      const features: Feature<Point, CountPointProps>[] = (provGeo.features || [])
         .map((f: any) => {
           const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_1);
           const center = centroidFromGeometry(f.geometry);
@@ -327,15 +342,18 @@ export default function MapView(props: {
           const count = provinceCounts.get(normTR(name)) ?? 0;
 
           return {
-            type: "Feature",
+            type: "Feature" as const,
             id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
             properties: { name, count },
-            geometry: { type: "Point", coordinates: center },
+            geometry: { type: "Point" as const, coordinates: center },
           };
         })
-        .filter(Boolean);
+        .filter(Boolean) as Feature<Point, CountPointProps>[];
 
-      return { type: "FeatureCollection", features };
+      return {
+        type: "FeatureCollection",
+        features,
+      };
     }
 
     // İLÇE seviyesinde: items’tan merkez üret (en sağlam)
@@ -343,7 +361,7 @@ export default function MapView(props: {
       if (districtCentersFromItems.features.length > 0) return districtCentersFromItems;
 
       // fallback: polygon centroid
-      const feats = (distGeo.features || [])
+      const feats: Feature<Point, CountPointProps>[] = (distGeo.features || [])
         .filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity))
         .map((f: any) => {
           const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_2);
@@ -353,18 +371,24 @@ export default function MapView(props: {
           const count = districtCounts.get(normTR(name)) ?? 0;
 
           return {
-            type: "Feature",
+            type: "Feature" as const,
             id: `cnt_dist_${safeStr(f?.properties?.id) || normTR(name)}`,
             properties: { name, count, district: name },
-            geometry: { type: "Point", coordinates: center },
+            geometry: { type: "Point" as const, coordinates: center },
           };
         })
-        .filter(Boolean);
+        .filter(Boolean) as Feature<Point, CountPointProps>[];
 
-      return { type: "FeatureCollection", features: feats };
+      return {
+        type: "FeatureCollection",
+        features: feats,
+      };
     }
 
-    return { type: "FeatureCollection", features: [] };
+    return {
+      type: "FeatureCollection",
+      features: [],
+    };
   }, [level, provGeo, distGeo, pickedCity, provinceCounts, districtCounts, districtCentersFromItems]);
 
   // ---------- STYLE (NEON POLY) ----------
@@ -479,7 +503,6 @@ export default function MapView(props: {
         if (!nameRaw) return;
 
         if (level === "city") {
-          // ✅ geojson adı farklı olsa bile items içinden gerçek şehri bul
           const realCity =
             (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
 
@@ -496,7 +519,6 @@ export default function MapView(props: {
         }
 
         if (level === "district") {
-          // ✅ pickedCity içinde gerçek ilçe adını bul
           const realDistrict =
             (props.items || [])
               .filter((it) => sameTR(it.city, pickedCity))
@@ -581,7 +603,6 @@ export default function MapView(props: {
       if (!id) return;
       props.onSelectPropertyId?.(id);
       props.onOpenInfo?.();
-      return;
     }
   }
 
@@ -589,7 +610,7 @@ export default function MapView(props: {
     const map = mapRef.current;
     if (!map) return;
 
-    // ✅ Balon hover (cursor pointer)
+    // ✅ Balon hover
     if (level === "city" || level === "district") {
       const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_DROPLET, L_COUNT_TEXT] });
       if (countHits && countHits.length > 0) {
@@ -775,7 +796,6 @@ export default function MapView(props: {
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>
-      {/* Üst mini bar */}
       <div
         style={{
           position: "absolute",
@@ -816,7 +836,9 @@ export default function MapView(props: {
       </div>
 
       <MapGL
-        ref={(r) => (mapRef.current = r)}
+        ref={(r) => {
+          mapRef.current = r;
+        }}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         initialViewState={{ longitude: 35.0, latitude: 39.0, zoom: 5.2 }}
@@ -830,7 +852,6 @@ export default function MapView(props: {
       >
         <NavigationControl position="bottom-right" />
 
-        {/* Polygon: İller */}
         {level === "city" && (
           <Source id={SRC_PROV} type="geojson" data={provGeo} promoteId="id">
             <Layer id={L_PROV_FILL} type="fill" paint={fillPaint()} />
@@ -838,7 +859,6 @@ export default function MapView(props: {
           </Source>
         )}
 
-        {/* Polygon: İlçeler */}
         {level === "district" && activePoly && (
           <Source id={SRC_DIST} type="geojson" data={activePoly.geo} promoteId="id">
             <Layer id={L_DIST_FILL} type="fill" paint={fillPaint()} />
@@ -846,7 +866,6 @@ export default function MapView(props: {
           </Source>
         )}
 
-        {/* ✅ Arsa adedi balonları (İL / İLÇE) */}
         {(level === "city" || level === "district") && (
           <Source id={SRC_COUNT} type="geojson" data={countGeo}>
             <Layer {...countDropletLayer} />
@@ -854,7 +873,6 @@ export default function MapView(props: {
           </Source>
         )}
 
-        {/* Arsalar */}
         {level === "parcel" && (
           <Source
             id={SRC_POINTS}
