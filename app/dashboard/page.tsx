@@ -334,9 +334,28 @@ export default function DashboardPage() {
   }, [filteredItems, city, district]);
 
   async function logout() {
-    await supabase.auth.signOut();
-    router.replace("/login");
+  const rememberPref =
+    typeof window !== "undefined"
+      ? localStorage.getItem("terron_remember_me")
+      : null;
+
+  let keepRemember = rememberPref === "true";
+
+  if (typeof window !== "undefined") {
+    keepRemember = window.confirm(
+      "Bu cihazda girişin hatırlansın mı?\n\nTamam = Hatırla\nİptal = Unut"
+    );
+
+    localStorage.setItem("terron_remember_me", String(keepRemember));
+
+    if (!keepRemember) {
+      localStorage.removeItem("terron_saved_email");
+    }
   }
+
+  await supabase.auth.signOut();
+  router.replace("/login");
+}
 
   async function ensureAndLoadWallet() {
     const { data: userRes } = await supabase.auth.getUser();

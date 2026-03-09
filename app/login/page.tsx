@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -26,6 +27,28 @@ export default function LoginPage() {
   const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
+
+  useEffect(() => {
+    const remembered = typeof window !== "undefined" ? localStorage.getItem("terron_remember_me") : null;
+    const savedEmail = typeof window !== "undefined" ? localStorage.getItem("terron_saved_email") : null;
+
+    if (remembered !== null) {
+      setRememberMe(remembered === "true");
+    }
+
+    if (savedEmail) {
+      setLoginEmail(savedEmail);
+    }
+
+    async function checkSession() {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        router.push("/dashboard");
+      }
+    }
+
+    checkSession();
+  }, [router]);
 
   function showMessage(text: string, error = false) {
     setMsg(text);
@@ -46,6 +69,16 @@ export default function LoginPage() {
         console.log("SIGN IN ERROR:", error);
         showMessage(error.message, true);
         return;
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("terron_remember_me", String(rememberMe));
+
+        if (rememberMe) {
+          localStorage.setItem("terron_saved_email", loginEmail.trim());
+        } else {
+          localStorage.removeItem("terron_saved_email");
+        }
       }
 
       router.push("/dashboard");
@@ -240,7 +273,33 @@ export default function LoginPage() {
               />
             </Field>
 
-            <div style={{ textAlign: "right" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  color: "#cbd5e1",
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: "pointer" }}
+                />
+                Beni hatırla
+              </label>
+
               <button
                 type="button"
                 onClick={() => {
