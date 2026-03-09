@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -25,10 +24,8 @@ export default function LoginPage() {
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
-  const [emailCode, setEmailCode] = useState("");
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
-  const [address, setAddress] = useState("");
 
   function showMessage(text: string, error = false) {
     setMsg(text);
@@ -86,7 +83,6 @@ export default function LoginPage() {
             username,
             city,
             district,
-            address,
           },
         },
       });
@@ -107,7 +103,6 @@ export default function LoginPage() {
           email: registerEmail.trim(),
           city,
           district,
-          address,
         });
 
         if (profileError) {
@@ -115,10 +110,7 @@ export default function LoginPage() {
         }
       }
 
-      showMessage(
-        "Üyelik oluşturuldu. E-posta onayı açıksa mailinizi kontrol edin. Kapalıysa direkt giriş yapabilirsiniz.",
-        false
-      );
+      showMessage("Üyelik oluşturuldu. Giriş yapabilirsiniz.");
 
       setMode("login");
       setLoginEmail(registerEmail.trim());
@@ -169,14 +161,13 @@ export default function LoginPage() {
       <div
         style={{
           width: "100%",
-          maxWidth: mode === "register" ? 760 : 470,
+          maxWidth: mode === "register" ? 720 : 470,
           background: "rgba(6, 17, 39, 0.88)",
           border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: 28,
           padding: mode === "register" ? 34 : 32,
           boxShadow: "0 25px 70px rgba(0,0,0,0.42)",
           backdropFilter: "blur(14px)",
-          transition: "all .25s ease",
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 28 }}>
@@ -201,8 +192,6 @@ export default function LoginPage() {
                 color: "#ffffff",
                 fontSize: 34,
                 fontWeight: 800,
-                letterSpacing: 1,
-                boxShadow: "0 12px 34px rgba(234, 29, 36, 0.28)",
               }}
             >
               T
@@ -213,7 +202,6 @@ export default function LoginPage() {
                 fontSize: 40,
                 fontWeight: 800,
                 letterSpacing: 0.5,
-                lineHeight: 1,
               }}
             >
               TERRON
@@ -237,7 +225,6 @@ export default function LoginPage() {
             <Field label="E-posta">
               <input
                 type="email"
-                placeholder="ornek@terron.com"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
                 style={inputStyle}
@@ -247,14 +234,13 @@ export default function LoginPage() {
             <Field label="Şifre">
               <input
                 type="password"
-                placeholder="••••••••"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 style={inputStyle}
               />
             </Field>
 
-            <div style={{ textAlign: "right", marginTop: -2 }}>
+            <div style={{ textAlign: "right" }}>
               <button
                 type="button"
                 onClick={() => {
@@ -290,7 +276,6 @@ export default function LoginPage() {
             <Field label="Kayıtlı e-posta">
               <input
                 type="email"
-                placeholder="ornek@terron.com"
                 value={resetEmail}
                 onChange={(e) => setResetEmail(e.target.value)}
                 style={inputStyle}
@@ -326,7 +311,6 @@ export default function LoginPage() {
               <Field label="İsim Soyisim *">
                 <input
                   type="text"
-                  placeholder="Engin Yılmaz"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   style={inputStyle}
@@ -336,7 +320,6 @@ export default function LoginPage() {
               <Field label="Kullanıcı Adı *">
                 <input
                   type="text"
-                  placeholder="enginyilmaz"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   style={inputStyle}
@@ -346,19 +329,8 @@ export default function LoginPage() {
               <Field label="E-posta *">
                 <input
                   type="email"
-                  placeholder="ornek@terron.com"
                   value={registerEmail}
                   onChange={(e) => setRegisterEmail(e.target.value)}
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field label="Mail Onay Kodu">
-                <input
-                  type="text"
-                  placeholder="Opsiyonel"
-                  value={emailCode}
-                  onChange={(e) => setEmailCode(e.target.value)}
                   style={inputStyle}
                 />
               </Field>
@@ -366,7 +338,6 @@ export default function LoginPage() {
               <Field label="Şifre *">
                 <input
                   type="password"
-                  placeholder="••••••••"
                   value={registerPassword}
                   onChange={(e) => setRegisterPassword(e.target.value)}
                   style={inputStyle}
@@ -376,7 +347,6 @@ export default function LoginPage() {
               <Field label="Şifre Tekrar *">
                 <input
                   type="password"
-                  placeholder="••••••••"
                   value={registerPasswordConfirm}
                   onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
                   style={inputStyle}
@@ -386,7 +356,6 @@ export default function LoginPage() {
               <Field label="İl">
                 <input
                   type="text"
-                  placeholder="İstanbul"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   style={inputStyle}
@@ -396,7 +365,6 @@ export default function LoginPage() {
               <Field label="İlçe">
                 <input
                   type="text"
-                  placeholder="Kadıköy"
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
                   style={inputStyle}
@@ -404,21 +372,8 @@ export default function LoginPage() {
               </Field>
             </div>
 
-            <Field label="Adres">
-              <textarea
-                placeholder="Açık adres bilgisi"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                style={{ ...inputStyle, minHeight: 92, resize: "vertical" as const }}
-              />
-            </Field>
-
-            <div style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.6 }}>
-              Not: “Mail onay kodu” alanı şu an görsel alan olarak eklidir. Gerçek kod doğrulaması için ayrıca OTP veya özel backend doğrulaması kurulmalıdır.
-            </div>
-
             <button onClick={signUp} disabled={loading} style={primaryButtonStyle}>
-              {loading ? "Üyelik oluşturuluyor..." : "Üyeliği Tamamla"}
+              {loading ? "Üyelik oluşturuluyor..." : "Hesabı Oluştur"}
             </button>
 
             <button
@@ -446,7 +401,6 @@ export default function LoginPage() {
                 : "1px solid rgba(34, 197, 94, 0.22)",
               color: isError ? "#fca5a5" : "#86efac",
               fontSize: 14,
-              lineHeight: 1.6,
             }}
           >
             {msg}
@@ -459,7 +413,6 @@ export default function LoginPage() {
             textAlign: "center",
             color: "#64748b",
             fontSize: 12,
-            lineHeight: 1.6,
           }}
         >
           TERRON • Profesyonel gayrimenkul yatırım deneyimi
