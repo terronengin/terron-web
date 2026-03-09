@@ -51,10 +51,11 @@ type TrendBand = "" | "rising" | "flat" | "falling";
 type PriceBand = "" | "0-10000" | "10001-25000" | "25001-50000" | "50001-100000" | "100001+";
 type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
+type InsightTab = "arsa" | "gelisim" | "risk";
 
 const USE_DEMO_SEED_IF_EMPTY = true;
-const DEMO_CITY_COUNT = 50;
-const DEMO_PROPERTY_COUNT = 1500;
+const DEMO_CITY_COUNT = 60;
+const DEMO_PROPERTY_COUNT = 2200;
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -83,8 +84,12 @@ export default function DashboardPage() {
   const [areaBand, setAreaBand] = useState<AreaBand>("");
 
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
-  const [buyM2, setBuyM2] = useState<number>(10);
   const [opening, setOpening] = useState(false);
+
+  const [buyM2, setBuyM2] = useState<number>(10);
+  const [buyBudget, setBuyBudget] = useState<number>(0);
+
+  const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
 
   type CartItem = {
     key: string;
@@ -93,15 +98,15 @@ export default function DashboardPage() {
     pricePerM2: number;
     totalPaid: number;
   };
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
 
   const [simDayOffset, setSimDayOffset] = useState<number>(0);
   const [ticking, setTicking] = useState(false);
 
-  const INFO_OPEN_H = 760;
-  const INFO_COLLAPSED_H = 88;
-  const INFO_TRAVEL = INFO_OPEN_H - INFO_COLLAPSED_H;
+  const INFO_OPEN_H = 860;
+  const INFO_TRAVEL = INFO_OPEN_H - 88;
 
   const [infoOpen, setInfoOpen] = useState(true);
   const [dragY, setDragY] = useState(0);
@@ -168,12 +173,7 @@ export default function DashboardPage() {
   function getEffectivePricePerM2(p: Property | null) {
     if (!p) return 0;
     const sim = getRealEstateSim(p);
-    return (
-      sim?.pricePerM2 ||
-      Number(p.price_per_m2 ?? 0) ||
-      Number(p.area?.base_m2_price ?? 0) ||
-      1
-    );
+    return sim?.pricePerM2 || Number(p.price_per_m2 ?? 0) || Number(p.area?.base_m2_price ?? 0) || 1;
   }
 
   function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {
@@ -200,6 +200,19 @@ export default function DashboardPage() {
         sold_m2: sold + purchasedM2,
       };
     });
+  }
+
+  function syncBuyFromM2(nextM2: number, pricePerM2: number) {
+    const safeM2 = Math.max(0, nextM2 || 0);
+    setBuyM2(safeM2);
+    setBuyBudget(Math.round(safeM2 * Math.max(1, pricePerM2)));
+  }
+
+  function syncBuyFromBudget(nextBudget: number, pricePerM2: number) {
+    const safeBudget = Math.max(0, nextBudget || 0);
+    setBuyBudget(safeBudget);
+    const calcM2 = safeBudget / Math.max(1, pricePerM2);
+    setBuyM2(Number(calcM2.toFixed(2)));
   }
 
   function addSelectedToCart() {
@@ -362,7 +375,7 @@ export default function DashboardPage() {
 
     const list = (data ?? []) as Property[];
 
-    if (USE_DEMO_SEED_IF_EMPTY && list.length < 50) {
+    if (USE_DEMO_SEED_IF_EMPTY && list.length < 100) {
       const seeded = generateDemoProperties({
         countCities: DEMO_CITY_COUNT,
         countProps: DEMO_PROPERTY_COUNT,
@@ -587,42 +600,6 @@ export default function DashboardPage() {
     setTicking(false);
   }
 
-  function dayKeyWithOffset(offset: number) {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + offset);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  function hash01(str: string) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    const u = h >>> 0;
-    return u / 4294967296;
-  }
-
-  function simulatePriceIndex(propertyId: string, annualReturnPct: number, basePrice = 100) {
-    const t = dayKeyWithOffset(simDayOffset);
-    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04;
-    const driftDaily = Math.pow(1 + annualReturnPct / 100, 1 / 365) - 1;
-
-    const epoch = new Date("2026-01-01T00:00:00");
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    const days = Math.max(0, Math.floor((now.getTime() - epoch.getTime()) / 86400000) + simDayOffset);
-
-    const drift = Math.pow(1 + driftDaily, days);
-    const price = basePrice * drift * (1 + noise);
-    return Math.max(1, price);
-  }
-
   function getRealEstateSim(p: Property) {
     if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
 
@@ -656,7 +633,6 @@ export default function DashboardPage() {
     };
 
     const out = simulatePropertyPriceTRY(propertyForSim as any, simDayOffset, seedScope);
-
     const totalShares = Number(p.total_shares ?? 100000);
     const sharePrice = out.price / Math.max(1, totalShares);
 
@@ -1110,29 +1086,24 @@ export default function DashboardPage() {
     else setDragY(INFO_TRAVEL);
   }, [infoOpen]);
 
-  if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
-
-  if (!email) {
-    return (
-      <div style={{ padding: 24 }}>
-        <h1>Terron • Dashboard</h1>
-        <p>Giriş yapılmamış.</p>
-        <button onClick={() => router.replace("/login")}>Giriş sayfasına git</button>
-      </div>
-    );
-  }
-
   const selectedSim = selected ? getRealEstateSim(selected) : null;
-  const selectedIndexFallback = selected
-    ? simulatePriceIndex(selected.id, Number(selected.expected_annual_return ?? 0), 100)
-    : 0;
-
   const selectedPricePerM2 = selected ? getEffectivePricePerM2(selected) : 0;
   const selectedAvailableM2 = getPropertyAvailableM2(selected);
   const selectedSoldM2 = getPropertySoldM2(selected);
   const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
   const selectedMaxBuyM2 = Number(selected?.max_buy_m2 ?? selectedAvailableM2);
+  const selectedMinBuyCost = Math.max(1, selectedMinBuyM2) * Math.max(1, selectedPricePerM2);
   const selectedTotalCost = Math.max(0, Number(buyM2 || 0)) * Math.max(1, selectedPricePerM2);
+
+  useEffect(() => {
+    if (!selected) return;
+    const safeMin = Math.max(1, Number(selected.min_buy_m2 ?? 1));
+    const price = getEffectivePricePerM2(selected);
+    setBuyM2(safeMin);
+    setBuyBudget(Math.round(safeMin * price));
+    setActiveInsightTab("arsa");
+  }, [selected?.id]);
+
   const soldPct =
     selected && Number(selected.total_area_m2) > 0
       ? (selectedSoldM2 / Number(selected.total_area_m2)) * 100
@@ -1151,6 +1122,42 @@ export default function DashboardPage() {
       return bScore - aScore;
     })
     .slice(0, 16);
+
+  const developmentHistory = useMemo(() => {
+    if (!selected) return [];
+    const base = clamp(Number(selected.development_score ?? 50), 0, 100);
+    return [
+      clamp(base - 20, 0, 100),
+      clamp(base - 14, 0, 100),
+      clamp(base - 8, 0, 100),
+      clamp(base - 3, 0, 100),
+      clamp(base, 0, 100),
+    ];
+  }, [selected]);
+
+  const riskHistory = useMemo(() => {
+    if (!selected) return [];
+    const base = clamp(Number(selected.risk_score ?? 50), 0, 100);
+    return [
+      clamp(base + 8, 0, 100),
+      clamp(base + 5, 0, 100),
+      clamp(base + 3, 0, 100),
+      clamp(base + 1, 0, 100),
+      clamp(base, 0, 100),
+    ];
+  }, [selected]);
+
+  if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
+
+  if (!email) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Terron • Dashboard</h1>
+        <p>Giriş yapılmamış.</p>
+        <button onClick={() => router.replace("/login")}>Giriş sayfasına git</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
@@ -1211,7 +1218,7 @@ export default function DashboardPage() {
               <div style={metricValue}>{formatNumber(regionSummary.count)}</div>
             </div>
             <div style={metricBox}>
-              <div style={metricLabel}>Ort. m²</div>
+              <div style={metricLabel}>Ort. ₺/m²</div>
               <div style={metricValue}>₺{formatTRY(regionSummary.avgPricePerM2)}</div>
             </div>
             <div style={metricBox}>
@@ -1319,7 +1326,7 @@ export default function DashboardPage() {
         </div>
 
         <div style={{ marginTop: 14 }}>
-          <div style={labelStyle}>m² Fiyat</div>
+          <div style={labelStyle}>₺/m² Fiyat</div>
           <select value={priceBand} onChange={(e) => setPriceBand(e.target.value as PriceBand)} style={selectStyle}>
             <option value="">Tümü</option>
             <option value="0-10000">0 – 10.000 ₺/m²</option>
@@ -1367,7 +1374,7 @@ export default function DashboardPage() {
           >
             Temizle
           </button>
-          <button onClick={() => setPanelOpen(false)} style={{ ...btnGold, flex: 1 }}>
+          <button onClick={() => setPanelOpen(false)} style={{ ...btnOutline, flex: 1 }}>
             Uygula
           </button>
         </div>
@@ -1390,10 +1397,10 @@ export default function DashboardPage() {
                   textAlign: "left",
                   padding: 12,
                   borderRadius: 14,
-                  background: selected?.id === p.id ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.05)",
+                  background: selected?.id === p.id ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
                   border:
                     selected?.id === p.id
-                      ? "1px solid rgba(212,175,55,0.25)"
+                      ? "1px solid rgba(255,255,255,0.18)"
                       : "1px solid rgba(255,255,255,0.08)",
                   color: "white",
                   cursor: "pointer",
@@ -1410,13 +1417,15 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 1000, color: "#F5D76E" }}>₺{formatTRY(pPrice)}</div>
-                    <div style={{ fontSize: 11, opacity: 0.72 }}>m²</div>
+                    <div style={{ fontWeight: 1000 }}>₺{formatTRY(pPrice)}</div>
+                    <div style={{ fontSize: 11, opacity: 0.72 }}>/m²</div>
                   </div>
                 </div>
 
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk {p.risk_score} • Büyüme {p.development_score}
+                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk %{Math.round(p.risk_score)} • Gelişim %{Math.round(
+                    p.development_score
+                  )}
                 </div>
               </button>
             );
@@ -1506,7 +1515,7 @@ export default function DashboardPage() {
                 <input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Ara... (il, ilçe, mahalle, ada, parsel)"
+                  placeholder="Ara... (adres, il, ilçe, parsel, ada)"
                   style={{
                     width: "100%",
                     height: 40,
@@ -1656,12 +1665,12 @@ export default function DashboardPage() {
               position: "absolute",
               right: 16,
               bottom: 16,
-              width: 340,
+              width: 390,
               height: INFO_OPEN_H,
               transform: `translateY(${dragY}px)`,
               transition: dragging ? "none" : "transform 220ms ease",
               borderRadius: 18,
-              background: "rgba(10,14,24,0.62)",
+              background: "rgba(10,14,24,0.70)",
               border: "1px solid rgba(255,255,255,0.12)",
               backdropFilter: "blur(12px)",
               zIndex: 12,
@@ -1684,7 +1693,6 @@ export default function DashboardPage() {
                 cursor: "grab",
                 userSelect: "none",
               }}
-              title="Aç / Kapat"
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 34, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
@@ -1720,9 +1728,9 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Tahmini Varlık Değeri</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Arsa Değeri</div>
                   <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
-                    {selectedSim ? `₺${formatTRY(selectedSim.price)}` : `${selectedIndexFallback.toFixed(2)}`}
+                    {selectedSim ? `₺${formatTRY(selectedSim.price)}` : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
                   </div>
                   <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
                     {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
@@ -1732,8 +1740,18 @@ export default function DashboardPage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
                 <div style={metricBox}>
-                  <div style={metricLabel}>m² Fiyat</div>
-                  <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
+                  <div style={metricLabel}>Gelişim</div>
+                  <div style={metricValue}>%{formatInt(selected.development_score)}</div>
+                </div>
+
+                <div style={metricBox}>
+                  <div style={metricLabel}>Risk</div>
+                  <div style={metricValue}>%{formatInt(selected.risk_score)}</div>
+                </div>
+
+                <div style={metricBox}>
+                  <div style={metricLabel}>Son 30 Gün</div>
+                  <div style={metricValue}>{signedPct(selected.last_30d_change)}%</div>
                 </div>
 
                 <div style={metricBox}>
@@ -1742,24 +1760,120 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={metricBox}>
-                  <div style={metricLabel}>Büyüme</div>
-                  <div style={metricValue}>{selected.development_score}</div>
+                  <div style={metricLabel}>₺/m² Fiyat</div>
+                  <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
                 </div>
 
                 <div style={metricBox}>
-                  <div style={metricLabel}>Risk</div>
-                  <div style={metricValue}>{selected.risk_score}</div>
+                  <div style={metricLabel}>Min. Alış Tutarı</div>
+                  <div style={metricValue}>₺{formatTRY(selectedMinBuyCost)}</div>
                 </div>
+              </div>
 
-                <div style={metricBox}>
-                  <div style={metricLabel}>Kalan m²</div>
-                  <div style={metricValue}>{formatNumber(Math.round(selectedAvailableM2))}</div>
-                </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+                <button
+                  onClick={() => setActiveInsightTab("arsa")}
+                  style={tabBtn(activeInsightTab === "arsa")}
+                >
+                  Arsa Bilgisi
+                </button>
+                <button
+                  onClick={() => setActiveInsightTab("gelisim")}
+                  style={tabBtn(activeInsightTab === "gelisim")}
+                >
+                  Gelişim
+                </button>
+                <button
+                  onClick={() => setActiveInsightTab("risk")}
+                  style={tabBtn(activeInsightTab === "risk")}
+                >
+                  Risk
+                </button>
+              </div>
 
-                <div style={metricBox}>
-                  <div style={metricLabel}>Satılan m²</div>
-                  <div style={metricValue}>{formatNumber(Math.round(selectedSoldM2))}</div>
-                </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                {activeInsightTab === "arsa" && (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
+                      <b>Ada / Parsel</b>: Demo aşamada otomatik üretim. Gerçek sistemde satıcı tarafından girilecek.
+                      <br />
+                      <b>Konum</b>: {selected.city}
+                      {selected.district ? ` / ${selected.district}` : ""}
+                      {selected.neighborhood ? ` / ${selected.neighborhood}` : ""}
+                      <br />
+                      <b>İmar Durumu</b>: {selected.zoning_status || "Bilinmiyor"}
+                      <br />
+                      <b>Toplam Alan</b>: {formatNumber(selected.total_area_m2)} m²
+                      <br />
+                      <b>Kalan Alan</b>: {formatNumber(Math.round(selectedAvailableM2))} m²
+                      <br />
+                      <b>Satılan Alan</b>: {formatNumber(Math.round(selectedSoldM2))} m²
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>Etrafında</div>
+                        <div style={miniInfoText}>Yol, gelişim aksı, yerleşim genişleme alanı</div>
+                      </div>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>Yatırım Notu</div>
+                        <div style={miniInfoText}>Parçalı alıma uygun, m² bazlı erişilebilir</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeInsightTab === "gelisim" && (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
+                      Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme, ulaşım
+                      etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
+                    </div>
+
+                    <MiniBars title="Son 5 Yıl Gelişim Skoru" values={developmentHistory} suffix="%" />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>Neden gelişiyor?</div>
+                        <div style={miniInfoText}>Yakın yerleşim yoğunluğu, altyapı aksı, yatırım talebi</div>
+                      </div>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>İmar açılımı etkisi</div>
+                        <div style={miniInfoText}>Bölgesel dönüşüm ve genişleme potansiyeli</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeInsightTab === "risk" && (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
+                      Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği, çevresel
+                      dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
+                    </div>
+
+                    <MiniBars title="Son 5 Yıl Risk Skoru" values={riskHistory} suffix="%" />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>Likidite</div>
+                        <div style={miniInfoText}>Parçalı satış kolaylığı orta seviyede</div>
+                      </div>
+                      <div style={miniInfoCard}>
+                        <div style={miniInfoLabel}>Belirsizlik</div>
+                        <div style={miniInfoText}>İmar ve piyasa döngüsü etkisi izlenmeli</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div
@@ -1796,7 +1910,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
-                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Min alım: {formatNumber(selectedMinBuyM2)} m²
+                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım: {formatNumber(selectedMinBuyM2)} m²
                 </div>
               </div>
 
@@ -1809,58 +1923,71 @@ export default function DashboardPage() {
                   border: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
-                <div style={{ fontSize: 11, opacity: 0.75 }}>m² Alım Özeti</div>
+                <div style={{ fontSize: 11, opacity: 0.75 }}>Alım Paneli</div>
 
                 <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                  <input
-                    type="number"
-                    value={buyM2}
-                    min={1}
-                    step={1}
-                    onChange={(e) => setBuyM2(Number(e.target.value))}
-                    style={{
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      color: "white",
-                      outline: "none",
-                    }}
-                    placeholder="Kaç m² almak istiyorsun?"
-                  />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <div style={tinyLabel}>m² gir</div>
+                      <input
+                        type="number"
+                        value={buyM2}
+                        min={0}
+                        step={0.01}
+                        onChange={(e) => syncBuyFromM2(Number(e.target.value), selectedPricePerM2)}
+                        style={inputStyle}
+                        placeholder="Kaç m²?"
+                      />
+                    </div>
+
+                    <div>
+                      <div style={tinyLabel}>TL gir</div>
+                      <input
+                        type="number"
+                        value={buyBudget}
+                        min={0}
+                        step={1}
+                        onChange={(e) => syncBuyFromBudget(Number(e.target.value), selectedPricePerM2)}
+                        style={inputStyle}
+                        placeholder="Kaç TL?"
+                      />
+                    </div>
+                  </div>
 
                   <div
                     style={{
                       padding: 12,
                       borderRadius: 14,
-                      background: "rgba(212,175,55,0.08)",
-                      border: "1px solid rgba(212,175,55,0.18)",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.10)",
                     }}
                   >
-                    <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
-                    <div style={{ fontSize: 16, fontWeight: 1000, marginTop: 6 }}>
-                      {formatNumber(Math.round(selectedTotalCost))} Çip
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
+                        <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
+                          {formatNumber(Math.round(selectedTotalCost))} Çip
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 12, opacity: 0.78 }}>Alınacak m²</div>
+                        <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
+                          {formatDecimal(buyM2)} m²
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 8 }}>
+                      {formatDecimal(buyM2)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                      {formatNumber(buyM2 || 0)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                      Maksimum: {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                      Tek sefer maksimum: {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
                     </div>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <button
-                      style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        background: "rgba(212,175,55,0.14)",
-                        border: "1px solid rgba(212,175,55,0.25)",
-                        color: "white",
-                        fontWeight: 1000,
-                        cursor: "pointer",
-                      }}
+                      style={neutralActionBtn}
                       onClick={addSelectedToCart}
                     >
                       Sepete Ekle
@@ -1868,19 +1995,14 @@ export default function DashboardPage() {
 
                     <button
                       style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        background: opening ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
-                        border: "1px solid rgba(16,185,129,0.28)",
-                        color: "white",
-                        fontWeight: 1000,
-                        cursor: opening ? "not-allowed" : "pointer",
+                        ...neutralActionBtn,
                         opacity: opening ? 0.7 : 1,
+                        cursor: opening ? "not-allowed" : "pointer",
                       }}
                       disabled={opening}
                       onClick={handleOpenPosition}
                     >
-                      {opening ? "Alınıyor..." : "m² Satın Al"}
+                      {opening ? "Alınıyor..." : "Tekli Satın Al"}
                     </button>
                   </div>
                 </div>
@@ -1897,24 +2019,15 @@ export default function DashboardPage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                   <div style={{ lineHeight: 1.1 }}>
-                    <div style={{ fontSize: 11, opacity: 0.75 }}>Sepet</div>
-                    <div style={{ fontSize: 13, fontWeight: 1000 }}>
-                      {cart.length} ürün • Toplam:{" "}
-                      <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
+                    <div style={{ fontSize: 14, fontWeight: 1000 }}>Sepet</div>
+                    <div style={{ fontSize: 13, opacity: 0.78, marginTop: 4 }}>
+                      {cart.length} ürün • Genel Toplam: <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
                     </div>
                   </div>
 
                   <button
                     onClick={clearCart}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: 12,
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      color: "white",
-                      cursor: "pointer",
-                      fontWeight: 900,
-                    }}
+                    style={smallGhostBtn}
                     title="Sepeti temizle"
                   >
                     Temizle
@@ -1927,23 +2040,23 @@ export default function DashboardPage() {
                     display: "flex",
                     flexDirection: "column",
                     gap: 8,
-                    maxHeight: 210,
+                    maxHeight: 220,
                     overflow: "auto",
                   }}
                 >
                   {cart.length === 0 ? (
                     <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      Sepet boş. Farklı bölgelerden m² bazlı yatırım ekleyebilirsin.
+                      Sepet boş. “Sepete Ekle” ile birden çok arsa biriktir.
                     </div>
                   ) : (
                     cart.slice(0, 30).map((it) => (
                       <div
                         key={it.key}
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto auto",
                           gap: 10,
+                          alignItems: "center",
                           padding: "10px 10px",
                           borderRadius: 14,
                           background: "rgba(255,255,255,0.04)",
@@ -1964,29 +2077,22 @@ export default function DashboardPage() {
                             {it.property.district ? ` / ${it.property.district}` : ""}
                             {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
                           </div>
-                          <div style={{ fontSize: 11, opacity: 0.75 }}>
-                            {formatNumber(it.m2)} m² • ₺{formatTRY(it.pricePerM2)}/m²
+                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+                            {formatDecimal(it.m2)} m²
                           </div>
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ fontWeight: 1000, fontSize: 12 }}>{formatNumber(Math.round(it.totalPaid))} Çip</div>
-                          <button
-                            onClick={() => removeFromCart(it.key)}
-                            style={{
-                              padding: "8px 10px",
-                              borderRadius: 12,
-                              background: "rgba(255,255,255,0.06)",
-                              border: "1px solid rgba(255,255,255,0.12)",
-                              color: "white",
-                              cursor: "pointer",
-                              fontWeight: 900,
-                            }}
-                            title="Sepetten çıkar"
-                          >
-                            ✕
-                          </button>
+                        <div style={{ fontWeight: 1000, fontSize: 12, whiteSpace: "nowrap" }}>
+                          {formatNumber(Math.round(it.totalPaid))} Çip
                         </div>
+
+                        <button
+                          onClick={() => removeFromCart(it.key)}
+                          style={smallGhostBtn}
+                          title="Sepetten çıkar"
+                        >
+                          ✕
+                        </button>
                       </div>
                     ))
                   )}
@@ -2000,15 +2106,15 @@ export default function DashboardPage() {
                     width: "100%",
                     padding: 12,
                     borderRadius: 14,
-                    background: checkingOut ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
-                    border: "1px solid rgba(16,185,129,0.28)",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.16)",
                     color: "white",
                     fontWeight: 1100,
                     cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
                     opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
                   }}
                 >
-                  {checkingOut ? "Toplu alınıyor..." : "Toplu m² Alımı Onayla"}
+                  {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
                 </button>
               </div>
 
@@ -2086,6 +2192,43 @@ export default function DashboardPage() {
   );
 }
 
+function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
+  const { title, values, suffix = "" } = props;
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.88, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {values.map((v, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "44px 1fr 42px", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>{2021 + i}</div>
+            <div
+              style={{
+                height: 10,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.08)",
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div
+                style={{
+                  width: `${Math.max(0, Math.min(100, v))}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, rgba(201,162,39,0.75), rgba(245,215,110,0.95))",
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 11, textAlign: "right", opacity: 0.85 }}>
+              {formatInt(v)}
+              {suffix}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function clamp01(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(1, x));
@@ -2105,13 +2248,32 @@ function formatTRY(n: number) {
 
 function formatNumber(n: number) {
   try {
-    return new Intl.NumberFormat("tr-TR").format(n);
+    return new Intl.NumberFormat("tr-TR").format(Math.round(n));
+  } catch {
+    return String(Math.round(n));
+  }
+}
+
+function formatDecimal(n: number) {
+  try {
+    return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
   } catch {
     return String(n);
   }
 }
 
+function formatInt(n: number | null | undefined) {
+  return String(Math.round(Number(n ?? 0)));
+}
+
+function signedPct(n: number | null | undefined) {
+  const x = Number(n ?? 0);
+  return `${x >= 0 ? "+" : ""}${x.toFixed(1)}`;
+}
+
 const labelStyle: React.CSSProperties = { fontSize: 12, opacity: 0.72, marginBottom: 6 };
+
+const tinyLabel: React.CSSProperties = { fontSize: 11, opacity: 0.72, marginBottom: 6 };
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
@@ -2119,6 +2281,16 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 12,
   colorScheme: "dark",
   backgroundColor: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
+  outline: "none",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: 12,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.05)",
   border: "1px solid rgba(255,255,255,0.12)",
   color: "white",
   outline: "none",
@@ -2136,12 +2308,12 @@ const btnGhost: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const btnGold: React.CSSProperties = {
+const btnOutline: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 14,
-  background: "rgba(212,175,55,0.16)",
-  border: "1px solid rgba(212,175,55,0.30)",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.18)",
   color: "white",
   fontSize: 13,
   fontWeight: 1000,
@@ -2166,12 +2338,46 @@ const miniBtn: React.CSSProperties = {
   color: "white",
 };
 
+const smallGhostBtn: React.CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
+  cursor: "pointer",
+  fontWeight: 900,
+};
+
+const neutralActionBtn: React.CSSProperties = {
+  width: "100%",
+  height: 44,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  color: "white",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+function tabBtn(active: boolean): React.CSSProperties {
+  return {
+    padding: "10px 12px",
+    borderRadius: 12,
+    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
+    border: active ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.10)",
+    color: "white",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  };
+}
+
 function chip(active: boolean): React.CSSProperties {
   return {
     padding: 10,
     borderRadius: 12,
-    background: active ? "rgba(212,175,55,0.14)" : "rgba(255,255,255,0.05)",
-    border: active ? "1px solid rgba(212,175,55,0.25)" : "1px solid rgba(255,255,255,0.10)",
+    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)",
+    border: active ? "1px solid rgba(255,255,255,0.20)" : "1px solid rgba(255,255,255,0.10)",
     color: "white",
     fontSize: 13,
     cursor: "pointer",
@@ -2188,6 +2394,16 @@ const metricBox: React.CSSProperties = {
 
 const metricLabel: React.CSSProperties = { fontSize: 12, opacity: 0.7 };
 const metricValue: React.CSSProperties = { fontSize: 18, fontWeight: 1000, marginTop: 4 };
+
+const miniInfoCard: React.CSSProperties = {
+  padding: 10,
+  borderRadius: 14,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.10)",
+};
+
+const miniInfoLabel: React.CSSProperties = { fontSize: 11, opacity: 0.7, fontWeight: 800 };
+const miniInfoText: React.CSSProperties = { fontSize: 12, opacity: 0.9, marginTop: 6, lineHeight: 1.4 };
 
 function generateDemoProperties(opts: { countCities: number; countProps: number; seed: number }): Property[] {
   const rng = mulberry32(opts.seed);
