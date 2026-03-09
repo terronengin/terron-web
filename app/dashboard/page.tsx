@@ -23,40 +23,32 @@ type MarketArea = {
 type Property = {
   id: string;
   title: string;
+  country?: string | null;
   city: string;
   district: string | null;
-
   neighborhood?: string | null;
   zoning_status?: "imarli" | "imarsiz" | "bilinmiyor" | string | null;
   price_per_m2?: number | null;
-
   total_area_m2: number;
-
+  available_m2?: number | null;
+  sold_m2?: number | null;
+  min_buy_m2?: number | null;
+  max_buy_m2?: number | null;
   risk_score: number;
   development_score: number;
-
   expected_annual_return: number;
   last_30d_change: number;
-
   latitude: number | null;
   longitude: number | null;
-
   quality_score?: number;
   rental_yield_annual?: number;
   total_shares?: number;
-
   area?: MarketArea | null;
 };
 
 type RiskBand = "" | "low" | "mid" | "high";
 type TrendBand = "" | "rising" | "flat" | "falling";
-type PriceBand =
-  | ""
-  | "0-10000"
-  | "10001-25000"
-  | "25001-50000"
-  | "50001-100000"
-  | "100001+";
+type PriceBand = "" | "0-10000" | "10001-25000" | "25001-50000" | "50001-100000" | "100001+";
 type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
 
@@ -91,18 +83,24 @@ export default function DashboardPage() {
   const [areaBand, setAreaBand] = useState<AreaBand>("");
 
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
-  const [amount, setAmount] = useState<number>(1000);
+  const [buyM2, setBuyM2] = useState<number>(10);
   const [opening, setOpening] = useState(false);
 
-  type CartItem = { key: string; property: Property; amount: number };
+  type CartItem = {
+    key: string;
+    property: Property;
+    m2: number;
+    pricePerM2: number;
+    totalPaid: number;
+  };
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
 
   const [simDayOffset, setSimDayOffset] = useState<number>(0);
   const [ticking, setTicking] = useState(false);
 
-  const INFO_OPEN_H = 720;
-  const INFO_COLLAPSED_H = 86;
+  const INFO_OPEN_H = 760;
+  const INFO_COLLAPSED_H = 88;
   const INFO_TRAVEL = INFO_OPEN_H - INFO_COLLAPSED_H;
 
   const [infoOpen, setInfoOpen] = useState(true);
@@ -119,9 +117,9 @@ export default function DashboardPage() {
   type DemoPosition = {
     id: string;
     property_id: string;
-    amount: number;
-    entry_price: number;
-    units: number;
+    m2: number;
+    total_paid: number;
+    entry_price_m2: number;
     created_at: string;
     snapshot: {
       title?: string;
@@ -149,21 +147,106 @@ export default function DashboardPage() {
   }
 
   function cartTotal() {
-    return cart.reduce((s, x) => s + Number(x.amount || 0), 0);
+    return cart.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
+  }
+
+  function getPropertyAvailableM2(p: Property | null) {
+    if (!p) return 0;
+    const total = Number(p.total_area_m2 ?? 0);
+    const available =
+      p.available_m2 != null ? Number(p.available_m2) : Math.max(0, total - Number(p.sold_m2 ?? 0));
+    return Math.max(0, available);
+  }
+
+  function getPropertySoldM2(p: Property | null) {
+    if (!p) return 0;
+    const total = Number(p.total_area_m2 ?? 0);
+    if (p.sold_m2 != null) return Math.max(0, Number(p.sold_m2));
+    return Math.max(0, total - getPropertyAvailableM2(p));
+  }
+
+  function getEffectivePricePerM2(p: Property | null) {
+    if (!p) return 0;
+    const sim = getRealEstateSim(p);
+    return (
+      sim?.pricePerM2 ||
+      Number(p.price_per_m2 ?? 0) ||
+      Number(p.area?.base_m2_price ?? 0) ||
+      1
+    );
+  }
+
+  function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {
+    setItems((prev) =>
+      prev.map((p) => {
+        if (p.id !== propertyId) return p;
+        const available = getPropertyAvailableM2(p);
+        const sold = getPropertySoldM2(p);
+        return {
+          ...p,
+          available_m2: Math.max(0, available - purchasedM2),
+          sold_m2: sold + purchasedM2,
+        };
+      })
+    );
+
+    setSelected((prev) => {
+      if (!prev || prev.id !== propertyId) return prev;
+      const available = getPropertyAvailableM2(prev);
+      const sold = getPropertySoldM2(prev);
+      return {
+        ...prev,
+        available_m2: Math.max(0, available - purchasedM2),
+        sold_m2: sold + purchasedM2,
+      };
+    });
   }
 
   function addSelectedToCart() {
     if (!selected) {
-      alert("Önce bir mülk seç.");
-      return;
-    }
-    const amt = Number(amount);
-    if (!Number.isFinite(amt) || amt <= 0) {
-      alert("Yatırım miktarı geçersiz.");
+      alert("Önce bir arsa seç.");
       return;
     }
 
-    setCart((prev) => [{ key: `${selected.id}_${Date.now()}`, property: selected, amount: amt }, ...prev]);
+    const m2 = Number(buyM2);
+    if (!Number.isFinite(m2) || m2 <= 0) {
+      alert("m² miktarı geçersiz.");
+      return;
+    }
+
+    const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
+    const maxBuy = Number(selected.max_buy_m2 ?? getPropertyAvailableM2(selected));
+    const available = getPropertyAvailableM2(selected);
+
+    if (m2 < minBuy) {
+      alert(`Minimum alım ${formatNumber(minBuy)} m²`);
+      return;
+    }
+
+    if (m2 > available) {
+      alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
+      return;
+    }
+
+    if (Number.isFinite(maxBuy) && m2 > maxBuy) {
+      alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsin.`);
+      return;
+    }
+
+    const pricePerM2 = getEffectivePricePerM2(selected);
+    const totalPaid = m2 * Math.max(1, pricePerM2);
+
+    setCart((prev) => [
+      {
+        key: `${selected.id}_${Date.now()}`,
+        property: selected,
+        m2,
+        pricePerM2,
+        totalPaid,
+      },
+      ...prev,
+    ]);
+
     alert("Sepete eklendi ✅");
   }
 
@@ -194,7 +277,6 @@ export default function DashboardPage() {
 
       setDisplayName(metaName);
       setAvatarUrl(metaAvatar);
-
       setLoading(false);
     });
 
@@ -272,6 +354,7 @@ export default function DashboardPage() {
     if (areaBand === "10001+") q = q.gte("total_area_m2", 10001);
 
     const { data, error } = await q;
+
     if (error) {
       console.error(error);
       return;
@@ -285,31 +368,52 @@ export default function DashboardPage() {
         countProps: DEMO_PROPERTY_COUNT,
         seed: 1337,
       });
+
       setItems(seeded);
-      setSelected(seeded[0] ?? null);
+      setSelected((prev) => prev ?? seeded[0] ?? null);
       return;
     }
 
     setItems(list);
-    setSelected(list[0] ?? null);
+    setSelected((prev) => prev ?? list[0] ?? null);
   }
 
   useEffect(() => {
     if (!email) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
 
   const filteredItems = useMemo(() => {
     const q = searchText.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((p) => {
-      const blob = [p.title, p.id, p.city, p.district ?? "", p.neighborhood ?? "", p.zoning_status ?? ""]
-        .join(" ")
-        .toLowerCase();
-      return blob.includes(q);
-    });
+    let arr = [...items];
+
+    if (q) {
+      arr = arr.filter((p) => {
+        const blob = [
+          p.title,
+          p.id,
+          p.country ?? "",
+          p.city,
+          p.district ?? "",
+          p.neighborhood ?? "",
+          p.zoning_status ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return blob.includes(q);
+      });
+    }
+
+    return arr;
   }, [items, searchText]);
+
+  const visibleItems = useMemo(() => {
+    let arr = [...filteredItems];
+    if (city) arr = arr.filter((x) => x.city === city);
+    if (district) arr = arr.filter((x) => x.district === district);
+    if (neighborhood) arr = arr.filter((x) => x.neighborhood === neighborhood);
+    return arr;
+  }, [filteredItems, city, district, neighborhood]);
 
   const cities = useMemo(() => {
     const set = new Set(filteredItems.map((x) => x.city));
@@ -321,6 +425,7 @@ export default function DashboardPage() {
       .filter((x) => (city ? x.city === city : true))
       .map((x) => x.district)
       .filter((d): d is string => !!d && d.trim().length > 0);
+
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, "tr"));
   }, [filteredItems, city]);
 
@@ -330,32 +435,76 @@ export default function DashboardPage() {
       .filter((x) => (district ? x.district === district : true))
       .map((x) => x.neighborhood)
       .filter((n): n is string => !!n && n.trim().length > 0);
+
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, "tr"));
   }, [filteredItems, city, district]);
 
-  async function logout() {
-  const rememberPref =
-    typeof window !== "undefined"
-      ? localStorage.getItem("terron_remember_me")
-      : null;
+  const regionSummary = useMemo(() => {
+    const arr = visibleItems;
+    const count = arr.length;
 
-  let keepRemember = rememberPref === "true";
-
-  if (typeof window !== "undefined") {
-    keepRemember = window.confirm(
-      "Bu cihazda girişin hatırlansın mı?\n\nTamam = Hatırla\nİptal = Unut"
-    );
-
-    localStorage.setItem("terron_remember_me", String(keepRemember));
-
-    if (!keepRemember) {
-      localStorage.removeItem("terron_saved_email");
+    if (!count) {
+      return {
+        count: 0,
+        avgPricePerM2: 0,
+        avgRisk: 0,
+        avgDevelopment: 0,
+        avgReturn: 0,
+        totalArea: 0,
+        availableArea: 0,
+        soldArea: 0,
+      };
     }
-  }
 
-  await supabase.auth.signOut();
-  router.replace("/login");
-}
+    const avgPricePerM2 = arr.reduce((s, x) => s + Number(getEffectivePricePerM2(x)), 0) / Math.max(1, count);
+    const avgRisk = arr.reduce((s, x) => s + Number(x.risk_score ?? 0), 0) / Math.max(1, count);
+    const avgDevelopment = arr.reduce((s, x) => s + Number(x.development_score ?? 0), 0) / Math.max(1, count);
+    const avgReturn = arr.reduce((s, x) => s + Number(x.expected_annual_return ?? 0), 0) / Math.max(1, count);
+
+    const totalArea = arr.reduce((s, x) => s + Number(x.total_area_m2 ?? 0), 0);
+    const availableArea = arr.reduce((s, x) => s + getPropertyAvailableM2(x), 0);
+    const soldArea = arr.reduce((s, x) => s + getPropertySoldM2(x), 0);
+
+    return {
+      count,
+      avgPricePerM2,
+      avgRisk,
+      avgDevelopment,
+      avgReturn,
+      totalArea,
+      availableArea,
+      soldArea,
+    };
+  }, [visibleItems]);
+
+  const selectedAreaLabel = useMemo(() => {
+    if (city && district && neighborhood) return `${city} / ${district} / ${neighborhood}`;
+    if (city && district) return `${city} / ${district}`;
+    if (city) return city;
+    return "Türkiye Geneli";
+  }, [city, district, neighborhood]);
+
+  async function logout() {
+    const rememberPref =
+      typeof window !== "undefined" ? localStorage.getItem("terron_remember_me") : null;
+
+    let keepRemember = rememberPref === "true";
+
+    if (typeof window !== "undefined") {
+      keepRemember = window.confirm(
+        "Bu cihazda girişin hatırlansın mı?\n\nTamam = Hatırla\nİptal = Unut"
+      );
+
+      localStorage.setItem("terron_remember_me", String(keepRemember));
+
+      if (!keepRemember) {
+        localStorage.removeItem("terron_saved_email");
+      }
+    }
+
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
 
   async function ensureAndLoadWallet() {
     const { data: userRes } = await supabase.auth.getUser();
@@ -415,7 +564,6 @@ export default function DashboardPage() {
     if (!email) return;
     ensureAndLoadWallet();
     ensureAndLoadSimDay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
   async function setSimDay(next: number) {
@@ -424,6 +572,7 @@ export default function DashboardPage() {
     if (!user) return;
 
     setTicking(true);
+
     const safe = Math.max(0, next);
 
     const { error } = await supabase.from("profiles").update({ sim_day_offset: safe }).eq("id", user.id);
@@ -466,6 +615,7 @@ export default function DashboardPage() {
     const epoch = new Date("2026-01-01T00:00:00");
     const now = new Date();
     now.setHours(0, 0, 0, 0);
+
     const days = Math.max(0, Math.floor((now.getTime() - epoch.getTime()) / 86400000) + simDayOffset);
 
     const drift = Math.pow(1 + driftDaily, days);
@@ -516,46 +666,55 @@ export default function DashboardPage() {
   async function handleOpenPosition() {
     try {
       if (!selected) {
-        alert("Önce bir mülk seç.");
+        alert("Önce bir arsa seç.");
         return;
       }
 
-      const amt = Number(amount);
-      if (!Number.isFinite(amt) || amt <= 0) {
-        alert("Yatırım miktarı geçersiz.");
+      const m2 = Number(buyM2);
+      if (!Number.isFinite(m2) || m2 <= 0) {
+        alert("m² miktarı geçersiz.");
+        return;
+      }
+
+      const available = getPropertyAvailableM2(selected);
+      const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
+      const maxBuy = Number(selected.max_buy_m2 ?? available);
+      const entryPriceM2 = getEffectivePricePerM2(selected);
+      const totalPaid = m2 * Math.max(1, entryPriceM2);
+
+      if (m2 < minBuy) {
+        alert(`Minimum alım ${formatNumber(minBuy)} m²`);
+        return;
+      }
+
+      if (m2 > available) {
+        alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
+        return;
+      }
+
+      if (Number.isFinite(maxBuy) && m2 > maxBuy) {
+        alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsin.`);
         return;
       }
 
       if (isDemoPropertyId(selected.id)) {
         const currentBalance = Number(walletBalance ?? 0);
-        if (currentBalance < amt) {
+        if (currentBalance < totalPaid) {
           alert(`Yetersiz bakiye. Bakiye: ${formatNumber(currentBalance)} Çip`);
           return;
         }
 
         setOpening(true);
 
-        const sim = getRealEstateSim(selected);
-        let entryPrice: number;
-        let units: number;
-
-        if (sim) {
-          entryPrice = sim.sharePrice;
-          units = amt / entryPrice;
-        } else {
-          entryPrice = simulatePriceIndex(selected.id, Number(selected.expected_annual_return ?? 0), 100);
-          units = amt / entryPrice;
-        }
-
-        setWalletBalance(currentBalance - amt);
+        setWalletBalance(currentBalance - totalPaid);
 
         const list = loadDemoPositions();
         list.unshift({
           id: `demo_pos_${Date.now()}`,
           property_id: selected.id,
-          amount: amt,
-          entry_price: entryPrice,
-          units,
+          m2,
+          total_paid: totalPaid,
+          entry_price_m2: entryPriceM2,
           created_at: new Date().toISOString(),
           snapshot: {
             title: selected.title,
@@ -568,7 +727,9 @@ export default function DashboardPage() {
         });
         saveDemoPositions(list);
 
-        alert("Demo pozisyon açıldı ✅ (DB’ye yazmadım)");
+        updateLocalPropertyM2(selected.id, m2);
+
+        alert("Demo m² yatırımı açıldı ✅");
         setOpening(false);
         return;
       }
@@ -614,27 +775,33 @@ export default function DashboardPage() {
         balance = Number(ins.balance);
       }
 
-      if (balance < amt) {
+      if (balance < totalPaid) {
         alert(`Yetersiz bakiye. Bakiye: ${formatNumber(balance)} Çip`);
         setWalletBalance(balance);
         setOpening(false);
         return;
       }
 
-      const sim = getRealEstateSim(selected);
+      const nextAvailable = Math.max(0, available - m2);
+      const nextSold = getPropertySoldM2(selected) + m2;
 
-      let entryPrice: number;
-      let units: number;
+      const { error: propErr } = await supabase
+        .from("properties")
+        .update({
+          available_m2: nextAvailable,
+          sold_m2: nextSold,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selected.id)
+        .gte("available_m2", m2);
 
-      if (sim) {
-        entryPrice = sim.sharePrice;
-        units = amt / entryPrice;
-      } else {
-        entryPrice = simulatePriceIndex(selected.id, Number(selected.expected_annual_return ?? 0), 100);
-        units = amt / entryPrice;
+      if (propErr) {
+        alert("Arsa stoku güncellenemedi: " + propErr.message);
+        setOpening(false);
+        return;
       }
 
-      const newBalance = balance - amt;
+      const newBalance = balance - totalPaid;
 
       const { error: upErr } = await supabase
         .from("wallets")
@@ -642,6 +809,15 @@ export default function DashboardPage() {
         .eq("user_id", user.id);
 
       if (upErr) {
+        await supabase
+          .from("properties")
+          .update({
+            available_m2: available,
+            sold_m2: getPropertySoldM2(selected),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selected.id);
+
         alert("Bakiye güncellenemedi: " + upErr.message);
         setOpening(false);
         return;
@@ -650,9 +826,12 @@ export default function DashboardPage() {
       const payload = {
         user_id: user.id,
         property_id: selected.id,
-        amount: amt,
-        entry_price: entryPrice,
-        units,
+        m2,
+        total_paid: totalPaid,
+        entry_price_m2: entryPriceM2,
+        amount: totalPaid,
+        entry_price: entryPriceM2,
+        units: m2,
       };
 
       const { error: posErr } = await supabase.from("positions").insert(payload);
@@ -663,13 +842,24 @@ export default function DashboardPage() {
           .update({ balance: balance, updated_at: new Date().toISOString() })
           .eq("user_id", user.id);
 
+        await supabase
+          .from("properties")
+          .update({
+            available_m2: available,
+            sold_m2: getPropertySoldM2(selected),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selected.id);
+
         alert("Pozisyon açılamadı: " + posErr.message);
         setOpening(false);
         return;
       }
 
       setWalletBalance(newBalance);
-      alert("Pozisyon açıldı ✅");
+      updateLocalPropertyM2(selected.id, m2);
+
+      alert("m² pozisyonu açıldı ✅");
       setOpening(false);
     } catch (e: any) {
       console.error("[POS] exception:", e);
@@ -702,37 +892,24 @@ export default function DashboardPage() {
         const list = loadDemoPositions();
 
         for (const it of demoItems) {
-          const p = it.property;
-          const amt = Number(it.amount);
-
-          const sim = getRealEstateSim(p);
-          let entryPrice: number;
-          let units: number;
-
-          if (sim) {
-            entryPrice = sim.sharePrice;
-            units = amt / entryPrice;
-          } else {
-            entryPrice = simulatePriceIndex(p.id, Number(p.expected_annual_return ?? 0), 100);
-            units = amt / entryPrice;
-          }
-
           list.unshift({
             id: `demo_pos_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
-            property_id: p.id,
-            amount: amt,
-            entry_price: entryPrice,
-            units,
+            property_id: it.property.id,
+            m2: it.m2,
+            total_paid: it.totalPaid,
+            entry_price_m2: it.pricePerM2,
             created_at: new Date().toISOString(),
             snapshot: {
-              title: p.title,
-              city: p.city,
-              district: p.district,
-              neighborhood: p.neighborhood,
-              latitude: p.latitude,
-              longitude: p.longitude,
+              title: it.property.title,
+              city: it.property.city,
+              district: it.property.district,
+              neighborhood: it.property.neighborhood,
+              latitude: it.property.latitude,
+              longitude: it.property.longitude,
             },
           });
+
+          updateLocalPropertyM2(it.property.id, it.m2);
         }
 
         saveDemoPositions(list);
@@ -748,7 +925,7 @@ export default function DashboardPage() {
           return;
         }
 
-        const realTotal = realItems.reduce((s, x) => s + Number(x.amount || 0), 0);
+        const realTotal = realItems.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
 
         const { data: w, error: wErr } = await supabase
           .from("wallets")
@@ -770,6 +947,42 @@ export default function DashboardPage() {
           return;
         }
 
+        const touchedProps: Array<{ id: string; available: number; sold: number }> = [];
+
+        for (const it of realItems) {
+          const currentProp = items.find((x) => x.id === it.property.id) ?? it.property;
+          const available = getPropertyAvailableM2(currentProp);
+          const sold = getPropertySoldM2(currentProp);
+
+          if (it.m2 > available) {
+            alert(`${currentProp.title} için yeterli m² kalmadı.`);
+            setCheckingOut(false);
+            return;
+          }
+
+          touchedProps.push({
+            id: currentProp.id,
+            available,
+            sold,
+          });
+
+          const { error: propErr } = await supabase
+            .from("properties")
+            .update({
+              available_m2: Math.max(0, available - it.m2),
+              sold_m2: sold + it.m2,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", currentProp.id)
+            .gte("available_m2", it.m2);
+
+          if (propErr) {
+            alert("Arsa stoğu güncellenemedi: " + propErr.message);
+            setCheckingOut(false);
+            return;
+          }
+        }
+
         const newBalanceDb = balanceDb - realTotal;
         const { error: upErr } = await supabase
           .from("wallets")
@@ -777,6 +990,17 @@ export default function DashboardPage() {
           .eq("user_id", user.id);
 
         if (upErr) {
+          for (const p of touchedProps) {
+            await supabase
+              .from("properties")
+              .update({
+                available_m2: p.available,
+                sold_m2: p.sold,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", p.id);
+          }
+
           alert("Bakiye güncellenemedi: " + upErr.message);
           setCheckingOut(false);
           return;
@@ -785,27 +1009,15 @@ export default function DashboardPage() {
         const insertedIds: string[] = [];
 
         for (const it of realItems) {
-          const p = it.property;
-          const amt = Number(it.amount);
-
-          const sim = getRealEstateSim(p);
-          let entryPrice: number;
-          let units: number;
-
-          if (sim) {
-            entryPrice = sim.sharePrice;
-            units = amt / entryPrice;
-          } else {
-            entryPrice = simulatePriceIndex(p.id, Number(p.expected_annual_return ?? 0), 100);
-            units = amt / entryPrice;
-          }
-
           const payload = {
             user_id: user.id,
-            property_id: p.id,
-            amount: amt,
-            entry_price: entryPrice,
-            units,
+            property_id: it.property.id,
+            m2: it.m2,
+            total_paid: it.totalPaid,
+            entry_price_m2: it.pricePerM2,
+            amount: it.totalPaid,
+            entry_price: it.pricePerM2,
+            units: it.m2,
           };
 
           const { data: ins, error: posErr } = await supabase
@@ -820,6 +1032,17 @@ export default function DashboardPage() {
               .update({ balance: balanceDb, updated_at: new Date().toISOString() })
               .eq("user_id", user.id);
 
+            for (const p of touchedProps) {
+              await supabase
+                .from("properties")
+                .update({
+                  available_m2: p.available,
+                  sold_m2: p.sold,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", p.id);
+            }
+
             if (insertedIds.length > 0) {
               await supabase.from("positions").delete().in("id", insertedIds);
             }
@@ -830,13 +1053,16 @@ export default function DashboardPage() {
           }
 
           if (ins?.id) insertedIds.push(String(ins.id));
+          updateLocalPropertyM2(it.property.id, it.m2);
         }
+
+        setWalletBalance(newBalanceDb);
+      } else {
+        setWalletBalance(Math.max(0, currentBalance - total));
       }
 
-      setWalletBalance(Math.max(0, currentBalance - total));
       clearCart();
-
-      alert("Toplu alım tamam ✅");
+      alert("Toplu m² alımı tamam ✅");
       setCheckingOut(false);
     } catch (e: any) {
       console.error("[CART] exception:", e);
@@ -849,6 +1075,7 @@ export default function DashboardPage() {
     setInfoOpen(true);
     setDragY(0);
   }
+
   function closeInfo() {
     setInfoOpen(false);
     setDragY(INFO_TRAVEL);
@@ -858,7 +1085,6 @@ export default function DashboardPage() {
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as any).setPointerCapture?.(e.pointerId);
-
     setDragging(true);
     dragStartRef.current = { y: e.clientY, start: dragY };
   }
@@ -882,7 +1108,6 @@ export default function DashboardPage() {
   useEffect(() => {
     if (infoOpen) setDragY(0);
     else setDragY(INFO_TRAVEL);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [infoOpen]);
 
   if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
@@ -901,6 +1126,31 @@ export default function DashboardPage() {
   const selectedIndexFallback = selected
     ? simulatePriceIndex(selected.id, Number(selected.expected_annual_return ?? 0), 100)
     : 0;
+
+  const selectedPricePerM2 = selected ? getEffectivePricePerM2(selected) : 0;
+  const selectedAvailableM2 = getPropertyAvailableM2(selected);
+  const selectedSoldM2 = getPropertySoldM2(selected);
+  const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
+  const selectedMaxBuyM2 = Number(selected?.max_buy_m2 ?? selectedAvailableM2);
+  const selectedTotalCost = Math.max(0, Number(buyM2 || 0)) * Math.max(1, selectedPricePerM2);
+  const soldPct =
+    selected && Number(selected.total_area_m2) > 0
+      ? (selectedSoldM2 / Number(selected.total_area_m2)) * 100
+      : 0;
+
+  const regionList = [...visibleItems]
+    .sort((a, b) => {
+      const aScore =
+        Number(a.development_score ?? 0) * 1.3 +
+        Number(a.expected_annual_return ?? 0) * 1.1 -
+        Number(a.risk_score ?? 0) * 0.8;
+      const bScore =
+        Number(b.development_score ?? 0) * 1.3 +
+        Number(b.expected_annual_return ?? 0) * 1.1 -
+        Number(b.risk_score ?? 0) * 0.8;
+      return bScore - aScore;
+    })
+    .slice(0, 16);
 
   return (
     <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
@@ -925,7 +1175,7 @@ export default function DashboardPage() {
           top: HEADER_H,
           left: 0,
           height: `calc(100vh - ${HEADER_H}px)`,
-          width: 360,
+          width: 380,
           zIndex: 50,
           transform: panelOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 220ms ease",
@@ -941,6 +1191,38 @@ export default function DashboardPage() {
           <button onClick={() => setPanelOpen(false)} style={{ ...btnGhost, padding: "8px 10px" }}>
             ✕
           </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            borderRadius: 16,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.10)",
+          }}
+        >
+          <div style={{ fontSize: 11, opacity: 0.75 }}>Bölge Özeti</div>
+          <div style={{ fontSize: 16, fontWeight: 1000, marginTop: 6 }}>{selectedAreaLabel}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+            <div style={metricBox}>
+              <div style={metricLabel}>Arsa Sayısı</div>
+              <div style={metricValue}>{formatNumber(regionSummary.count)}</div>
+            </div>
+            <div style={metricBox}>
+              <div style={metricLabel}>Ort. m²</div>
+              <div style={metricValue}>₺{formatTRY(regionSummary.avgPricePerM2)}</div>
+            </div>
+            <div style={metricBox}>
+              <div style={metricLabel}>Toplam m²</div>
+              <div style={metricValue}>{formatNumber(Math.round(regionSummary.totalArea))}</div>
+            </div>
+            <div style={metricBox}>
+              <div style={metricLabel}>Kalan m²</div>
+              <div style={metricValue}>{formatNumber(Math.round(regionSummary.availableArea))}</div>
+            </div>
+          </div>
         </div>
 
         <div style={{ marginTop: 14 }}>
@@ -1018,13 +1300,19 @@ export default function DashboardPage() {
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Trend (Son 30 gün)</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <button onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")} style={chip(trendBand === "rising")}>
+            <button
+              onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")}
+              style={chip(trendBand === "rising")}
+            >
               Yükselen
             </button>
             <button onClick={() => setTrendBand(trendBand === "flat" ? "" : "flat")} style={chip(trendBand === "flat")}>
               Sabit
             </button>
-            <button onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")} style={chip(trendBand === "falling")}>
+            <button
+              onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")}
+              style={chip(trendBand === "falling")}
+            >
               Düşen
             </button>
           </div>
@@ -1084,36 +1372,55 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: 18, fontSize: 12, opacity: 0.75 }}>Envanter</div>
+        <div style={{ marginTop: 18, fontSize: 12, opacity: 0.75 }}>Öne Çıkan Arsalar</div>
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-          {filteredItems.slice(0, 14).map((p) => (
-            <button
-              key={p.id}
-              onClick={() => {
-                setSelected(p);
-                setPanelOpen(false);
-                openInfo();
-              }}
-              style={{
-                textAlign: "left",
-                padding: 12,
-                borderRadius: 14,
-                background: selected?.id === p.id ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.05)",
-                border: selected?.id === p.id ? "1px solid rgba(212,175,55,0.25)" : "1px solid rgba(255,255,255,0.08)",
-                color: "white",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ fontWeight: 800 }}>{p.city}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>Gelişim {p.development_score}</div>
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>{p.title}</div>
-              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-                Risk {p.risk_score} • Son30g {Number(p.last_30d_change ?? 0).toFixed(1)}%
-              </div>
-            </button>
-          ))}
+          {regionList.map((p) => {
+            const pPrice = getEffectivePricePerM2(p);
+            const pAvailable = getPropertyAvailableM2(p);
+
+            return (
+              <button
+                key={p.id}
+                onClick={() => {
+                  setSelected(p);
+                  setPanelOpen(false);
+                  openInfo();
+                }}
+                style={{
+                  textAlign: "left",
+                  padding: 12,
+                  borderRadius: 14,
+                  background: selected?.id === p.id ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.05)",
+                  border:
+                    selected?.id === p.id
+                      ? "1px solid rgba(212,175,55,0.25)"
+                      : "1px solid rgba(255,255,255,0.08)",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {p.neighborhood || p.district || p.city}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                      {p.city}
+                      {p.district ? ` / ${p.district}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontWeight: 1000, color: "#F5D76E" }}>₺{formatTRY(pPrice)}</div>
+                    <div style={{ fontSize: 11, opacity: 0.72 }}>m²</div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
+                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk {p.risk_score} • Büyüme {p.development_score}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1199,7 +1506,7 @@ export default function DashboardPage() {
                 <input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Ara... (adres, il, ilçe, parsel, ada)"
+                  placeholder="Ara... (il, ilçe, mahalle, ada, parsel)"
                   style={{
                     width: "100%",
                     height: 40,
@@ -1329,10 +1636,15 @@ export default function DashboardPage() {
               setDistrict(d);
               setNeighborhood("");
             }}
-            onSetNeighborhood={(n) => setNeighborhood(n)}
+            onSetNeighborhood={(n) => {
+              setNeighborhood(n);
+            }}
             onSelectPropertyId={(id) => {
               const found = items.find((x) => x.id === id) || filteredItems.find((x) => x.id === id) || null;
-              if (found) setSelected(found);
+              if (found) {
+                setSelected(found);
+                openInfo();
+              }
             }}
             onOpenInfo={() => openInfo()}
           />
@@ -1344,12 +1656,12 @@ export default function DashboardPage() {
               position: "absolute",
               right: 16,
               bottom: 16,
-              width: 320,
+              width: 340,
               height: INFO_OPEN_H,
               transform: `translateY(${dragY}px)`,
               transition: dragging ? "none" : "transform 220ms ease",
               borderRadius: 18,
-              background: "rgba(10,14,24,0.58)",
+              background: "rgba(10,14,24,0.62)",
               border: "1px solid rgba(255,255,255,0.12)",
               backdropFilter: "blur(12px)",
               zIndex: 12,
@@ -1372,11 +1684,11 @@ export default function DashboardPage() {
                 cursor: "grab",
                 userSelect: "none",
               }}
-              title="Aç / Kapat (sürükle)"
+              title="Aç / Kapat"
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 34, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
-                <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900, letterSpacing: 0.5 }}>Detay Paneli</div>
+                <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900, letterSpacing: 0.5 }}>m² Yatırım Paneli</div>
               </div>
 
               <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900 }}>{infoOpen ? "Kapat ▾" : "Aç ▴"}</div>
@@ -1393,24 +1705,26 @@ export default function DashboardPage() {
               }}
             >
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ lineHeight: 1.15 }}>
+                <div style={{ lineHeight: 1.15, minWidth: 0 }}>
                   <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.3 }}>
                     {selected.neighborhood ? selected.neighborhood : selected.district ? selected.district : selected.city}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
                     {selected.city}
-                    {selected.district && selected.neighborhood ? ` / ${selected.district}` : ""}
-                    {" • "}
-                    <b>{selected.total_area_m2}</b> m²
+                    {selected.district && ` / ${selected.district}`}
+                    {selected.neighborhood && ` / ${selected.neighborhood}`}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                    Toplam Alan: <b>{formatNumber(selected.total_area_m2)}</b> m²
                   </div>
                 </div>
 
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Tahmini Değer</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Tahmini Varlık Değeri</div>
                   <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
                     {selectedSim ? `₺${formatTRY(selectedSim.price)}` : `${selectedIndexFallback.toFixed(2)}`}
                   </div>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
+                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
                     {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
                   </div>
                 </div>
@@ -1418,196 +1732,284 @@ export default function DashboardPage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
                 <div style={metricBox}>
-                  <div style={metricLabel}>Gelişim</div>
+                  <div style={metricLabel}>m² Fiyat</div>
+                  <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
+                </div>
+
+                <div style={metricBox}>
+                  <div style={metricLabel}>Yıllık Beklenti</div>
+                  <div style={metricValue}>%{Number(selected.expected_annual_return ?? 0).toFixed(1)}</div>
+                </div>
+
+                <div style={metricBox}>
+                  <div style={metricLabel}>Büyüme</div>
                   <div style={metricValue}>{selected.development_score}</div>
                 </div>
+
                 <div style={metricBox}>
                   <div style={metricLabel}>Risk</div>
                   <div style={metricValue}>{selected.risk_score}</div>
                 </div>
+
                 <div style={metricBox}>
-                  <div style={metricLabel}>Son 30 Gün</div>
-                  <div style={metricValue}>{Number(selected.last_30d_change ?? 0).toFixed(1)}%</div>
+                  <div style={metricLabel}>Kalan m²</div>
+                  <div style={metricValue}>{formatNumber(Math.round(selectedAvailableM2))}</div>
                 </div>
 
                 <div style={metricBox}>
-                  <div style={metricLabel}>Sim</div>
-                  <div style={{ fontSize: 14, fontWeight: 900, marginTop: 4 }}>
-                    {selectedSim ? (
-                      <>
-                        ₺{formatTRY(selectedSim.price)}
-                        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                          ₺/m²: ₺{formatTRY(selectedSim.pricePerM2)}
-                        </div>
-                        <div style={{ fontSize: 12, opacity: 0.75 }}>
-                          Pay: ₺{formatTRY(selectedSim.sharePrice)}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {selectedIndexFallback.toFixed(2)} <span style={{ fontSize: 12, opacity: 0.7 }}>(fallback)</span>
-                      </>
-                    )}
+                  <div style={metricLabel}>Satılan m²</div>
+                  <div style={metricValue}>{formatNumber(Math.round(selectedSoldM2))}</div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <div style={{ fontSize: 11, opacity: 0.75 }}>Satış Doluluk Oranı</div>
+                  <div style={{ fontSize: 12, fontWeight: 1000 }}>{soldPct.toFixed(1)}%</div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 8,
+                    height: 10,
+                    borderRadius: 999,
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.max(0, Math.min(100, soldPct))}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg, rgba(201,162,39,0.85), rgba(245,215,110,0.95))",
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
+                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Min alım: {formatNumber(selectedMinBuyM2)} m²
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <div style={{ fontSize: 11, opacity: 0.75 }}>m² Alım Özeti</div>
+
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  <input
+                    type="number"
+                    value={buyM2}
+                    min={1}
+                    step={1}
+                    onChange={(e) => setBuyM2(Number(e.target.value))}
+                    style={{
+                      width: "100%",
+                      padding: 12,
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      color: "white",
+                      outline: "none",
+                    }}
+                    placeholder="Kaç m² almak istiyorsun?"
+                  />
+
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: 14,
+                      background: "rgba(212,175,55,0.08)",
+                      border: "1px solid rgba(212,175,55,0.18)",
+                    }}
+                  >
+                    <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
+                    <div style={{ fontSize: 16, fontWeight: 1000, marginTop: 6 }}>
+                      {formatNumber(Math.round(selectedTotalCost))} Çip
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                      {formatNumber(buyM2 || 0)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                      Maksimum: {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <button
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        background: "rgba(212,175,55,0.14)",
+                        border: "1px solid rgba(212,175,55,0.25)",
+                        color: "white",
+                        fontWeight: 1000,
+                        cursor: "pointer",
+                      }}
+                      onClick={addSelectedToCart}
+                    >
+                      Sepete Ekle
+                    </button>
+
+                    <button
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        background: opening ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
+                        border: "1px solid rgba(16,185,129,0.28)",
+                        color: "white",
+                        fontWeight: 1000,
+                        cursor: opening ? "not-allowed" : "pointer",
+                        opacity: opening ? 0.7 : 1,
+                      }}
+                      disabled={opening}
+                      onClick={handleOpenPosition}
+                    >
+                      {opening ? "Alınıyor..." : "m² Satın Al"}
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-                <input
-                  type="number"
-                  value={amount}
-                  min={1}
-                  step={100}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                  style={{
-                    width: "100%",
-                    padding: 12,
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "white",
-                    outline: "none",
-                  }}
-                  placeholder="Yatırım (Çip)"
-                />
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div style={{ lineHeight: 1.1 }}>
+                    <div style={{ fontSize: 11, opacity: 0.75 }}>Sepet</div>
+                    <div style={{ fontSize: 13, fontWeight: 1000 }}>
+                      {cart.length} ürün • Toplam:{" "}
+                      <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
+                    </div>
+                  </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <button
+                    onClick={clearCart}
                     style={{
-                      padding: 12,
-                      borderRadius: 14,
-                      background: "rgba(212,175,55,0.14)",
-                      border: "1px solid rgba(212,175,55,0.25)",
+                      padding: "8px 10px",
+                      borderRadius: 12,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.12)",
                       color: "white",
-                      fontWeight: 1000,
                       cursor: "pointer",
+                      fontWeight: 900,
                     }}
-                    onClick={addSelectedToCart}
+                    title="Sepeti temizle"
                   >
-                    Sepete Ekle
-                  </button>
-
-                  <button
-                    style={{
-                      padding: 12,
-                      borderRadius: 14,
-                      background: opening ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
-                      border: "1px solid rgba(16,185,129,0.28)",
-                      color: "white",
-                      fontWeight: 1000,
-                      cursor: opening ? "not-allowed" : "pointer",
-                      opacity: opening ? 0.7 : 1,
-                    }}
-                    disabled={opening}
-                    onClick={handleOpenPosition}
-                  >
-                    {opening ? "Açılıyor..." : "Tekli Satın Al"}
+                    Temizle
                   </button>
                 </div>
 
                 <div
                   style={{
-                    padding: 12,
-                    borderRadius: 16,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    maxHeight: 210,
+                    overflow: "auto",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div style={{ lineHeight: 1.1 }}>
-                      <div style={{ fontSize: 11, opacity: 0.75 }}>Sepet</div>
-                      <div style={{ fontSize: 13, fontWeight: 1000 }}>
-                        {cart.length} ürün • Toplam:{" "}
-                        <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
-                      </div>
+                  {cart.length === 0 ? (
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>
+                      Sepet boş. Farklı bölgelerden m² bazlı yatırım ekleyebilirsin.
                     </div>
-
-                    <button
-                      onClick={clearCart}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.06)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        color: "white",
-                        cursor: "pointer",
-                        fontWeight: 900,
-                      }}
-                      title="Sepeti temizle"
-                    >
-                      Temizle
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, maxHeight: 220, overflow: "auto" }}>
-                    {cart.length === 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>Sepet boş. “Sepete Ekle” ile birden çok arsa biriktir.</div>
-                    ) : (
-                      cart.slice(0, 30).map((it) => (
-                        <div
-                          key={it.key}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "10px 10px",
-                            borderRadius: 14,
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.10)",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 900, fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {it.property.city} {it.property.district ? ` / ${it.property.district}` : ""}
-                            </div>
-                            <div style={{ fontSize: 11, opacity: 0.75, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {it.property.title}
-                            </div>
+                  ) : (
+                    cart.slice(0, 30).map((it) => (
+                      <div
+                        key={it.key}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "10px 10px",
+                          borderRadius: 14,
+                          background: "rgba(255,255,255,0.04)",
+                          border: "1px solid rgba(255,255,255,0.10)",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontWeight: 900,
+                              fontSize: 12,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {it.property.city}
+                            {it.property.district ? ` / ${it.property.district}` : ""}
+                            {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
                           </div>
-
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ fontWeight: 1000, fontSize: 12 }}>{formatNumber(Math.round(it.amount))} Çip</div>
-                            <button
-                              onClick={() => removeFromCart(it.key)}
-                              style={{
-                                padding: "8px 10px",
-                                borderRadius: 12,
-                                background: "rgba(255,255,255,0.06)",
-                                border: "1px solid rgba(255,255,255,0.12)",
-                                color: "white",
-                                cursor: "pointer",
-                                fontWeight: 900,
-                              }}
-                              title="Sepetten çıkar"
-                            >
-                              ✕
-                            </button>
+                          <div style={{ fontSize: 11, opacity: 0.75 }}>
+                            {formatNumber(it.m2)} m² • ₺{formatTRY(it.pricePerM2)}/m²
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
 
-                  <button
-                    onClick={handleCheckoutCart}
-                    disabled={checkingOut || cart.length === 0}
-                    style={{
-                      marginTop: 10,
-                      width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
-                      background: checkingOut ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
-                      border: "1px solid rgba(16,185,129,0.28)",
-                      color: "white",
-                      fontWeight: 1100,
-                      cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
-                      opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
-                    }}
-                  >
-                    {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
-                  </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ fontWeight: 1000, fontSize: 12 }}>{formatNumber(Math.round(it.totalPaid))} Çip</div>
+                          <button
+                            onClick={() => removeFromCart(it.key)}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 12,
+                              background: "rgba(255,255,255,0.06)",
+                              border: "1px solid rgba(255,255,255,0.12)",
+                              color: "white",
+                              cursor: "pointer",
+                              fontWeight: 900,
+                            }}
+                            title="Sepetten çıkar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
+
+                <button
+                  onClick={handleCheckoutCart}
+                  disabled={checkingOut || cart.length === 0}
+                  style={{
+                    marginTop: 10,
+                    width: "100%",
+                    padding: 12,
+                    borderRadius: 14,
+                    background: checkingOut ? "rgba(16,185,129,0.10)" : "rgba(16,185,129,0.18)",
+                    border: "1px solid rgba(16,185,129,0.28)",
+                    color: "white",
+                    fontWeight: 1100,
+                    cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
+                    opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
+                  }}
+                >
+                  {checkingOut ? "Toplu alınıyor..." : "Toplu m² Alımı Onayla"}
+                </button>
               </div>
 
               <div
@@ -1621,7 +2023,7 @@ export default function DashboardPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
-                    <div style={{ fontSize: 11, opacity: 0.75 }}>Gün Kontrol</div>
+                    <div style={{ fontSize: 11, opacity: 0.75 }}>Sim Gün Kontrolü</div>
                     <div style={{ fontSize: 14, fontWeight: 1000 }}>
                       Sim Gün: <span style={{ color: "#F5D76E" }}>{simDayOffset}</span>
                     </div>
@@ -1647,7 +2049,14 @@ export default function DashboardPage() {
                     <button
                       disabled={ticking}
                       onClick={() => setSimDay(0)}
-                      style={{ ...miniBtn, width: 40, height: 34, borderRadius: 12, fontWeight: 1000, opacity: ticking ? 0.6 : 1 }}
+                      style={{
+                        ...miniBtn,
+                        width: 40,
+                        height: 34,
+                        borderRadius: 12,
+                        fontWeight: 1000,
+                        opacity: ticking ? 0.6 : 1,
+                      }}
                       title="Sıfırla"
                     >
                       0
@@ -1784,75 +2193,129 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
   const rng = mulberry32(opts.seed);
 
   const citiesAll = [
-    "İstanbul","Ankara","İzmir","Bursa","Antalya","Adana","Konya","Kocaeli","Gaziantep","Mersin",
-    "Kayseri","Samsun","Eskişehir","Denizli","Tekirdağ","Sakarya","Balıkesir","Manisa","Aydın","Muğla",
-    "Trabzon","Ordu","Giresun","Rize","Erzurum","Diyarbakır","Şanlıurfa","Malatya","Kahramanmaraş","Hatay",
-    "Çanakkale","Edirne","Kırklareli","Yalova","Afyonkarahisar","Isparta","Burdur","Uşak","Kütahya","Bilecik",
-    "Aksaray","Niğde","Sivas","Tokat","Çorum","Kastamonu","Zonguldak","Karabük","Düzce","Van",
-    "Batman","Mardin","Siirt","Elazığ","Amasya","Kırşehir","Nevşehir","Çankırı","Yozgat","Gümüşhane"
+    "İstanbul",
+    "Ankara",
+    "İzmir",
+    "Bursa",
+    "Antalya",
+    "Adana",
+    "Konya",
+    "Kocaeli",
+    "Gaziantep",
+    "Mersin",
+    "Kayseri",
+    "Samsun",
+    "Eskişehir",
+    "Denizli",
+    "Tekirdağ",
+    "Sakarya",
+    "Balıkesir",
+    "Manisa",
+    "Aydın",
+    "Muğla",
+    "Trabzon",
+    "Ordu",
+    "Giresun",
+    "Rize",
+    "Erzurum",
+    "Diyarbakır",
+    "Şanlıurfa",
+    "Malatya",
+    "Kahramanmaraş",
+    "Hatay",
+    "Çanakkale",
+    "Edirne",
+    "Kırklareli",
+    "Yalova",
+    "Afyonkarahisar",
+    "Isparta",
+    "Burdur",
+    "Uşak",
+    "Kütahya",
+    "Bilecik",
+    "Aksaray",
+    "Niğde",
+    "Sivas",
+    "Tokat",
+    "Çorum",
+    "Kastamonu",
+    "Zonguldak",
+    "Karabük",
+    "Düzce",
+    "Van",
+    "Batman",
+    "Mardin",
+    "Siirt",
+    "Elazığ",
+    "Amasya",
+    "Kırşehir",
+    "Nevşehir",
+    "Çankırı",
+    "Yozgat",
+    "Gümüşhane",
   ];
 
   const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-    "İstanbul": { lat: 41.0082, lng: 28.9784 },
-    "Ankara": { lat: 39.9334, lng: 32.8597 },
-    "İzmir": { lat: 38.4237, lng: 27.1428 },
-    "Bursa": { lat: 40.195, lng: 29.06 },
-    "Antalya": { lat: 36.8969, lng: 30.7133 },
-    "Adana": { lat: 36.9914, lng: 35.3308 },
-    "Konya": { lat: 37.8746, lng: 32.4932 },
-    "Kocaeli": { lat: 40.7667, lng: 29.9167 },
-    "Gaziantep": { lat: 37.0662, lng: 37.3833 },
-    "Mersin": { lat: 36.8121, lng: 34.6415 },
-    "Kayseri": { lat: 38.7225, lng: 35.4875 },
-    "Samsun": { lat: 41.2867, lng: 36.33 },
-    "Eskişehir": { lat: 39.7767, lng: 30.5206 },
-    "Denizli": { lat: 37.7765, lng: 29.0864 },
-    "Tekirdağ": { lat: 40.9781, lng: 27.511 },
-    "Sakarya": { lat: 40.7569, lng: 30.3781 },
-    "Balıkesir": { lat: 39.6484, lng: 27.8826 },
-    "Manisa": { lat: 38.6191, lng: 27.4289 },
-    "Aydın": { lat: 37.845, lng: 27.8396 },
-    "Muğla": { lat: 37.2153, lng: 28.3636 },
-    "Trabzon": { lat: 41.0015, lng: 39.7178 },
-    "Ordu": { lat: 40.9862, lng: 37.8797 },
-    "Giresun": { lat: 40.9128, lng: 38.3895 },
-    "Rize": { lat: 41.0255, lng: 40.5177 },
-    "Erzurum": { lat: 39.9043, lng: 41.2679 },
-    "Diyarbakır": { lat: 37.9144, lng: 40.2306 },
-    "Şanlıurfa": { lat: 37.1674, lng: 38.7955 },
-    "Malatya": { lat: 38.3552, lng: 38.3095 },
-    "Kahramanmaraş": { lat: 37.5753, lng: 36.9228 },
-    "Hatay": { lat: 36.202, lng: 36.16 },
-    "Çanakkale": { lat: 40.1553, lng: 26.4142 },
-    "Edirne": { lat: 41.6764, lng: 26.5557 },
-    "Kırklareli": { lat: 41.7356, lng: 27.2252 },
-    "Yalova": { lat: 40.65, lng: 29.2667 },
-    "Afyonkarahisar": { lat: 38.7578, lng: 30.5387 },
-    "Isparta": { lat: 37.7648, lng: 30.5566 },
-    "Burdur": { lat: 37.7183, lng: 30.2833 },
-    "Uşak": { lat: 38.6823, lng: 29.4082 },
-    "Kütahya": { lat: 39.4191, lng: 29.9857 },
-    "Bilecik": { lat: 40.1451, lng: 29.979 },
-    "Aksaray": { lat: 38.3687, lng: 34.037 },
-    "Niğde": { lat: 37.9667, lng: 34.6833 },
-    "Sivas": { lat: 39.7477, lng: 37.0179 },
-    "Tokat": { lat: 40.3167, lng: 36.55 },
-    "Çorum": { lat: 40.5506, lng: 34.9556 },
-    "Kastamonu": { lat: 41.3766, lng: 33.7765 },
-    "Zonguldak": { lat: 41.4564, lng: 31.7987 },
-    "Karabük": { lat: 41.2061, lng: 32.6204 },
-    "Düzce": { lat: 40.8438, lng: 31.1565 },
-    "Van": { lat: 38.4891, lng: 43.4089 },
-    "Batman": { lat: 37.8874, lng: 41.1322 },
-    "Mardin": { lat: 37.3131, lng: 40.7436 },
-    "Siirt": { lat: 37.9333, lng: 41.95 },
-    "Elazığ": { lat: 38.6743, lng: 39.2232 },
-    "Amasya": { lat: 40.6539, lng: 35.8331 },
-    "Kırşehir": { lat: 39.1461, lng: 34.1595 },
-    "Nevşehir": { lat: 38.6244, lng: 34.7239 },
-    "Çankırı": { lat: 40.6013, lng: 33.6134 },
-    "Yozgat": { lat: 39.82, lng: 34.8044 },
-    "Gümüşhane": { lat: 40.46, lng: 39.48 },
+    İstanbul: { lat: 41.0082, lng: 28.9784 },
+    Ankara: { lat: 39.9334, lng: 32.8597 },
+    İzmir: { lat: 38.4237, lng: 27.1428 },
+    Bursa: { lat: 40.195, lng: 29.06 },
+    Antalya: { lat: 36.8969, lng: 30.7133 },
+    Adana: { lat: 36.9914, lng: 35.3308 },
+    Konya: { lat: 37.8746, lng: 32.4932 },
+    Kocaeli: { lat: 40.7667, lng: 29.9167 },
+    Gaziantep: { lat: 37.0662, lng: 37.3833 },
+    Mersin: { lat: 36.8121, lng: 34.6415 },
+    Kayseri: { lat: 38.7225, lng: 35.4875 },
+    Samsun: { lat: 41.2867, lng: 36.33 },
+    Eskişehir: { lat: 39.7767, lng: 30.5206 },
+    Denizli: { lat: 37.7765, lng: 29.0864 },
+    Tekirdağ: { lat: 40.9781, lng: 27.511 },
+    Sakarya: { lat: 40.7569, lng: 30.3781 },
+    Balıkesir: { lat: 39.6484, lng: 27.8826 },
+    Manisa: { lat: 38.6191, lng: 27.4289 },
+    Aydın: { lat: 37.845, lng: 27.8396 },
+    Muğla: { lat: 37.2153, lng: 28.3636 },
+    Trabzon: { lat: 41.0015, lng: 39.7178 },
+    Ordu: { lat: 40.9862, lng: 37.8797 },
+    Giresun: { lat: 40.9128, lng: 38.3895 },
+    Rize: { lat: 41.0255, lng: 40.5177 },
+    Erzurum: { lat: 39.9043, lng: 41.2679 },
+    Diyarbakır: { lat: 37.9144, lng: 40.2306 },
+    Şanlıurfa: { lat: 37.1674, lng: 38.7955 },
+    Malatya: { lat: 38.3552, lng: 38.3095 },
+    Kahramanmaraş: { lat: 37.5753, lng: 36.9228 },
+    Hatay: { lat: 36.202, lng: 36.16 },
+    Çanakkale: { lat: 40.1553, lng: 26.4142 },
+    Edirne: { lat: 41.6764, lng: 26.5557 },
+    Kırklareli: { lat: 41.7356, lng: 27.2252 },
+    Yalova: { lat: 40.65, lng: 29.2667 },
+    Afyonkarahisar: { lat: 38.7578, lng: 30.5387 },
+    Isparta: { lat: 37.7648, lng: 30.5566 },
+    Burdur: { lat: 37.7183, lng: 30.2833 },
+    Uşak: { lat: 38.6823, lng: 29.4082 },
+    Kütahya: { lat: 39.4191, lng: 29.9857 },
+    Bilecik: { lat: 40.1451, lng: 29.979 },
+    Aksaray: { lat: 38.3687, lng: 34.037 },
+    Niğde: { lat: 37.9667, lng: 34.6833 },
+    Sivas: { lat: 39.7477, lng: 37.0179 },
+    Tokat: { lat: 40.3167, lng: 36.55 },
+    Çorum: { lat: 40.5506, lng: 34.9556 },
+    Kastamonu: { lat: 41.3766, lng: 33.7765 },
+    Zonguldak: { lat: 41.4564, lng: 31.7987 },
+    Karabük: { lat: 41.2061, lng: 32.6204 },
+    Düzce: { lat: 40.8438, lng: 31.1565 },
+    Van: { lat: 38.4891, lng: 43.4089 },
+    Batman: { lat: 37.8874, lng: 41.1322 },
+    Mardin: { lat: 37.3131, lng: 40.7436 },
+    Siirt: { lat: 37.9333, lng: 41.95 },
+    Elazığ: { lat: 38.6743, lng: 39.2232 },
+    Amasya: { lat: 40.6539, lng: 35.8331 },
+    Kırşehir: { lat: 39.1461, lng: 34.1595 },
+    Nevşehir: { lat: 38.6244, lng: 34.7239 },
+    Çankırı: { lat: 40.6013, lng: 33.6134 },
+    Yozgat: { lat: 39.82, lng: 34.8044 },
+    Gümüşhane: { lat: 40.46, lng: 39.48 },
   };
 
   const chosen = citiesAll.slice(0, Math.min(opts.countCities, citiesAll.length));
@@ -1862,10 +2325,10 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     let m = 1.0;
     if (c === "İstanbul") m = 2.35;
     else if (c === "Ankara" || c === "İzmir") m = 1.85;
-    else if (["Kocaeli","Bursa","Antalya","Tekirdağ","Sakarya"].includes(c)) m = 1.55;
-    else if (["Muğla","Aydın","Manisa","Balıkesir","Çanakkale","Edirne","Kırklareli","Yalova"].includes(c)) m = 1.35;
-    else if (["Gaziantep","Adana","Mersin","Konya","Kayseri","Samsun","Eskişehir","Denizli","Trabzon"].includes(c)) m = 1.2;
-    else if (["Diyarbakır","Şanlıurfa","Erzurum","Van","Mardin","Batman","Elazığ"].includes(c)) m = 1.05;
+    else if (["Kocaeli", "Bursa", "Antalya", "Tekirdağ", "Sakarya"].includes(c)) m = 1.55;
+    else if (["Muğla", "Aydın", "Manisa", "Balıkesir", "Çanakkale", "Edirne", "Kırklareli", "Yalova"].includes(c)) m = 1.35;
+    else if (["Gaziantep", "Adana", "Mersin", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli", "Trabzon"].includes(c)) m = 1.2;
+    else if (["Diyarbakır", "Şanlıurfa", "Erzurum", "Van", "Mardin", "Batman", "Elazığ"].includes(c)) m = 1.05;
     cityMult[c] = m;
   }
 
@@ -1899,7 +2362,6 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     const baseImarsiz = 4500 * mult;
 
     const pricePerM2 = zoning === "imarli" ? jitter(rng, baseImarli, 0.22) : jitter(rng, baseImarsiz, 0.28);
-
     const areaM2 = zoning === "imarli" ? Math.round(300 + rng() * 2400) : Math.round(800 + rng() * 9200);
 
     const dev = clampInt(25 + rng() * 65 + (zoning === "imarli" ? 10 : -5), 0, 100);
@@ -1924,12 +2386,17 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     propsOut.push({
       id: `demo_${i}_${slug(city)}_${ada}_${parsel}`,
       title,
+      country: "Türkiye",
       city,
       district,
       neighborhood,
       zoning_status: zoning,
       price_per_m2: Math.round(pricePerM2),
       total_area_m2: areaM2,
+      available_m2: areaM2,
+      sold_m2: 0,
+      min_buy_m2: 1,
+      max_buy_m2: Math.max(50, Math.round(areaM2 * 0.25)),
       risk_score: risk,
       development_score: dev,
       expected_annual_return: Number(expAnnual.toFixed(2)),
@@ -1943,7 +2410,20 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     });
   }
 
-  propsOut.sort((a, b) => b.development_score - a.development_score - (b.risk_score - a.risk_score));
+  propsOut.sort((a, b) => {
+    const sa =
+      Number(a.development_score ?? 0) * 1.25 +
+      Number(a.expected_annual_return ?? 0) -
+      Number(a.risk_score ?? 0) * 0.7;
+
+    const sb =
+      Number(b.development_score ?? 0) * 1.25 +
+      Number(b.expected_annual_return ?? 0) -
+      Number(b.risk_score ?? 0) * 0.7;
+
+    return sb - sa;
+  });
+
   return propsOut;
 }
 
@@ -1954,6 +2434,7 @@ function demoDistrict(city: string, rng: () => number) {
     İzmir: ["Bornova", "Karşıyaka", "Menemen", "Torbalı", "Urla", "Çeşme"],
     Antalya: ["Kepez", "Konyaaltı", "Muratpaşa", "Aksu", "Döşemealtı"],
   };
+
   const arr = pool[city] ?? ["Merkez", "Sanayi", "Yeni Mah.", "Organize", "Kuzey", "Güney"];
   return arr[Math.floor(rng() * arr.length)];
 }

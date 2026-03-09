@@ -15,19 +15,22 @@ type MapItem = {
   longitude: number;
 };
 
-type Level = "city" | "district" | "parcel";
+type Level = "region" | "city" | "district" | "neighborhood" | "parcel";
 
 type CountPointProps = {
   name: string;
   count: number;
+  city?: string;
   district?: string;
+  neighborhood?: string;
+  region?: string;
+  level?: Level;
 };
 
 function safeStr(x: unknown) {
   return typeof x === "string" ? x : "";
 }
 
-// ✅ TR normalize: İstanbul/Istanbul, Şanlıurfa/Sanliurfa vb. eşleşsin
 function normTR(s: unknown) {
   const x = (typeof s === "string" ? s : "").trim().toLowerCase();
   return x
@@ -40,6 +43,7 @@ function normTR(s: unknown) {
     .replaceAll("ö", "o")
     .replaceAll("ç", "c");
 }
+
 function sameTR(a: unknown, b: unknown) {
   return normTR(a) === normTR(b);
 }
@@ -74,10 +78,10 @@ function bboxFromGeometry(geom: any) {
   const pts = coordsFromGeometry(geom);
   if (pts.length === 0) return null;
 
-  let minLng = pts[0][0],
-    minLat = pts[0][1],
-    maxLng = pts[0][0],
-    maxLat = pts[0][1];
+  let minLng = pts[0][0];
+  let minLat = pts[0][1];
+  let maxLng = pts[0][0];
+  let maxLat = pts[0][1];
 
   for (const [lng, lat] of pts) {
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
@@ -86,23 +90,143 @@ function bboxFromGeometry(geom: any) {
     maxLng = Math.max(maxLng, lng);
     maxLat = Math.max(maxLat, lat);
   }
+
   return { minLng, minLat, maxLng, maxLat };
 }
 
 function centroidFromGeometry(geom: any) {
   const pts = coordsFromGeometry(geom);
   if (pts.length === 0) return null;
-  let sx = 0,
-    sy = 0,
-    n = 0;
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+
   for (const [lng, lat] of pts) {
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
     sx += lng;
     sy += lat;
     n++;
   }
+
   if (!n) return null;
   return [sx / n, sy / n] as [number, number];
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function getRegionName(cityRaw: string) {
+  const city = normTR(cityRaw);
+
+  const marmara = [
+    "istanbul",
+    "edirne",
+    "kirklareli",
+    "tekirdag",
+    "kocaeli",
+    "sakarya",
+    "yalova",
+    "bursa",
+    "balikesir",
+    "canakkale",
+    "bilecik",
+  ];
+
+  const ege = [
+    "izmir",
+    "manisa",
+    "aydin",
+    "mugla",
+    "denizli",
+    "usak",
+    "kutahya",
+    "afyonkarahisar",
+  ];
+
+  const akdeniz = [
+    "antalya",
+    "burdur",
+    "isparta",
+    "mersin",
+    "adana",
+    "hatay",
+    "osmaniye",
+    "kahramanmaras",
+  ];
+
+  const icAnadolu = [
+    "ankara",
+    "eskisehir",
+    "konya",
+    "aksaray",
+    "karaman",
+    "kirsehir",
+    "nevsehir",
+    "nigde",
+    "kayseri",
+    "sivas",
+    "yozgat",
+    "cankiri",
+  ];
+
+  const karadeniz = [
+    "samsun",
+    "ordu",
+    "giresun",
+    "trabzon",
+    "rize",
+    "artvin",
+    "gumushane",
+    "tokat",
+    "amasya",
+    "corum",
+    "sinop",
+    "kastamonu",
+    "zonguldak",
+    "karabuk",
+    "duzce",
+    "bolu",
+    "bartin",
+  ];
+
+  const dogu = [
+    "erzurum",
+    "erzincan",
+    "kars",
+    "igdir",
+    "agri",
+    "ardahan",
+    "mus",
+    "bingol",
+    "tunceli",
+    "malatya",
+    "elazig",
+    "van",
+    "bitlis",
+    "hakkari",
+  ];
+
+  const guneydogu = [
+    "gaziantep",
+    "sanliurfa",
+    "diyarbakir",
+    "mardin",
+    "batman",
+    "siirt",
+    "sirnak",
+    "adiyaman",
+    "kilis",
+  ];
+
+  if (marmara.includes(city)) return "Marmara";
+  if (ege.includes(city)) return "Ege";
+  if (akdeniz.includes(city)) return "Akdeniz";
+  if (icAnadolu.includes(city)) return "İç Anadolu";
+  if (karadeniz.includes(city)) return "Karadeniz";
+  if (dogu.includes(city)) return "Doğu Anadolu";
+  if (guneydogu.includes(city)) return "Güneydoğu Anadolu";
+  return "Diğer";
 }
 
 export default function MapView(props: {
@@ -116,21 +240,19 @@ export default function MapView(props: {
   const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN as string | undefined;
   const mapRef = useRef<MapRef | null>(null);
 
-  // ✅ “İller önce”
-  const [level, setLevel] = useState<Level>("city");
+  const [level, setLevel] = useState<Level>("region");
+  const [pickedRegion, setPickedRegion] = useState<string>("");
   const [pickedCity, setPickedCity] = useState<string>("");
   const [pickedDistrict, setPickedDistrict] = useState<string>("");
+  const [pickedNeighborhood, setPickedNeighborhood] = useState<string>("");
 
-  // GeoJSON’lar (public’ten okunuyor)
   const [provGeo, setProvGeo] = useState<any>({ type: "FeatureCollection", features: [] });
   const [distGeo, setDistGeo] = useState<any>({ type: "FeatureCollection", features: [] });
 
-  // Hover/select state
   const [hoverPolyId, setHoverPolyId] = useState<string | null>(null);
   const [selectedPolyId, setSelectedPolyId] = useState<string | null>(null);
   const [hoveredPointId, setHoveredPointId] = useState<string | null>(null);
 
-  // IDs
   const SRC_PROV = "src-prov";
   const SRC_DIST = "src-dist";
   const SRC_COUNT = "src-count";
@@ -141,18 +263,13 @@ export default function MapView(props: {
   const L_DIST_FILL = "dist-fill";
   const L_DIST_OUT = "dist-out";
 
-  // ✅ Balon (arsa adedi) layerları
-  const L_COUNT_DROPLET = "count-droplet";
+  const L_COUNT_PIN = "count-pin";
   const L_COUNT_TEXT = "count-text";
 
   const L_CLUSTER = "clusters";
   const L_CLUSTER_TEXT = "cluster-text";
   const L_POINT = "point";
 
-  // Colors
-  const GOLD = "#F5D76E";
-
-  // ---------- LOAD GEOJSON ----------
   useEffect(() => {
     let alive = true;
 
@@ -165,10 +282,17 @@ export default function MapView(props: {
         const features = (gj.features || []).map((f: any, i: number) => {
           const name = safeStr(f?.properties?.NAME_1);
           const id = safeStr(f?.properties?.GID_1) || `prov_${i}`;
+
           return {
             ...f,
             id,
-            properties: { ...(f.properties || {}), id, name, city: name },
+            properties: {
+              ...(f.properties || {}),
+              id,
+              name,
+              city: name,
+              region: getRegionName(name),
+            },
           };
         });
 
@@ -187,16 +311,25 @@ export default function MapView(props: {
           setDistGeo({ type: "FeatureCollection", features: [] });
           return;
         }
+
         const gj = await r.json();
 
         const features = (gj.features || []).map((f: any, i: number) => {
           const city = safeStr(f?.properties?.NAME_1);
           const district = safeStr(f?.properties?.NAME_2);
           const id = safeStr(f?.properties?.GID_2) || `dist_${i}`;
+
           return {
             ...f,
             id,
-            properties: { ...(f.properties || {}), id, name: district, city, district },
+            properties: {
+              ...(f.properties || {}),
+              id,
+              name: district,
+              city,
+              district,
+              region: getRegionName(city),
+            },
           };
         });
 
@@ -217,24 +350,27 @@ export default function MapView(props: {
     };
   }, []);
 
-  // ---------- ITEMS FILTER ----------
   const itemsFiltered = useMemo(() => {
     let arr = props.items || [];
+    if (pickedRegion) arr = arr.filter((x) => getRegionName(x.city) === pickedRegion);
     if (pickedCity) arr = arr.filter((x) => sameTR(x.city, pickedCity));
     if (pickedDistrict) arr = arr.filter((x) => sameTR(x.district ?? "", pickedDistrict));
+    if (pickedNeighborhood) arr = arr.filter((x) => sameTR(x.neighborhood ?? "", pickedNeighborhood));
     return arr;
-  }, [props.items, pickedCity, pickedDistrict]);
+  }, [props.items, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
 
-  // ---------- POINTS GEOJSON ----------
   const pointsGeo = useMemo(() => {
     return {
       type: "FeatureCollection" as const,
-      features: (itemsFiltered || [])
+      features: itemsFiltered
         .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
         .map((p) => ({
           type: "Feature" as const,
           id: p.id,
-          geometry: { type: "Point" as const, coordinates: [p.longitude, p.latitude] },
+          geometry: {
+            type: "Point" as const,
+            coordinates: [p.longitude, p.latitude],
+          },
           properties: {
             id: p.id,
             title: p.title,
@@ -246,44 +382,63 @@ export default function MapView(props: {
     };
   }, [itemsFiltered]);
 
-  // ---------- COUNTS (normalize key) ----------
+  const regionCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+    const m = new Map<
+      string,
+      { count: number; sumLng: number; sumLat: number; n: number }
+    >();
+
+    for (const it of props.items || []) {
+      if (!Number.isFinite(it.latitude) || !Number.isFinite(it.longitude)) continue;
+      const region = getRegionName(it.city);
+      const cur = m.get(region) ?? { count: 0, sumLng: 0, sumLat: 0, n: 0 };
+      cur.count += 1;
+      cur.sumLng += Number(it.longitude);
+      cur.sumLat += Number(it.latitude);
+      cur.n += 1;
+      m.set(region, cur);
+    }
+
+    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([region, v]) => ({
+      type: "Feature",
+      id: `cnt_region_${normTR(region)}`,
+      properties: {
+        name: region,
+        region,
+        count: v.count,
+        level: "region",
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [v.sumLng / v.n, v.sumLat / v.n],
+      },
+    }));
+
+    return { type: "FeatureCollection", features };
+  }, [props.items]);
+
   const provinceCounts = useMemo(() => {
     const m = new Map<string, number>();
+    const regionFilter = pickedRegion ? pickedRegion : "";
     for (const it of props.items || []) {
+      if (regionFilter && getRegionName(it.city) !== regionFilter) continue;
       const k = normTR(it.city);
       if (!k) continue;
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
-  }, [props.items]);
+  }, [props.items, pickedRegion]);
 
-  const districtCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    const pickedK = normTR(pickedCity);
-
-    for (const it of props.items || []) {
-      if (pickedK && normTR(it.city) !== pickedK) continue;
-
-      const d = (it.district ?? "").trim();
-      const dk = normTR(d);
-      if (!dk) continue;
-
-      m.set(dk, (m.get(dk) ?? 0) + 1);
-    }
-    return m;
-  }, [props.items, pickedCity]);
-
-  // İlçe balonlarını items’tan üret (isim uyuşmazlığı olmasın) ✅ normalize
-  const districtCentersFromItems = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+  const districtCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     if (!pickedCity) {
-      return {
-        type: "FeatureCollection",
-        features: [],
-      };
+      return { type: "FeatureCollection", features: [] };
     }
 
     const pickedK = normTR(pickedCity);
-    const m = new Map<string, { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
+    const m = new Map<
+      string,
+      { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }
+    >();
 
     for (const it of props.items || []) {
       if (pickedK && normTR(it.city) !== pickedK) continue;
@@ -301,97 +456,136 @@ export default function MapView(props: {
       m.set(dK, cur);
     }
 
-    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([districtKey, v]) => ({
+    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([k, v]) => ({
       type: "Feature",
-      id: `cnt_itemdist_${normTR(pickedCity)}_${districtKey}`,
-      properties: { name: v.districtRaw, count: v.count, district: v.districtRaw },
-      geometry: { type: "Point", coordinates: [v.sumLng / v.n, v.sumLat / v.n] },
+      id: `cnt_d_${normTR(pickedCity)}_${k}`,
+      properties: {
+        name: v.districtRaw,
+        district: v.districtRaw,
+        city: pickedCity,
+        count: v.count,
+        level: "district",
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [v.sumLng / v.n, v.sumLat / v.n],
+      },
     }));
 
-    return {
-      type: "FeatureCollection",
-      features,
-    };
+    return { type: "FeatureCollection", features };
   }, [props.items, pickedCity]);
 
-  // ---------- ACTIVE POLY ----------
-  const activePoly = useMemo(() => {
-    if (level === "city") return { src: SRC_PROV, geo: provGeo, fill: L_PROV_FILL, out: L_PROV_OUT };
-
-    if (level === "district") {
-      const filtered = {
-        type: "FeatureCollection" as const,
-        features: (distGeo.features || []).filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity)),
-      };
-      return { src: SRC_DIST, geo: filtered, fill: L_DIST_FILL, out: L_DIST_OUT };
+  const neighborhoodCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+    if (!pickedCity || !pickedDistrict) {
+      return { type: "FeatureCollection", features: [] };
     }
 
-    return null;
-  }, [level, provGeo, distGeo, pickedCity]);
+    const cityK = normTR(pickedCity);
+    const distK = normTR(pickedDistrict);
+    const m = new Map<
+      string,
+      { neighborhoodRaw: string; count: number; sumLng: number; sumLat: number; n: number }
+    >();
 
-  // ---------- COUNT GEO (arsa adedi balonu) ----------
-  const countGeo = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    // İL seviyesinde: polygon centroid’e balon
+    for (const it of props.items || []) {
+      if (normTR(it.city) !== cityK) continue;
+      if (normTR(it.district ?? "") !== distK) continue;
+
+      const nRaw = (it.neighborhood ?? "").trim();
+      const nKey = normTR(nRaw);
+      if (!nKey) continue;
+      if (!Number.isFinite(it.latitude) || !Number.isFinite(it.longitude)) continue;
+
+      const cur = m.get(nKey) ?? { neighborhoodRaw: nRaw, count: 0, sumLng: 0, sumLat: 0, n: 0 };
+      cur.count += 1;
+      cur.sumLng += Number(it.longitude);
+      cur.sumLat += Number(it.latitude);
+      cur.n += 1;
+      cur.neighborhoodRaw = cur.neighborhoodRaw || nRaw;
+      m.set(nKey, cur);
+    }
+
+    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([k, v]) => ({
+      type: "Feature",
+      id: `cnt_n_${normTR(pickedCity)}_${normTR(pickedDistrict)}_${k}`,
+      properties: {
+        name: v.neighborhoodRaw,
+        district: pickedDistrict,
+        city: pickedCity,
+        neighborhood: v.neighborhoodRaw,
+        count: v.count,
+        level: "neighborhood",
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [v.sumLng / v.n, v.sumLat / v.n],
+      },
+    }));
+
+    return { type: "FeatureCollection", features };
+  }, [props.items, pickedCity, pickedDistrict]);
+
+  const activeProvinceGeo = useMemo(() => {
+    if (!pickedRegion) return provGeo;
+    return {
+      type: "FeatureCollection" as const,
+      features: (provGeo.features || []).filter((f: any) => safeStr(f?.properties?.region) === pickedRegion),
+    };
+  }, [provGeo, pickedRegion]);
+
+  const activeDistrictGeo = useMemo(() => {
+    return {
+      type: "FeatureCollection" as const,
+      features: (distGeo.features || []).filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity)),
+    };
+  }, [distGeo, pickedCity]);
+
+  const activePoly = useMemo(() => {
     if (level === "city") {
-      const features: Feature<Point, CountPointProps>[] = (provGeo.features || [])
+      return { src: SRC_PROV, geo: activeProvinceGeo, fill: L_PROV_FILL, out: L_PROV_OUT };
+    }
+    if (level === "district") {
+      return { src: SRC_DIST, geo: activeDistrictGeo, fill: L_DIST_FILL, out: L_DIST_OUT };
+    }
+    return null;
+  }, [level, activeProvinceGeo, activeDistrictGeo]);
+
+  const countGeo = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+    if (level === "region") return regionCenters;
+
+    if (level === "city") {
+      const features: Feature<Point, CountPointProps>[] = (activeProvinceGeo.features || [])
         .map((f: any) => {
           const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_1);
           const center = centroidFromGeometry(f.geometry);
           if (!name || !center) return null;
-
           const count = provinceCounts.get(normTR(name)) ?? 0;
 
           return {
             type: "Feature" as const,
             id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
-            properties: { name, count },
-            geometry: { type: "Point" as const, coordinates: center },
+            properties: {
+              name,
+              city: name,
+              count,
+              level: "city",
+            },
+            geometry: {
+              type: "Point" as const,
+              coordinates: center,
+            },
           };
         })
         .filter(Boolean) as Feature<Point, CountPointProps>[];
 
-      return {
-        type: "FeatureCollection",
-        features,
-      };
+      return { type: "FeatureCollection", features };
     }
 
-    // İLÇE seviyesinde: items’tan merkez üret (en sağlam)
-    if (level === "district") {
-      if (districtCentersFromItems.features.length > 0) return districtCentersFromItems;
+    if (level === "district") return districtCenters;
+    if (level === "neighborhood") return neighborhoodCenters;
+    return { type: "FeatureCollection", features: [] };
+  }, [level, regionCenters, activeProvinceGeo, provinceCounts, districtCenters, neighborhoodCenters]);
 
-      // fallback: polygon centroid
-      const feats: Feature<Point, CountPointProps>[] = (distGeo.features || [])
-        .filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity))
-        .map((f: any) => {
-          const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_2);
-          const center = centroidFromGeometry(f.geometry);
-          if (!name || !center) return null;
-
-          const count = districtCounts.get(normTR(name)) ?? 0;
-
-          return {
-            type: "Feature" as const,
-            id: `cnt_dist_${safeStr(f?.properties?.id) || normTR(name)}`,
-            properties: { name, count, district: name },
-            geometry: { type: "Point" as const, coordinates: center },
-          };
-        })
-        .filter(Boolean) as Feature<Point, CountPointProps>[];
-
-      return {
-        type: "FeatureCollection",
-        features: feats,
-      };
-    }
-
-    return {
-      type: "FeatureCollection",
-      features: [],
-    };
-  }, [level, provGeo, distGeo, pickedCity, provinceCounts, districtCounts, districtCentersFromItems]);
-
-  // ---------- STYLE (NEON POLY) ----------
   function fillPaint() {
     return {
       "fill-color": [
@@ -399,8 +593,8 @@ export default function MapView(props: {
         ["==", ["get", "id"], selectedPolyId ?? ""],
         "rgba(245,215,110,0.20)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.16)",
-        "rgba(245,215,110,0.06)",
+        "rgba(245,215,110,0.14)",
+        "rgba(245,215,110,0.05)",
       ],
     } as any;
   }
@@ -412,24 +606,24 @@ export default function MapView(props: {
         ["==", ["get", "id"], selectedPolyId ?? ""],
         "rgba(245,215,110,0.98)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.92)",
-        "rgba(245,215,110,0.35)",
+        "rgba(245,215,110,0.95)",
+        "rgba(245,215,110,0.40)",
       ],
       "line-width": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        3,
+        3.1,
         ["boolean", ["feature-state", "hover"], false],
-        3,
-        1.4,
+        2.7,
+        1.2,
       ],
       "line-blur": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
         1.0,
         ["boolean", ["feature-state", "hover"], false],
-        0.9,
-        0.2,
+        0.85,
+        0.1,
       ],
     } as any;
   }
@@ -437,22 +631,26 @@ export default function MapView(props: {
   function clearPolyHover() {
     const map = mapRef.current;
     if (!map || !activePoly) return;
+
     if (hoverPolyId) {
       try {
         map.setFeatureState({ source: activePoly.src, id: hoverPolyId }, { hover: false });
       } catch {}
     }
+
     setHoverPolyId(null);
   }
 
   function clearPointHover() {
     const map = mapRef.current;
     if (!map) return;
+
     if (hoveredPointId) {
       try {
         map.setFeatureState({ source: SRC_POINTS, id: hoveredPointId }, { hover: false });
       } catch {}
     }
+
     setHoveredPointId(null);
   }
 
@@ -461,6 +659,7 @@ export default function MapView(props: {
     if (!map) return;
     const bb = bboxFromGeometry(geom);
     if (!bb) return;
+
     map.fitBounds(
       [
         [bb.minLng, bb.minLat],
@@ -470,72 +669,178 @@ export default function MapView(props: {
     );
   }
 
+  function zoomToItems(list: MapItem[], targetZoom: number) {
+    const map = mapRef.current;
+    if (!map || !list.length) return;
+
+    const pts = list.filter((x) => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
+    if (!pts.length) return;
+
+    if (pts.length === 1) {
+      map.easeTo({
+        center: [pts[0].longitude, pts[0].latitude],
+        zoom: targetZoom,
+        duration: 500,
+      });
+      return;
+    }
+
+    let minLng = pts[0].longitude;
+    let minLat = pts[0].latitude;
+    let maxLng = pts[0].longitude;
+    let maxLat = pts[0].latitude;
+
+    for (const p of pts) {
+      minLng = Math.min(minLng, p.longitude);
+      minLat = Math.min(minLat, p.latitude);
+      maxLng = Math.max(maxLng, p.longitude);
+      maxLat = Math.max(maxLat, p.latitude);
+    }
+
+    map.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 70, duration: 650, maxZoom: targetZoom }
+    );
+  }
+
   function goBack() {
     clearPointHover();
     clearPolyHover();
     setSelectedPolyId(null);
 
     if (level === "parcel") {
+      setPickedNeighborhood("");
+      props.onSetNeighborhood?.("");
+      setLevel("neighborhood");
+      return;
+    }
+
+    if (level === "neighborhood") {
+      setPickedNeighborhood("");
+      props.onSetNeighborhood?.("");
       setLevel("district");
       return;
     }
+
     if (level === "district") {
       setPickedDistrict("");
+      setPickedNeighborhood("");
       props.onSetDistrict?.("");
-      setPickedCity("");
-      props.onSetCity?.("");
+      props.onSetNeighborhood?.("");
       setLevel("city");
       return;
     }
+
+    if (level === "city") {
+      setPickedCity("");
+      setPickedDistrict("");
+      setPickedNeighborhood("");
+      props.onSetCity?.("");
+      props.onSetDistrict?.("");
+      props.onSetNeighborhood?.("");
+      setPickedRegion("");
+      setLevel("region");
+    }
   }
 
-  // ---------- CLICK / HOVER ----------
+  function handleCountNavigation(f: any) {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const nameRaw = String(f.properties?.name || "").trim();
+    if (!nameRaw) return;
+
+    if (level === "region") {
+      setPickedRegion(nameRaw);
+      setPickedCity("");
+      setPickedDistrict("");
+      setPickedNeighborhood("");
+      props.onSetCity?.("");
+      props.onSetDistrict?.("");
+      props.onSetNeighborhood?.("");
+      setLevel("city");
+
+      const regionItems = (props.items || []).filter((it) => getRegionName(it.city) === nameRaw);
+      zoomToItems(regionItems, 6.2);
+      return;
+    }
+
+    if (level === "city") {
+      const realCity =
+        (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
+
+      setPickedCity(realCity);
+      props.onSetCity?.(realCity);
+      setPickedDistrict("");
+      setPickedNeighborhood("");
+      props.onSetDistrict?.("");
+      props.onSetNeighborhood?.("");
+      setLevel("district");
+
+      const coords = f.geometry?.coordinates;
+      if (Array.isArray(coords)) {
+        map.easeTo({ center: coords as [number, number], zoom: 7.8, duration: 520 });
+      }
+      return;
+    }
+
+    if (level === "district") {
+      const realDistrict =
+        (props.items || [])
+          .filter((it) => sameTR(it.city, pickedCity))
+          .find((it) => normTR(it.district ?? "") === normTR(nameRaw))?.district || nameRaw;
+
+      setPickedDistrict(String(realDistrict));
+      props.onSetDistrict?.(String(realDistrict));
+      setPickedNeighborhood("");
+      props.onSetNeighborhood?.("");
+      setLevel("neighborhood");
+
+      const districtItems = (props.items || []).filter(
+        (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
+      );
+
+      zoomToItems(districtItems, 10.8);
+      return;
+    }
+
+    if (level === "neighborhood") {
+      const realNeighborhood =
+        (props.items || [])
+          .filter((it) => sameTR(it.city, pickedCity))
+          .filter((it) => sameTR(it.district ?? "", pickedDistrict))
+          .find((it) => normTR(it.neighborhood ?? "") === normTR(nameRaw))?.neighborhood || nameRaw;
+
+      setPickedNeighborhood(String(realNeighborhood));
+      props.onSetNeighborhood?.(String(realNeighborhood));
+      setLevel("parcel");
+
+      const neighborhoodItems = (props.items || []).filter(
+        (it) =>
+          sameTR(it.city, pickedCity) &&
+          sameTR(it.district ?? "", pickedDistrict) &&
+          sameTR(it.neighborhood ?? "", realNeighborhood)
+      );
+
+      zoomToItems(neighborhoodItems, 13.1);
+    }
+  }
+
   async function onMapClick(e: any) {
     const map = mapRef.current;
     if (!map) return;
 
-    // ✅ 0) Önce balona tıklama
-    if (level === "city" || level === "district") {
-      const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_DROPLET, L_COUNT_TEXT] });
+    if (level === "region" || level === "city" || level === "district" || level === "neighborhood") {
+      const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_PIN, L_COUNT_TEXT] });
       if (countHits && countHits.length > 0) {
-        const f: any = countHits[0];
-        const nameRaw = String(f.properties?.name || "").trim();
-        if (!nameRaw) return;
-
-        if (level === "city") {
-          const realCity =
-            (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
-
-          setPickedCity(realCity);
-          props.onSetCity?.(realCity);
-
-          setPickedDistrict("");
-          props.onSetDistrict?.("");
-          setLevel("district");
-
-          const [lng, lat] = f.geometry.coordinates;
-          map.easeTo({ center: [lng, lat], zoom: 7.7, duration: 520 });
-          return;
-        }
-
-        if (level === "district") {
-          const realDistrict =
-            (props.items || [])
-              .filter((it) => sameTR(it.city, pickedCity))
-              .find((it) => normTR(it.district ?? "") === normTR(nameRaw))?.district || nameRaw;
-
-          setPickedDistrict(String(realDistrict));
-          props.onSetDistrict?.(String(realDistrict));
-          setLevel("parcel");
-
-          const [lng, lat] = f.geometry.coordinates;
-          map.easeTo({ center: [lng, lat], zoom: 10.6, duration: 520 });
-          return;
-        }
+        handleCountNavigation(countHits[0]);
+        return;
       }
     }
 
-    // 1) polygon click (il/ilçe alanı)
     if (activePoly) {
       const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out] });
       if (hits && hits.length > 0) {
@@ -555,8 +860,11 @@ export default function MapView(props: {
             setPickedCity(realCity);
             props.onSetCity?.(realCity);
           }
+
           setPickedDistrict("");
+          setPickedNeighborhood("");
           props.onSetDistrict?.("");
+          props.onSetNeighborhood?.("");
           setLevel("district");
           return;
         }
@@ -571,14 +879,20 @@ export default function MapView(props: {
 
             setPickedDistrict(String(realDistrict));
             props.onSetDistrict?.(String(realDistrict));
+            setPickedNeighborhood("");
+            props.onSetNeighborhood?.("");
+            setLevel("neighborhood");
+
+            const districtItems = (props.items || []).filter(
+              (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
+            );
+            zoomToItems(districtItems, 10.8);
           }
-          setLevel("parcel");
           return;
         }
       }
     }
 
-    // 2) parcel points click
     if (level === "parcel") {
       const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER, L_POINT] });
       if (!hits || hits.length === 0) return;
@@ -601,6 +915,7 @@ export default function MapView(props: {
 
       const id = String(f.properties?.id || "");
       if (!id) return;
+
       props.onSelectPropertyId?.(id);
       props.onOpenInfo?.();
     }
@@ -610,9 +925,8 @@ export default function MapView(props: {
     const map = mapRef.current;
     if (!map) return;
 
-    // ✅ Balon hover
-    if (level === "city" || level === "district") {
-      const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_DROPLET, L_COUNT_TEXT] });
+    if (level === "region" || level === "city" || level === "district" || level === "neighborhood") {
+      const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_PIN, L_COUNT_TEXT] });
       if (countHits && countHits.length > 0) {
         map.getCanvas().style.cursor = "pointer";
         clearPolyHover();
@@ -621,24 +935,27 @@ export default function MapView(props: {
       }
     }
 
-    // polygon hover
     if (activePoly) {
       const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out] });
       if (hits && hits.length > 0) {
         map.getCanvas().style.cursor = "pointer";
         const f: any = hits[0];
         const pid = String(f.properties?.id || f.id || "");
+
         if (pid && pid !== hoverPolyId) {
           if (hoverPolyId) {
             try {
               map.setFeatureState({ source: activePoly.src, id: hoverPolyId }, { hover: false });
             } catch {}
           }
+
           try {
             map.setFeatureState({ source: activePoly.src, id: pid }, { hover: true });
           } catch {}
+
           setHoverPolyId(pid);
         }
+
         clearPointHover();
         return;
       } else {
@@ -651,7 +968,6 @@ export default function MapView(props: {
       }
     }
 
-    // point hover (parcel)
     if (level === "parcel") {
       const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER, L_POINT] });
       if (!hits || hits.length === 0) {
@@ -670,9 +986,11 @@ export default function MapView(props: {
           map.setFeatureState({ source: SRC_POINTS, id: hoveredPointId }, { hover: false });
         } catch {}
       }
+
       try {
         map.setFeatureState({ source: SRC_POINTS, id: pid }, { hover: true });
       } catch {}
+
       setHoveredPointId(pid);
       return;
     }
@@ -687,18 +1005,37 @@ export default function MapView(props: {
     clearPointHover();
   }
 
-  // ---------- UI ----------
   const badgeText = useMemo(() => {
-    if (level === "city") return "İller";
+    if (level === "region") return "Bölgeler";
+    if (level === "city") return `İller • ${pickedRegion || "Türkiye"}`;
     if (level === "district") return `İlçeler • ${pickedCity || "—"}`;
-    if (level === "parcel") return pickedDistrict ? `Arsalar • ${pickedCity} / ${pickedDistrict}` : `Arsalar • ${pickedCity}`;
-    return "";
-  }, [level, pickedCity, pickedDistrict]);
+    if (level === "neighborhood") return `Mahalleler • ${pickedCity}${pickedDistrict ? ` / ${pickedDistrict}` : ""}`;
+    return `Arsalar • ${pickedCity}${pickedDistrict ? ` / ${pickedDistrict}` : ""}${pickedNeighborhood ? ` / ${pickedNeighborhood}` : ""}`;
+  }, [level, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
+
+  const summaryText = useMemo(() => {
+    if (level === "region") return `${props.items.length} arsa • bölgesel görünüm`;
+    if (level === "city") {
+      const count = (props.items || []).filter((x) => (!pickedRegion ? true : getRegionName(x.city) === pickedRegion)).length;
+      return `${count} arsa • il dağılımı`;
+    }
+    if (level === "district") {
+      const count = (props.items || []).filter((x) => sameTR(x.city, pickedCity)).length;
+      return `${count} arsa • ilçe dağılımı`;
+    }
+    if (level === "neighborhood") {
+      const count = (props.items || []).filter(
+        (x) => sameTR(x.city, pickedCity) && sameTR(x.district ?? "", pickedDistrict)
+      ).length;
+      return `${count} arsa • mahalle dağılımı`;
+    }
+    return `${itemsFiltered.length} arsa • tekil görünüm`;
+  }, [level, props.items, pickedRegion, pickedCity, pickedDistrict, itemsFiltered.length]);
 
   const interactiveLayers = useMemo(() => {
     const arr: string[] = [];
     if (activePoly) arr.push(activePoly.fill, activePoly.out);
-    arr.push(L_COUNT_DROPLET, L_COUNT_TEXT);
+    arr.push(L_COUNT_PIN, L_COUNT_TEXT);
     if (level === "parcel") arr.push(L_CLUSTER, L_POINT);
     return arr;
   }, [activePoly, level]);
@@ -711,19 +1048,81 @@ export default function MapView(props: {
     );
   }
 
-  // ---------- CLUSTER/POINT STYLES ----------
+  const countPinLayer: any = {
+    id: L_COUNT_PIN,
+    type: "symbol",
+    source: SRC_COUNT,
+    layout: {
+      "icon-image": "marker-15",
+      "icon-size": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        4,
+        ["interpolate", ["linear"], ["get", "count"], 1, 1.1, 20, 1.18, 100, 1.28, 300, 1.38],
+        7,
+        ["interpolate", ["linear"], ["get", "count"], 1, 0.98, 20, 1.04, 100, 1.12, 300, 1.22],
+        10,
+        ["interpolate", ["linear"], ["get", "count"], 1, 0.88, 20, 0.96, 100, 1.04, 300, 1.12],
+        13,
+        ["interpolate", ["linear"], ["get", "count"], 1, 0.8, 20, 0.88, 100, 0.96, 300, 1.04],
+      ],
+      "icon-anchor": "bottom",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    },
+    paint: {
+      "icon-color": "#D4AF37",
+      "icon-halo-color": "rgba(8,12,22,0.95)",
+      "icon-halo-width": 2.2,
+      "icon-opacity": 0.98,
+    },
+  };
+
+  const countTextLayer: any = {
+    id: L_COUNT_TEXT,
+    type: "symbol",
+    source: SRC_COUNT,
+    layout: {
+      "text-field": ["to-string", ["get", "count"]],
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-size": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        4,
+        10,
+        7,
+        11,
+        10,
+        11.5,
+        13,
+        12,
+      ],
+      "text-anchor": "center",
+      "text-offset": [0, -1.15],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
+      "text-halo-color": "rgba(8,12,22,0.75)",
+      "text-halo-width": 1.2,
+    },
+  };
+
   const clusterLayer: any = {
     id: L_CLUSTER,
     type: "circle",
     source: SRC_POINTS,
     filter: ["has", "point_count"],
     paint: {
-      "circle-radius": ["step", ["get", "point_count"], 16, 50, 20, 150, 24, 300, 28],
-      "circle-color": "rgba(10,14,24,0.55)",
-      "circle-stroke-color": GOLD,
-      "circle-stroke-width": 2,
-      "circle-opacity": 0.95,
-      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.6, 0.12],
+      "circle-radius": ["step", ["get", "point_count"], 15, 20, 17, 60, 19, 150, 22, 300, 25],
+      "circle-color": "rgba(8,12,22,0.75)",
+      "circle-stroke-color": "rgba(245,215,110,0.98)",
+      "circle-stroke-width": 2.1,
+      "circle-opacity": 0.98,
+      "circle-blur": 0.12,
     },
   };
 
@@ -752,45 +1151,17 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 7, 5],
-      "circle-color": "rgba(10,14,24,0.70)",
-      "circle-stroke-color": ["case", ["boolean", ["feature-state", "hover"], false], "rgba(245,215,110,0.98)", "rgba(201,162,39,0.85)"],
+      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 8, 5.2],
+      "circle-color": "rgba(8,12,22,0.84)",
+      "circle-stroke-color": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        "rgba(245,215,110,1)",
+        "rgba(201,162,39,0.82)",
+      ],
       "circle-stroke-width": 2,
       "circle-opacity": 0.98,
       "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.7, 0.12],
-    },
-  };
-
-  const countDropletLayer: any = {
-    id: L_COUNT_DROPLET,
-    type: "circle",
-    source: SRC_COUNT,
-    paint: {
-      "circle-radius": ["step", ["get", "count"], 12, 50, 13.5, 200, 15, 500, 16.5],
-      "circle-color": "rgba(10,14,24,0.70)",
-      "circle-stroke-color": "rgba(245,215,110,0.98)",
-      "circle-stroke-width": 2.2,
-      "circle-opacity": 0.98,
-      "circle-blur": 0.12,
-    },
-  };
-
-  const countTextLayer: any = {
-    id: L_COUNT_TEXT,
-    type: "symbol",
-    source: SRC_COUNT,
-    layout: {
-      "text-field": ["to-string", ["get", "count"]],
-      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": 12,
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-      "text-anchor": "center",
-    },
-    paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(0,0,0,0.45)",
-      "text-halo-width": 1.2,
     },
   };
 
@@ -803,24 +1174,28 @@ export default function MapView(props: {
           left: 12,
           zIndex: 5,
           display: "flex",
-          gap: 10,
           alignItems: "center",
-          padding: "10px 12px",
-          borderRadius: 16,
-          background: "rgba(10,14,24,0.55)",
+          gap: 12,
+          padding: "12px 14px",
+          borderRadius: 18,
+          background: "rgba(8,12,22,0.62)",
           border: "1px solid rgba(255,255,255,0.12)",
           backdropFilter: "blur(10px)",
           color: "white",
+          boxShadow: "0 12px 28px rgba(0,0,0,0.20)",
         }}
       >
-        <div style={{ fontWeight: 1000, letterSpacing: 0.2 }}>{badgeText}</div>
+        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
+          <div style={{ fontWeight: 1000, letterSpacing: 0.2 }}>{badgeText}</div>
+          <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>{summaryText}</div>
+        </div>
 
-        {level !== "city" && (
+        {level !== "region" && (
           <button
             onClick={goBack}
             style={{
-              marginLeft: 10,
-              padding: "8px 10px",
+              marginLeft: 6,
+              padding: "8px 12px",
               borderRadius: 12,
               background: "rgba(255,255,255,0.06)",
               border: "1px solid rgba(255,255,255,0.12)",
@@ -853,22 +1228,22 @@ export default function MapView(props: {
         <NavigationControl position="bottom-right" />
 
         {level === "city" && (
-          <Source id={SRC_PROV} type="geojson" data={provGeo} promoteId="id">
+          <Source id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
             <Layer id={L_PROV_FILL} type="fill" paint={fillPaint()} />
             <Layer id={L_PROV_OUT} type="line" paint={linePaint()} />
           </Source>
         )}
 
-        {level === "district" && activePoly && (
-          <Source id={SRC_DIST} type="geojson" data={activePoly.geo} promoteId="id">
+        {level === "district" && (
+          <Source id={SRC_DIST} type="geojson" data={activeDistrictGeo} promoteId="id">
             <Layer id={L_DIST_FILL} type="fill" paint={fillPaint()} />
             <Layer id={L_DIST_OUT} type="line" paint={linePaint()} />
           </Source>
         )}
 
-        {(level === "city" || level === "district") && (
+        {(level === "region" || level === "city" || level === "district" || level === "neighborhood") && (
           <Source id={SRC_COUNT} type="geojson" data={countGeo}>
-            <Layer {...countDropletLayer} />
+            <Layer {...countPinLayer} />
             <Layer {...countTextLayer} />
           </Source>
         )}
@@ -879,8 +1254,8 @@ export default function MapView(props: {
             type="geojson"
             data={pointsGeo as any}
             cluster={true}
-            clusterRadius={50}
-            clusterMaxZoom={11}
+            clusterRadius={48}
+            clusterMaxZoom={12}
             promoteId={"id" as any}
           >
             <Layer {...clusterLayer} />
