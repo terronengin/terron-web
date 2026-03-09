@@ -4,6 +4,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
+type PositionProperty = {
+  id: string;
+  title: string;
+  city: string;
+  district: string | null;
+  expected_annual_return: number | null;
+  risk_score: number | null;
+  development_score: number | null;
+  last_30d_change: number | null;
+};
+
 type PositionRow = {
   id: string;
   user_id: string;
@@ -12,16 +23,7 @@ type PositionRow = {
   units: number | null;
   entry_price: number | null;
   created_at: string;
-  property?: {
-    id: string;
-    title: string;
-    city: string;
-    district: string | null;
-    expected_annual_return: number | null;
-    risk_score: number | null;
-    development_score: number | null;
-    last_30d_change: number | null;
-  } | null;
+  property?: PositionProperty | null;
 };
 
 type EnrichedPositionRow = PositionRow & {
@@ -84,7 +86,7 @@ export default function PortfolioPage() {
 
   function simulatePrice(propertyId: string, annualReturnPct: number, basePrice = 100) {
     const t = todayISO();
-    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04; // +/-2%
+    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04;
     const driftDaily = Math.pow(1 + annualReturnPct / 100, 1 / 365) - 1;
 
     const epoch = new Date("2026-01-01T00:00:00");
@@ -171,7 +173,12 @@ export default function PortfolioPage() {
         return;
       }
 
-      setRows((data ?? []) as PositionRow[]);
+      const normalizedRows: PositionRow[] = ((data ?? []) as any[]).map((row) => ({
+        ...row,
+        property: Array.isArray(row.property) ? row.property[0] ?? null : row.property ?? null,
+      }));
+
+      setRows(normalizedRows);
       setLoading(false);
     };
 
@@ -238,7 +245,6 @@ export default function PortfolioPage() {
     const prevRows = rows;
     const prevWallet = walletBalance;
 
-    // optimistic update
     setRows((prev) => prev.filter((x) => x.id !== row.id));
     setWalletBalance((prev) => Math.round(Number(prev ?? 0) + sellAmount));
 

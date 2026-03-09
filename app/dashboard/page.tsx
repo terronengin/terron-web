@@ -17,7 +17,7 @@ type MarketArea = {
   vol_annual: number;
   cycle_strength: number;
   shock_prob_annual: number;
-  shock_size: number; // negatif
+  shock_size: number;
 };
 
 type Property = {
@@ -26,26 +26,26 @@ type Property = {
   city: string;
   district: string | null;
 
-  neighborhood?: string | null; // mahalle
-  zoning_status?: "imarli" | "imarsiz" | "bilinmiyor" | string | null; // imar durumu
-  price_per_m2?: number | null; // ₺/m²
+  neighborhood?: string | null;
+  zoning_status?: "imarli" | "imarsiz" | "bilinmiyor" | string | null;
+  price_per_m2?: number | null;
 
   total_area_m2: number;
 
-  risk_score: number; // 0..100
-  development_score: number; // 0..100
+  risk_score: number;
+  development_score: number;
 
-  expected_annual_return: number; // %
-  last_30d_change: number; // %
+  expected_annual_return: number;
+  last_30d_change: number;
 
   latitude: number | null;
   longitude: number | null;
 
-  quality_score?: number; // 0..1
-  rental_yield_annual?: number; // 0..1
+  quality_score?: number;
+  rental_yield_annual?: number;
   total_shares?: number;
 
-  area?: MarketArea | null; // join ile gelir
+  area?: MarketArea | null;
 };
 
 type RiskBand = "" | "low" | "mid" | "high";
@@ -60,7 +60,6 @@ type PriceBand =
 type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
 
-/** ✅ DEMO: Supabase azsa demo üret (DB’ye yazmaz) */
 const USE_DEMO_SEED_IF_EMPTY = true;
 const DEMO_CITY_COUNT = 50;
 const DEMO_PROPERTY_COUNT = 1500;
@@ -75,15 +74,12 @@ export default function DashboardPage() {
   const [items, setItems] = useState<Property[]>([]);
   const [selected, setSelected] = useState<Property | null>(null);
 
-  // ✅ Drawer panel
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // ✅ Header: search + profile
   const [searchText, setSearchText] = useState("");
   const [displayName, setDisplayName] = useState<string>("admin");
   const [avatarUrl, setAvatarUrl] = useState<string>("");
 
-  // ✅ Filtreler
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
@@ -94,36 +90,28 @@ export default function DashboardPage() {
   const [zoning, setZoning] = useState<ZoningBand>("");
   const [areaBand, setAreaBand] = useState<AreaBand>("");
 
-  // wallet
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [amount, setAmount] = useState<number>(1000);
   const [opening, setOpening] = useState(false);
 
-  // ✅ Sepet
   type CartItem = { key: string; property: Property; amount: number };
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
 
-  // ✅ sim gün
   const [simDayOffset, setSimDayOffset] = useState<number>(0);
   const [ticking, setTicking] = useState(false);
 
-  // ✅ Sağ alt panel: aç-kapa + sürükle
-  const INFO_OPEN_H = 720; // ✅ daha yüksek
+  const INFO_OPEN_H = 720;
   const INFO_COLLAPSED_H = 86;
   const INFO_TRAVEL = INFO_OPEN_H - INFO_COLLAPSED_H;
 
   const [infoOpen, setInfoOpen] = useState(true);
-  const [dragY, setDragY] = useState(0); // 0..INFO_TRAVEL (0 = açık)
+  const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const dragStartRef = useRef<{ y: number; start: number } | null>(null);
 
-  // UI sabitleri
   const HEADER_H = 64;
 
-  // ----------------------------
-  // DEMO: localStorage positions
-  // ----------------------------
   function isDemoPropertyId(id: string) {
     return typeof id === "string" && id.startsWith("demo_");
   }
@@ -187,9 +175,6 @@ export default function DashboardPage() {
     setCart([]);
   }
 
-  // ----------------------------
-  // Auth session
-  // ----------------------------
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user;
@@ -259,34 +244,28 @@ export default function DashboardPage() {
       )
       .order("created_at", { ascending: false });
 
-    // ✅ İl / İlçe / Mahalle
     if (city) q = q.eq("city", city);
     if (district) q = q.eq("district", district);
     if (neighborhood) q = q.eq("neighborhood", neighborhood);
 
-    // ✅ Risk bandı
     if (riskBand) {
       if (riskBand === "low") q = q.lte("risk_score", 30);
       if (riskBand === "mid") q = q.gt("risk_score", 30).lte("risk_score", 70);
       if (riskBand === "high") q = q.gt("risk_score", 70);
     }
 
-    // ✅ Trend bandı
     if (trendBand === "rising") q = q.gte("last_30d_change", 10);
     if (trendBand === "flat") q = q.gte("last_30d_change", -3).lte("last_30d_change", 10);
     if (trendBand === "falling") q = q.lte("last_30d_change", -3);
 
-    // ✅ m² fiyat bandı
     if (priceBand === "0-10000") q = q.gte("price_per_m2", 0).lte("price_per_m2", 10000);
     if (priceBand === "10001-25000") q = q.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
     if (priceBand === "25001-50000") q = q.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
     if (priceBand === "50001-100000") q = q.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
     if (priceBand === "100001+") q = q.gte("price_per_m2", 100001);
 
-    // ✅ imar durumu
     if (zoning) q = q.eq("zoning_status", zoning);
 
-    // ✅ toplam m² bandı
     if (areaBand === "0-500") q = q.gte("total_area_m2", 0).lte("total_area_m2", 500);
     if (areaBand === "501-2000") q = q.gte("total_area_m2", 501).lte("total_area_m2", 2000);
     if (areaBand === "2001-10000") q = q.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
@@ -298,9 +277,8 @@ export default function DashboardPage() {
       return;
     }
 
-    const list = (data ?? []) as any as Property[];
+    const list = (data ?? []) as Property[];
 
-    // ✅ DB azsa demo seed üret
     if (USE_DEMO_SEED_IF_EMPTY && list.length < 50) {
       const seeded = generateDemoProperties({
         countCities: DEMO_CITY_COUNT,
@@ -322,7 +300,6 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
 
-  // ✅ Arama: il/ilçe/mahalle/title/id
   const filteredItems = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     if (!q) return items;
@@ -356,18 +333,11 @@ export default function DashboardPage() {
     return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, "tr"));
   }, [filteredItems, city, district]);
 
-  const cityCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const p of filteredItems) m.set(p.city, (m.get(p.city) ?? 0) + 1);
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  }, [filteredItems]);
-
   async function logout() {
     await supabase.auth.signOut();
     router.replace("/login");
   }
 
-  // Wallet oku/oluştur
   async function ensureAndLoadWallet() {
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
@@ -403,7 +373,6 @@ export default function DashboardPage() {
     setWalletBalance(Number(ins.balance));
   }
 
-  // ✅ Profile sim_day_offset oku / yoksa oluştur
   async function ensureAndLoadSimDay() {
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
@@ -430,7 +399,6 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
-  // ✅ sim gün güncelle
   async function setSimDay(next: number) {
     const { data: userRes } = await supabase.auth.getUser();
     const user = userRes?.user;
@@ -451,9 +419,6 @@ export default function DashboardPage() {
     setTicking(false);
   }
 
-  // ----------------------------
-  // Eski (endeks) sim fiyatı: fallback
-  // ----------------------------
   function dayKeyWithOffset(offset: number) {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -476,7 +441,7 @@ export default function DashboardPage() {
 
   function simulatePriceIndex(propertyId: string, annualReturnPct: number, basePrice = 100) {
     const t = dayKeyWithOffset(simDayOffset);
-    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04; // +/-2%
+    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04;
     const driftDaily = Math.pow(1 + annualReturnPct / 100, 1 / 365) - 1;
 
     const epoch = new Date("2026-01-01T00:00:00");
@@ -489,9 +454,6 @@ export default function DashboardPage() {
     return Math.max(1, price);
   }
 
-  // ----------------------------
-  // Yeni Emlak Sim (TRY)
-  // ----------------------------
   function getRealEstateSim(p: Property) {
     if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
 
@@ -524,11 +486,7 @@ export default function DashboardPage() {
       },
     };
 
-    const out = simulatePropertyPriceTRY(propertyForSim as any, {
-      simDayOffset,
-      seedScope,
-      nominal: true,
-    });
+    const out = simulatePropertyPriceTRY(propertyForSim as any, simDayOffset, seedScope);
 
     const totalShares = Number(p.total_shares ?? 100000);
     const sharePrice = out.price / Math.max(1, totalShares);
@@ -536,7 +494,6 @@ export default function DashboardPage() {
     return { ...out, sharePrice, totalShares };
   }
 
-  // ✅ Tekli satın al / pozisyon aç
   async function handleOpenPosition() {
     try {
       if (!selected) {
@@ -550,7 +507,6 @@ export default function DashboardPage() {
         return;
       }
 
-      // ✅ DEMO: DB’ye yazma (uuid hatası yok)
       if (isDemoPropertyId(selected.id)) {
         const currentBalance = Number(walletBalance ?? 0);
         if (currentBalance < amt) {
@@ -598,7 +554,6 @@ export default function DashboardPage() {
         return;
       }
 
-      // ✅ GERÇEK: DB’ye yaz
       setOpening(true);
 
       const { data: userRes } = await supabase.auth.getUser();
@@ -675,7 +630,7 @@ export default function DashboardPage() {
 
       const payload = {
         user_id: user.id,
-        property_id: selected.id, // uuid olmalı
+        property_id: selected.id,
         amount: amt,
         entry_price: entryPrice,
         units,
@@ -704,7 +659,6 @@ export default function DashboardPage() {
     }
   }
 
-  // ✅ Toplu al (Sepet)
   async function handleCheckoutCart() {
     try {
       if (cart.length === 0) {
@@ -725,7 +679,6 @@ export default function DashboardPage() {
       const demoItems = cart.filter((x) => isDemoPropertyId(x.property.id));
       const realItems = cart.filter((x) => !isDemoPropertyId(x.property.id));
 
-      // 1) DEMO: localStorage’a yaz
       if (demoItems.length > 0) {
         const list = loadDemoPositions();
 
@@ -766,7 +719,6 @@ export default function DashboardPage() {
         saveDemoPositions(list);
       }
 
-      // 2) GERÇEK: Supabase’e yaz
       if (realItems.length > 0) {
         const { data: userRes } = await supabase.auth.getUser();
         const user = userRes?.user;
@@ -799,7 +751,6 @@ export default function DashboardPage() {
           return;
         }
 
-        // wallet düş (DB)
         const newBalanceDb = balanceDb - realTotal;
         const { error: upErr } = await supabase
           .from("wallets")
@@ -812,7 +763,6 @@ export default function DashboardPage() {
           return;
         }
 
-        // positions insert
         const insertedIds: string[] = [];
 
         for (const it of realItems) {
@@ -833,7 +783,7 @@ export default function DashboardPage() {
 
           const payload = {
             user_id: user.id,
-            property_id: p.id, // uuid olmalı
+            property_id: p.id,
             amount: amt,
             entry_price: entryPrice,
             units,
@@ -846,13 +796,11 @@ export default function DashboardPage() {
             .single();
 
           if (posErr) {
-            // rollback wallet
             await supabase
               .from("wallets")
               .update({ balance: balanceDb, updated_at: new Date().toISOString() })
               .eq("user_id", user.id);
 
-            // rollback inserted positions (varsa)
             if (insertedIds.length > 0) {
               await supabase.from("positions").delete().in("id", insertedIds);
             }
@@ -866,7 +814,6 @@ export default function DashboardPage() {
         }
       }
 
-      // ✅ UI: tek seferde düş
       setWalletBalance(Math.max(0, currentBalance - total));
       clearCart();
 
@@ -879,7 +826,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Sağ alt panel sürükleme
   function openInfo() {
     setInfoOpen(true);
     setDragY(0);
@@ -939,7 +885,6 @@ export default function DashboardPage() {
 
   return (
     <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
-      {/* ✅ Overlay */}
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -955,7 +900,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* ✅ Drawer Panel */}
       <div
         style={{
           position: "fixed",
@@ -980,7 +924,6 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* İl */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>İl</div>
           <select
@@ -1001,7 +944,6 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* İlçe */}
         <div style={{ marginTop: 12 }}>
           <div style={labelStyle}>İlçe</div>
           <select
@@ -1022,7 +964,6 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* Mahalle */}
         <div style={{ marginTop: 12 }}>
           <div style={labelStyle}>Mahalle</div>
           <select
@@ -1040,7 +981,6 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* Risk */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Risk</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -1056,7 +996,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Trend */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Trend (Son 30 gün)</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -1072,7 +1011,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* m² fiyat */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>m² Fiyat</div>
           <select value={priceBand} onChange={(e) => setPriceBand(e.target.value as PriceBand)} style={selectStyle}>
@@ -1085,7 +1023,6 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* İmar */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>İmar Durumu</div>
           <select value={zoning} onChange={(e) => setZoning(e.target.value as ZoningBand)} style={selectStyle}>
@@ -1096,7 +1033,6 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* Toplam m² */}
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Toplam m²</div>
           <select value={areaBand} onChange={(e) => setAreaBand(e.target.value as AreaBand)} style={selectStyle}>
@@ -1162,9 +1098,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Sağ alan */}
       <section style={{ position: "absolute", inset: 0 }}>
-        {/* Header */}
         <div
           style={{
             height: HEADER_H,
@@ -1189,7 +1123,6 @@ export default function DashboardPage() {
               margin: "0 auto",
             }}
           >
-            {/* Logo */}
             <div
               style={{
                 display: "flex",
@@ -1230,7 +1163,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Search */}
             <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
               <div style={{ width: "min(760px, 100%)", position: "relative" }}>
                 <span
@@ -1264,7 +1196,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <button onClick={() => setPanelOpen(true)} style={btnGhost}>
                 Filtreler
@@ -1281,7 +1212,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Profil */}
               <div
                 style={{
                   display: "flex",
@@ -1308,7 +1238,6 @@ export default function DashboardPage() {
                   }}
                 >
                   {avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
                     <span style={{ opacity: 0.9 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
@@ -1331,7 +1260,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Sol çekme kolu */}
         {!panelOpen && (
           <button
             onClick={() => setPanelOpen(true)}
@@ -1360,7 +1288,6 @@ export default function DashboardPage() {
           </button>
         )}
 
-        {/* Harita */}
         <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
           <MapView
             items={filteredItems
@@ -1370,7 +1297,7 @@ export default function DashboardPage() {
                 title: p.title,
                 city: p.city,
                 district: p.district ?? null,
-                neighborhood: (p as any).neighborhood ?? null,
+                neighborhood: p.neighborhood ?? null,
                 latitude: Number(p.latitude),
                 longitude: Number(p.longitude),
               }))}
@@ -1392,41 +1319,13 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Sol alt: iller & arsa adedi */}
-        <div
-          style={{
-            position: "absolute",
-            left: 16,
-            bottom: 16,
-            width: 360,
-            borderRadius: 18,
-            background: "rgba(10,14,24,0.55)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            backdropFilter: "blur(12px)",
-            zIndex: 12,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: 12,
-              borderBottom: "1px solid rgba(255,255,255,0.10)",
-              fontWeight: 1000,
-              letterSpacing: 0.3,
-            }}
-          >
-           
-          </div>
-        </div>
-
-        {/* Sağ alt seçili kart */}
         {selected && (
           <div
             style={{
               position: "absolute",
               right: 16,
               bottom: 16,
-              width: 320, // ✅ daha dar
+              width: 320,
               height: INFO_OPEN_H,
               transform: `translateY(${dragY}px)`,
               transition: dragging ? "none" : "transform 220ms ease",
@@ -1439,7 +1338,6 @@ export default function DashboardPage() {
               boxShadow: "0 18px 55px rgba(0,0,0,0.35)",
             }}
           >
-            {/* Handle */}
             <div
               onClick={() => setInfoOpen((v) => !v)}
               onPointerDown={onHandlePointerDown}
@@ -1465,7 +1363,6 @@ export default function DashboardPage() {
               <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900 }}>{infoOpen ? "Kapat ▾" : "Aç ▴"}</div>
             </div>
 
-            {/* Content */}
             <div
               style={{
                 height: INFO_OPEN_H - 48,
@@ -1476,7 +1373,6 @@ export default function DashboardPage() {
                 if (!infoOpen) setInfoOpen(true);
               }}
             >
-              {/* Üst başlık */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                 <div style={{ lineHeight: 1.15 }}>
                   <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.3 }}>
@@ -1501,7 +1397,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Skor grid */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
                 <div style={metricBox}>
                   <div style={metricLabel}>Gelişim</div>
@@ -1538,7 +1433,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* ✅ SATIN AL / SEPET */}
               <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
                 <input
                   type="number"
@@ -1592,7 +1486,6 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                {/* Sepet özeti */}
                 <div
                   style={{
                     padding: 12,
@@ -1698,7 +1591,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Gün kontrol */}
               <div
                 style={{
                   marginTop: 14,
@@ -1766,8 +1658,6 @@ export default function DashboardPage() {
   );
 }
 
-/* -------------------- Utils -------------------- */
-
 function clamp01(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(1, x));
@@ -1792,8 +1682,6 @@ function formatNumber(n: number) {
     return String(n);
   }
 }
-
-/* -------------------- Styles -------------------- */
 
 const labelStyle: React.CSSProperties = { fontSize: 12, opacity: 0.72, marginBottom: 6 };
 
@@ -1872,8 +1760,6 @@ const metricBox: React.CSSProperties = {
 
 const metricLabel: React.CSSProperties = { fontSize: 12, opacity: 0.7 };
 const metricValue: React.CSSProperties = { fontSize: 18, fontWeight: 1000, marginTop: 4 };
-
-/* -------------------- DEMO SEED (50 il / 1500 arsa) -------------------- */
 
 function generateDemoProperties(opts: { countCities: number; countProps: number; seed: number }): Property[] {
   const rng = mulberry32(opts.seed);
@@ -1982,7 +1868,7 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     };
   }
 
-  const props: Property[] = [];
+  const propsOut: Property[] = [];
 
   for (let i = 0; i < opts.countProps; i++) {
     const city = chosen[Math.floor(rng() * chosen.length)];
@@ -2016,7 +1902,7 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     const lat = base.lat + (rng() - 0.5) * spread;
     const lng = base.lng + (rng() - 0.5) * spread * 1.25;
 
-    props.push({
+    propsOut.push({
       id: `demo_${i}_${slug(city)}_${ada}_${parsel}`,
       title,
       city,
@@ -2038,8 +1924,8 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     });
   }
 
-  props.sort((a, b) => b.development_score - a.development_score - (b.risk_score - a.risk_score));
-  return props;
+  propsOut.sort((a, b) => b.development_score - a.development_score - (b.risk_score - a.risk_score));
+  return propsOut;
 }
 
 function demoDistrict(city: string, rng: () => number) {
