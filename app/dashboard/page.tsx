@@ -95,6 +95,7 @@ export default function DashboardPage() {
   const [selected, setSelected] = useState<Property | null>(null);
 
   const [panelOpen, setPanelOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const [displayName, setDisplayName] = useState<string>("admin");
@@ -122,6 +123,13 @@ export default function DashboardPage() {
   const [checkingOut, setCheckingOut] = useState(false);
 
   const HEADER_H = 64;
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 980);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   function isDemoPropertyId(id: string) {
     return typeof id === "string" && id.startsWith("demo_");
@@ -377,7 +385,6 @@ export default function DashboardPage() {
         });
 
         setItems(seeded);
-        setSelected((prev) => prev ?? seeded[0] ?? null);
         return;
       } catch (e) {
         console.error("[DEMO] seed error:", e);
@@ -385,13 +392,16 @@ export default function DashboardPage() {
     }
 
     setItems(list);
-    setSelected((prev) => prev ?? list[0] ?? null);
   }
 
   useEffect(() => {
     if (!email) return;
     load();
   }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
+
+  useEffect(() => {
+    setSelected(null);
+  }, [city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand, searchText]);
 
   const filteredItems = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -646,7 +656,9 @@ export default function DashboardPage() {
         alert("Demo m² yatırımı açıldı ✅");
         setOpening(false);
         return;
-      }      setOpening(true);
+      }
+
+      setOpening(true);
 
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes?.user;
@@ -1068,6 +1080,7 @@ export default function DashboardPage() {
           left: 0,
           height: `calc(100vh - ${HEADER_H}px)`,
           width: 380,
+          maxWidth: "92vw",
           zIndex: 50,
           transform: panelOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 220ms ease",
@@ -1248,6 +1261,7 @@ export default function DashboardPage() {
               setPriceBand("");
               setZoning("");
               setAreaBand("");
+              setSelected(null);
             }}
             style={{ ...btnGhost, flex: 1 }}
           >
@@ -1304,7 +1318,9 @@ export default function DashboardPage() {
             );
           })}
         </div>
-      </div>      <section style={{ position: "absolute", inset: 0 }}>
+      </div>
+
+      <section style={{ position: "absolute", inset: 0 }}>
         <div
           style={{
             height: HEADER_H,
@@ -1332,136 +1348,131 @@ export default function DashboardPage() {
             <div
               style={{
                 display: "flex",
-                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 lineHeight: 1,
-                minWidth: 170,
+                minWidth: isMobile ? 120 : 150,
               }}
             >
               <div
                 style={{
-                  padding: "6px 20px",
+                  padding: isMobile ? "6px 14px" : "6px 20px",
                   borderRadius: 12,
                   background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
                   boxShadow: "0 0 20px rgba(212,175,55,0.35)",
                   color: "#111",
                   fontWeight: 1000,
                   letterSpacing: 2,
-                  fontSize: 18,
+                  fontSize: isMobile ? 15 : 18,
                   textAlign: "center",
-                  minWidth: 150,
+                  minWidth: isMobile ? 112 : 150,
                 }}
               >
                 TERRON
               </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 12,
-                  letterSpacing: 3,
-                  fontWeight: 900,
-                  color: "#E5C36A",
-                  textAlign: "center",
-                }}
-              >
-                CIVIL
-              </div>
             </div>
 
-            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-              <div style={{ width: "min(760px, 100%)", position: "relative" }}>
-                <span
-                  style={{
-                    position: "absolute",
-                    left: 12,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    opacity: 0.75,
-                    fontSize: 14,
-                  }}
-                >
-                  🔎
-                </span>
-                <input
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Ara... (adres, il, ilçe, parsel, ada)"
-                  style={{
-                    width: "100%",
-                    height: 40,
-                    padding: "0 12px 0 36px",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "white",
-                    outline: "none",
-                    fontSize: 13,
-                  }}
-                />
+            {!isMobile && (
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                <div style={{ width: "min(760px, 100%)", position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      opacity: 0.75,
+                      fontSize: 14,
+                    }}
+                  >
+                    🔎
+                  </span>
+                  <input
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    placeholder="Ara... (adres, il, ilçe, parsel, ada)"
+                    style={{
+                      width: "100%",
+                      height: 40,
+                      padding: "0 12px 0 36px",
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      color: "white",
+                      outline: "none",
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
               <button onClick={() => setPanelOpen(true)} style={btnGhost}>
                 Filtreler
               </button>
 
-              <button onClick={() => router.push("/portfolio")} style={btnGhost}>
-                Portföy
-              </button>
+              {!isMobile && (
+                <button onClick={() => router.push("/portfolio")} style={btnGhost}>
+                  Portföy
+                </button>
+              )}
 
-              <div style={badgeBox}>
-                <div style={{ fontSize: 11, opacity: 0.75 }}>Bakiye</div>
-                <div style={{ fontSize: 13, fontWeight: 900 }}>
-                  {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 10px",
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-                title={email ?? ""}
-              >
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    display: "grid",
-                    placeItems: "center",
-                    fontWeight: 1000,
-                  }}
-                >
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <span style={{ opacity: 0.9 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
-                  )}
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05, minWidth: 110 }}>
-                  <div style={{ fontSize: 13, fontWeight: 1000 }}>{displayName}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>
-                    {(email ?? "").slice(0, 18)}
-                    {(email ?? "").length > 18 ? "…" : ""}
+              {!isMobile && (
+                <div style={badgeBox}>
+                  <div style={{ fontSize: 11, opacity: 0.75 }}>Bakiye</div>
+                  <div style={{ fontSize: 13, fontWeight: 900 }}>
+                    {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}
                   </div>
                 </div>
+              )}
 
-                <button onClick={logout} style={{ ...btnGhost, padding: "8px 10px" }}>
-                  Çıkış
-                </button>
-              </div>
+              {!isMobile && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 10px",
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                  title={email ?? ""}
+                >
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: "rgba(255,255,255,0.08)",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      display: "grid",
+                      placeItems: "center",
+                      fontWeight: 1000,
+                    }}
+                  >
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ opacity: 0.9 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05, minWidth: 110 }}>
+                    <div style={{ fontSize: 13, fontWeight: 1000 }}>{displayName}</div>
+                    <div style={{ fontSize: 11, opacity: 0.7 }}>
+                      {(email ?? "").slice(0, 18)}
+                      {(email ?? "").length > 18 ? "…" : ""}
+                    </div>
+                  </div>
+
+                  <button onClick={logout} style={{ ...btnGhost, padding: "8px 10px" }}>
+                    Çıkış
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1511,456 +1522,485 @@ export default function DashboardPage() {
               setCity(c);
               setDistrict("");
               setNeighborhood("");
+              setSelected(null);
             }}
             onSetDistrict={(d) => {
               setDistrict(d);
               setNeighborhood("");
+              setSelected(null);
             }}
             onSetNeighborhood={(n) => {
               setNeighborhood(n);
+              setSelected(null);
             }}
             onSelectPropertyId={(id) => {
               const found = items.find((x) => x.id === id) || filteredItems.find((x) => x.id === id) || null;
-              if (found) setSelected(found);
+              setSelected(found);
             }}
             onOpenInfo={() => undefined}
           />
         </div>
 
         {selected && (
-          <div
-            style={{
-              position: "absolute",
-              right: 16,
-              top: HEADER_H + 12,
-              width: 370,
-              maxHeight: "calc(100vh - 88px)",
-              borderRadius: 18,
-              background: "rgba(10,14,24,0.70)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              backdropFilter: "blur(12px)",
-              zIndex: 12,
-              overflow: "hidden",
-              boxShadow: "0 18px 55px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div
-              style={{
-                height: 46,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 12px",
-                borderBottom: "1px solid rgba(255,255,255,0.10)",
-              }}
-            >
-              <div style={{ fontSize: 12, opacity: 0.84, fontWeight: 900, letterSpacing: 0.5 }}>
-                m² Yatırım Paneli
-              </div>
-              <button onClick={() => setSelected(null)} style={smallGhostBtn} title="Kapat">
-                ✕
-              </button>
-            </div>
+          <>
+            {isMobile && (
+              <div
+                onClick={() => setSelected(null)}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  top: HEADER_H,
+                  background: "rgba(0,0,0,0.28)",
+                  zIndex: 11,
+                }}
+              />
+            )}
 
             <div
               style={{
-                padding: 12,
-                overflowY: "auto",
-                maxHeight: "calc(100vh - 134px)",
+                position: "absolute",
+                zIndex: 12,
+                overflow: "hidden",
+                boxShadow: "0 18px 55px rgba(0,0,0,0.35)",
+                background: "rgba(10,14,24,0.78)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                backdropFilter: "blur(14px)",
+                ...(isMobile
+                  ? {
+                      left: 10,
+                      right: 10,
+                      bottom: 10,
+                      top: "auto",
+                      maxHeight: "62vh",
+                      borderRadius: 22,
+                    }
+                  : {
+                      right: 16,
+                      top: HEADER_H + 12,
+                      width: 340,
+                      maxHeight: "calc(100vh - 88px)",
+                      borderRadius: 18,
+                    }),
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ lineHeight: 1.15, minWidth: 0 }}>
-                  <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.3 }}>
-                    {selected.neighborhood ? selected.neighborhood : selected.district ? selected.district : selected.city}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                    {selected.city}
-                    {selected.district && ` / ${selected.district}`}
-                    {selected.neighborhood && ` / ${selected.neighborhood}`}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-                    Toplam Alan: <b>{formatNumber(selected.total_area_m2)}</b> m²
-                  </div>
+              <div
+                style={{
+                  height: 46,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 12px",
+                  borderBottom: "1px solid rgba(255,255,255,0.10)",
+                }}
+              >
+                <div style={{ fontSize: 12, opacity: 0.84, fontWeight: 900, letterSpacing: 0.5 }}>
+                  m² Yatırım Paneli
                 </div>
-
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Arsa Değeri</div>
-                  <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
-                    {selectedSim
-                      ? `₺${formatTRY(selectedSim.price)}`
-                      : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
-                    {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
-                <div style={metricBox}>
-                  <div style={metricLabel}>Gelişim</div>
-                  <div style={metricValue}>%{formatInt(selected.development_score)}</div>
-                </div>
-
-                <div style={metricBox}>
-                  <div style={metricLabel}>Risk</div>
-                  <div style={metricValue}>%{formatInt(selected.risk_score)}</div>
-                </div>
-
-                <div style={metricBox}>
-                  <div style={metricLabel}>Son 30 Gün</div>
-                  <div style={metricValue}>{signedPct(selected.last_30d_change)}%</div>
-                </div>
-
-                <div style={metricBox}>
-                  <div style={metricLabel}>Yıllık Beklenti</div>
-                  <div style={metricValue}>%{Number(selected.expected_annual_return ?? 0).toFixed(1)}</div>
-                </div>
-
-                <div style={metricBox}>
-                  <div style={metricLabel}>₺/m² Fiyat</div>
-                  <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
-                </div>
-
-                <div style={metricBox}>
-                  <div style={metricLabel}>Min. Alış Tutarı</div>
-                  <div style={metricValue}>₺{formatTRY(selectedMinBuyCost)}</div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
-                <button onClick={() => setActiveInsightTab("arsa")} style={tabBtn(activeInsightTab === "arsa")}>
-                  Arsa Bilgisi
-                </button>
-                <button onClick={() => setActiveInsightTab("gelisim")} style={tabBtn(activeInsightTab === "gelisim")}>
-                  Gelişim
-                </button>
-                <button onClick={() => setActiveInsightTab("risk")} style={tabBtn(activeInsightTab === "risk")}>
-                  Risk
+                <button onClick={() => setSelected(null)} style={smallGhostBtn} title="Kapat">
+                  ✕
                 </button>
               </div>
 
               <div
                 style={{
-                  marginTop: 10,
                   padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.10)",
+                  overflowY: "auto",
+                  maxHeight: isMobile ? "calc(62vh - 46px)" : "calc(100vh - 134px)",
                 }}
               >
-                {activeInsightTab === "arsa" && (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
-                      <b>Ada / Parsel</b>: Demo aşamada otomatik üretim. Gerçek sistemde satıcı tarafından girilecek.
-                      <br />
-                      <b>Konum</b>: {selected.city}
-                      {selected.district ? ` / ${selected.district}` : ""}
-                      {selected.neighborhood ? ` / ${selected.neighborhood}` : ""}
-                      <br />
-                      <b>İmar Durumu</b>: {selected.zoning_status || "Bilinmiyor"}
-                      <br />
-                      <b>Toplam Alan</b>: {formatNumber(selected.total_area_m2)} m²
-                      <br />
-                      <b>Kalan Alan</b>: {formatNumber(Math.round(selectedAvailableM2))} m²
-                      <br />
-                      <b>Satılan Alan</b>: {formatNumber(Math.round(selectedSoldM2))} m²
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ lineHeight: 1.15, minWidth: 0 }}>
+                    <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.3 }}>
+                      {selected.neighborhood ? selected.neighborhood : selected.district ? selected.district : selected.city}
                     </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>Etrafında</div>
-                        <div style={miniInfoText}>Yol, gelişim aksı, yerleşim genişleme alanı</div>
-                      </div>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>Yatırım Notu</div>
-                        <div style={miniInfoText}>Parçalı alıma uygun, m² bazlı erişilebilir</div>
-                      </div>
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                      {selected.city}
+                      {selected.district && ` / ${selected.district}`}
+                      {selected.neighborhood && ` / ${selected.neighborhood}`}
                     </div>
-                  </div>
-                )}
-
-                {activeInsightTab === "gelisim" && (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                      Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme,
-                      ulaşım etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
-                    </div>
-
-                    <MiniBars title="Son 5 Yıl Gelişim Skoru" values={developmentHistory} suffix="%" />
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>Neden gelişiyor?</div>
-                        <div style={miniInfoText}>Yakın yerleşim yoğunluğu, altyapı aksı, yatırım talebi</div>
-                      </div>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>İmar açılımı etkisi</div>
-                        <div style={miniInfoText}>Bölgesel dönüşüm ve genişleme potansiyeli</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {activeInsightTab === "risk" && (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                      Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği,
-                      çevresel dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
-                    </div>
-
-                    <MiniBars title="Son 5 Yıl Risk Skoru" values={riskHistory} suffix="%" />
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>Likidite</div>
-                        <div style={miniInfoText}>Parçalı satış kolaylığı orta seviyede</div>
-                      </div>
-                      <div style={miniInfoCard}>
-                        <div style={miniInfoLabel}>Belirsizlik</div>
-                        <div style={miniInfoText}>İmar ve piyasa döngüsü etkisi izlenmeli</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                  <div style={{ fontSize: 11, opacity: 0.75 }}>Satış Doluluk Oranı</div>
-                  <div style={{ fontSize: 12, fontWeight: 1000 }}>{soldPct.toFixed(1)}%</div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                    height: 10,
-                    borderRadius: 999,
-                    overflow: "hidden",
-                    background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.max(0, Math.min(100, soldPct))}%`,
-                      height: "100%",
-                      background: "linear-gradient(90deg, rgba(201,162,39,0.85), rgba(245,215,110,0.95))",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
-                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım:{" "}
-                  {formatNumber(selectedMinBuyM2)} m²
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                }}
-              >
-                <div style={{ fontSize: 11, opacity: 0.75 }}>Alım Paneli</div>
-
-                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div>
-                      <div style={tinyLabel}>m² gir</div>
-                      <input
-                        type="number"
-                        value={buyM2}
-                        min={0}
-                        step={0.01}
-                        onChange={(e) => syncBuyFromM2(Number(e.target.value), selectedPricePerM2)}
-                        style={inputStyle}
-                        placeholder="Kaç m²?"
-                      />
-                    </div>
-
-                    <div>
-                      <div style={tinyLabel}>TL gir</div>
-                      <input
-                        type="number"
-                        value={buyBudget}
-                        min={0}
-                        step={1}
-                        onChange={(e) => syncBuyFromBudget(Number(e.target.value), selectedPricePerM2)}
-                        style={inputStyle}
-                        placeholder="Kaç TL?"
-                      />
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                      Toplam Alan: <b>{formatNumber(selected.total_area_m2)}</b> m²
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      padding: 12,
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.04)",
-                      border: "1px solid rgba(255,255,255,0.10)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
-                        <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
-                          {formatNumber(Math.round(selectedTotalCost))} Çip
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 12, opacity: 0.78 }}>Alınacak m²</div>
-                        <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
-                          {formatDecimal(buyM2)} m²
-                        </div>
-                      </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, opacity: 0.7 }}>Arsa Değeri</div>
+                    <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
+                      {selectedSim
+                        ? `₺${formatTRY(selectedSim.price)}`
+                        : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
                     </div>
-
-                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 8 }}>
-                      {formatDecimal(buyM2)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
+                    <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
+                      {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
                     </div>
-                    <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                      Tek sefer maksimum:{" "}
-                      {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <button style={neutralActionBtn} onClick={addSelectedToCart}>
-                      Sepete Ekle
-                    </button>
-
-                    <button
-                      style={{
-                        ...neutralActionBtn,
-                        opacity: opening ? 0.7 : 1,
-                        cursor: opening ? "not-allowed" : "pointer",
-                      }}
-                      disabled={opening}
-                      onClick={handleOpenPosition}
-                    >
-                      {opening ? "Alınıyor..." : "Tekli Satın Al"}
-                    </button>
                   </div>
                 </div>
-              </div>
 
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div style={{ lineHeight: 1.1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 1000 }}>Sepet</div>
-                    <div style={{ fontSize: 13, opacity: 0.78, marginTop: 4 }}>
-                      {cart.length} ürün • Genel Toplam:{" "}
-                      <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
-                    </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+                  <div style={metricBox}>
+                    <div style={metricLabel}>Gelişim</div>
+                    <div style={metricValue}>%{formatInt(selected.development_score)}</div>
                   </div>
 
-                  <button onClick={clearCart} style={smallGhostBtn} title="Sepeti temizle">
-                    Temizle
+                  <div style={metricBox}>
+                    <div style={metricLabel}>Risk</div>
+                    <div style={metricValue}>%{formatInt(selected.risk_score)}</div>
+                  </div>
+
+                  <div style={metricBox}>
+                    <div style={metricLabel}>Son 30 Gün</div>
+                    <div style={metricValue}>{signedPct(selected.last_30d_change)}%</div>
+                  </div>
+
+                  <div style={metricBox}>
+                    <div style={metricLabel}>Yıllık Beklenti</div>
+                    <div style={metricValue}>%{Number(selected.expected_annual_return ?? 0).toFixed(1)}</div>
+                  </div>
+
+                  <div style={metricBox}>
+                    <div style={metricLabel}>₺/m² Fiyat</div>
+                    <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
+                  </div>
+
+                  <div style={metricBox}>
+                    <div style={metricLabel}>Min. Alış Tutarı</div>
+                    <div style={metricValue}>₺{formatTRY(selectedMinBuyCost)}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+                  <button onClick={() => setActiveInsightTab("arsa")} style={tabBtn(activeInsightTab === "arsa")}>
+                    Arsa Bilgisi
+                  </button>
+                  <button onClick={() => setActiveInsightTab("gelisim")} style={tabBtn(activeInsightTab === "gelisim")}>
+                    Gelişim
+                  </button>
+                  <button onClick={() => setActiveInsightTab("risk")} style={tabBtn(activeInsightTab === "risk")}>
+                    Risk
                   </button>
                 </div>
 
                 <div
                   style={{
                     marginTop: 10,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    maxHeight: 180,
-                    overflow: "auto",
+                    padding: 12,
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
-                  {cart.length === 0 ? (
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      Sepet boş. “Sepete Ekle” ile birden çok arsa biriktir.
-                    </div>
-                  ) : (
-                    cart.slice(0, 30).map((it) => (
-                      <div
-                        key={it.key}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto auto",
-                          gap: 10,
-                          alignItems: "center",
-                          padding: "10px 10px",
-                          borderRadius: 14,
-                          background: "rgba(255,255,255,0.04)",
-                          border: "1px solid rgba(255,255,255,0.10)",
-                        }}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontWeight: 900,
-                              fontSize: 12,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {it.property.city}
-                            {it.property.district ? ` / ${it.property.district}` : ""}
-                            {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
-                          </div>
-                          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                            {formatDecimal(it.m2)} m²
-                          </div>
-                        </div>
-
-                        <div style={{ fontWeight: 1000, fontSize: 12, whiteSpace: "nowrap" }}>
-                          {formatNumber(Math.round(it.totalPaid))} Çip
-                        </div>
-
-                        <button onClick={() => removeFromCart(it.key)} style={smallGhostBtn} title="Sepetten çıkar">
-                          ✕
-                        </button>
+                  {activeInsightTab === "arsa" && (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
+                        <b>Ada / Parsel</b>: Demo aşamada otomatik üretim. Gerçek sistemde satıcı tarafından girilecek.
+                        <br />
+                        <b>Konum</b>: {selected.city}
+                        {selected.district ? ` / ${selected.district}` : ""}
+                        {selected.neighborhood ? ` / ${selected.neighborhood}` : ""}
+                        <br />
+                        <b>İmar Durumu</b>: {selected.zoning_status || "Bilinmiyor"}
+                        <br />
+                        <b>Toplam Alan</b>: {formatNumber(selected.total_area_m2)} m²
+                        <br />
+                        <b>Kalan Alan</b>: {formatNumber(Math.round(selectedAvailableM2))} m²
+                        <br />
+                        <b>Satılan Alan</b>: {formatNumber(Math.round(selectedSoldM2))} m²
                       </div>
-                    ))
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>Etrafında</div>
+                          <div style={miniInfoText}>Yol, gelişim aksı, yerleşim genişleme alanı</div>
+                        </div>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>Yatırım Notu</div>
+                          <div style={miniInfoText}>Parçalı alıma uygun, m² bazlı erişilebilir</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeInsightTab === "gelisim" && (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
+                        Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme,
+                        ulaşım etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
+                      </div>
+
+                      <MiniBars title="Son 5 Yıl Gelişim Skoru" values={developmentHistory} suffix="%" />
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>Neden gelişiyor?</div>
+                          <div style={miniInfoText}>Yakın yerleşim yoğunluğu, altyapı aksı, yatırım talebi</div>
+                        </div>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>İmar açılımı etkisi</div>
+                          <div style={miniInfoText}>Bölgesel dönüşüm ve genişleme potansiyeli</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeInsightTab === "risk" && (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
+                        Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği,
+                        çevresel dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
+                      </div>
+
+                      <MiniBars title="Son 5 Yıl Risk Skoru" values={riskHistory} suffix="%" />
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>Likidite</div>
+                          <div style={miniInfoText}>Parçalı satış kolaylığı orta seviyede</div>
+                        </div>
+                        <div style={miniInfoCard}>
+                          <div style={miniInfoLabel}>Belirsizlik</div>
+                          <div style={miniInfoText}>İmar ve piyasa döngüsü etkisi izlenmeli</div>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
 
-                <button
-                  onClick={handleCheckoutCart}
-                  disabled={checkingOut || cart.length === 0}
+                <div
                   style={{
-                    marginTop: 10,
-                    width: "100%",
+                    marginTop: 12,
                     padding: 12,
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.16)",
-                    color: "white",
-                    fontWeight: 1100,
-                    cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
-                    opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
-                  {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
-                </button>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, opacity: 0.75 }}>Satış Doluluk Oranı</div>
+                    <div style={{ fontSize: 12, fontWeight: 1000 }}>{soldPct.toFixed(1)}%</div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      height: 10,
+                      borderRadius: 999,
+                      overflow: "hidden",
+                      background: "rgba(255,255,255,0.08)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.max(0, Math.min(100, soldPct))}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, rgba(201,162,39,0.85), rgba(245,215,110,0.95))",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
+                    Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım:{" "}
+                    {formatNumber(selectedMinBuyM2)} m²
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                  }}
+                >
+                  <div style={{ fontSize: 11, opacity: 0.75 }}>Alım Paneli</div>
+
+                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <div style={tinyLabel}>m² gir</div>
+                        <input
+                          type="number"
+                          value={buyM2}
+                          min={0}
+                          step={0.01}
+                          onChange={(e) => syncBuyFromM2(Number(e.target.value), selectedPricePerM2)}
+                          style={inputStyle}
+                          placeholder="Kaç m²?"
+                        />
+                      </div>
+
+                      <div>
+                        <div style={tinyLabel}>TL gir</div>
+                        <input
+                          type="number"
+                          value={buyBudget}
+                          min={0}
+                          step={1}
+                          onChange={(e) => syncBuyFromBudget(Number(e.target.value), selectedPricePerM2)}
+                          style={inputStyle}
+                          placeholder="Kaç TL?"
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
+                          <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
+                            {formatNumber(Math.round(selectedTotalCost))} Çip
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 12, opacity: 0.78 }}>Alınacak m²</div>
+                          <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
+                            {formatDecimal(buyM2)} m²
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 8 }}>
+                        {formatDecimal(buyM2)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                        Tek sefer maksimum:{" "}
+                        {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <button style={neutralActionBtn} onClick={addSelectedToCart}>
+                        Sepete Ekle
+                      </button>
+
+                      <button
+                        style={{
+                          ...neutralActionBtn,
+                          opacity: opening ? 0.7 : 1,
+                          cursor: opening ? "not-allowed" : "pointer",
+                        }}
+                        disabled={opening}
+                        onClick={handleOpenPosition}
+                      >
+                        {opening ? "Alınıyor..." : "Tekli Satın Al"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div style={{ lineHeight: 1.1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 1000 }}>Sepet</div>
+                      <div style={{ fontSize: 13, opacity: 0.78, marginTop: 4 }}>
+                        {cart.length} ürün • Genel Toplam:{" "}
+                        <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
+                      </div>
+                    </div>
+
+                    <button onClick={clearCart} style={smallGhostBtn} title="Sepeti temizle">
+                      Temizle
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      maxHeight: 180,
+                      overflow: "auto",
+                    }}
+                  >
+                    {cart.length === 0 ? (
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>
+                        Sepet boş. “Sepete Ekle” ile birden çok arsa biriktir.
+                      </div>
+                    ) : (
+                      cart.slice(0, 30).map((it) => (
+                        <div
+                          key={it.key}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto auto",
+                            gap: 10,
+                            alignItems: "center",
+                            padding: "10px 10px",
+                            borderRadius: 14,
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.10)",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontWeight: 900,
+                                fontSize: 12,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {it.property.city}
+                              {it.property.district ? ` / ${it.property.district}` : ""}
+                              {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
+                            </div>
+                            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
+                              {formatDecimal(it.m2)} m²
+                            </div>
+                          </div>
+
+                          <div style={{ fontWeight: 1000, fontSize: 12, whiteSpace: "nowrap" }}>
+                            {formatNumber(Math.round(it.totalPaid))} Çip
+                          </div>
+
+                          <button onClick={() => removeFromCart(it.key)} style={smallGhostBtn} title="Sepetten çıkar">
+                            ✕
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleCheckoutCart}
+                    disabled={checkingOut || cart.length === 0}
+                    style={{
+                      marginTop: 10,
+                      width: "100%",
+                      padding: 12,
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      color: "white",
+                      fontWeight: 1100,
+                      cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
+                      opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
+                    }}
+                  >
+                    {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
       </section>
     </div>
@@ -2191,7 +2231,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   const rawFeatures = Array.isArray(gj?.features) ? gj.features : [];
 
   const districtFeatures = rawFeatures
-    .map((f: any) => {
+    .map((f: any, i: number) => {
       const city = String(f?.properties?.NAME_1 || "").trim();
       const district = String(f?.properties?.NAME_2 || "").trim();
       if (!city || !district || !f?.geometry) return null;

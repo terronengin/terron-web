@@ -18,6 +18,7 @@ type MapItem = {
 type Level = "region" | "city" | "district" | "neighborhood" | "parcel";
 
 type CountPointProps = {
+  id: string;
   name: string;
   count: number;
   city?: string;
@@ -49,37 +50,24 @@ function sameTR(a: unknown, b: unknown) {
 
 function coordsFromGeometry(geom: any): number[][] {
   if (!geom) return [];
-  const t = geom.type;
-  const c = geom.coordinates;
   const out: number[][] = [];
 
-  const pushRing = (ring: any) => {
-    if (!Array.isArray(ring)) return;
-    for (const pt of ring) {
-      if (Array.isArray(pt) && pt.length >= 2) out.push([Number(pt[0]), Number(pt[1])]);
+  const walk = (node: any) => {
+    if (!Array.isArray(node)) return;
+    if (node.length >= 2 && typeof node[0] === "number" && typeof node[1] === "number") {
+      out.push([Number(node[0]), Number(node[1])]);
+      return;
     }
+    for (const child of node) walk(child);
   };
 
-  if (t === "Polygon") {
-    if (Array.isArray(c) && c.length > 0) {
-      for (const ring of c) pushRing(ring);
-    }
-  } else if (t === "MultiPolygon") {
-    if (Array.isArray(c)) {
-      for (const poly of c) {
-        if (Array.isArray(poly)) {
-          for (const ring of poly) pushRing(ring);
-        }
-      }
-    }
-  }
-
+  walk(geom.coordinates);
   return out;
 }
 
 function bboxFromGeometry(geom: any) {
   const pts = coordsFromGeometry(geom);
-  if (pts.length === 0) return null;
+  if (!pts.length) return null;
 
   let minLng = pts[0][0];
   let minLat = pts[0][1];
@@ -97,9 +85,9 @@ function bboxFromGeometry(geom: any) {
   return { minLng, minLat, maxLng, maxLat };
 }
 
-function centroidFromGeometry(geom: any) {
+function centroidFromGeometry(geom: any): [number, number] | null {
   const pts = coordsFromGeometry(geom);
-  if (pts.length === 0) return null;
+  if (!pts.length) return null;
 
   let sx = 0;
   let sy = 0;
@@ -113,7 +101,20 @@ function centroidFromGeometry(geom: any) {
   }
 
   if (!n) return null;
-  return [sx / n, sy / n] as [number, number];
+  return [sx / n, sy / n];
+}
+
+function centroidFromItems(list: MapItem[]): [number, number] | null {
+  const pts = list.filter((x) => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
+  if (!pts.length) return null;
+
+  let sx = 0;
+  let sy = 0;
+  for (const p of pts) {
+    sx += p.longitude;
+    sy += p.latitude;
+  }
+  return [sx / pts.length, sy / pts.length];
 }
 
 function getRegionName(cityRaw: string) {
@@ -135,6 +136,22 @@ function getRegionName(cityRaw: string) {
   if (dogu.includes(city)) return "Doğu Anadolu";
   if (guneydogu.includes(city)) return "Güneydoğu Anadolu";
   return "Diğer";
+}
+
+function getRegionColor(region: string) {
+  if (region === "Marmara") return "#6DE0FF";
+  if (region === "Ege") return "#73F5C3";
+  if (region === "Akdeniz") return "#F8B24D";
+  if (region === "İç Anadolu") return "#C6A6FF";
+  if (region === "Karadeniz") return "#7ED0FF";
+  if (region === "Doğu Anadolu") return "#FF9CC7";
+  if (region === "Güneydoğu Anadolu") return "#FFB06B";
+  return "#F5D76E";
+}
+
+function regionSort(a: string, b: string) {
+  const order = ["Marmara", "Ege", "Akdeniz", "İç Anadolu", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu", "Diğer"];
+  return order.indexOf(a) - order.indexOf(b);
 }
 
 export default function MapView(props: {
@@ -161,10 +178,15 @@ export default function MapView(props: {
   const [selectedPolyId, setSelectedPolyId] = useState<string | null>(null);
   const [hoveredPointId, setHoveredPointId] = useState<string | null>(null);
 
+  const SRC_REGION = "src-region";
   const SRC_PROV = "src-prov";
   const SRC_DIST = "src-dist";
   const SRC_COUNT = "src-count";
   const SRC_POINTS = "src-points";
+
+  const L_REGION_FILL = "region-fill";
+  const L_REGION_GLOW = "region-glow";
+  const L_REGION_OUT = "region-out";
 
   const L_PROV_FILL = "prov-fill";
   const L_PROV_GLOW = "prov-glow";
@@ -204,22 +226,7 @@ export default function MapView(props: {
               name,
               city: name,
               region,
-              regionColor:
-                region === "Marmara"
-                  ? "#6DE0FF"
-                  : region === "Ege"
-                  ? "#73F5C3"
-                  : region === "Akdeniz"
-                  ? "#F8B24D"
-                  : region === "İç Anadolu"
-                  ? "#C6A6FF"
-                  : region === "Karadeniz"
-                  ? "#7ED0FF"
-                  : region === "Doğu Anadolu"
-                  ? "#FF9CC7"
-                  : region === "Güneydoğu Anadolu"
-                  ? "#FFB06B"
-                  : "#F5D76E",
+              regionColor: getRegionColor(region),
             },
           };
         });
@@ -278,14 +285,74 @@ export default function MapView(props: {
     };
   }, []);
 
+  const allItems = props.items || [];
+
   const itemsFiltered = useMemo(() => {
-    let arr = props.items || [];
+    let arr = allItems;
     if (pickedRegion) arr = arr.filter((x) => getRegionName(x.city) === pickedRegion);
     if (pickedCity) arr = arr.filter((x) => sameTR(x.city, pickedCity));
     if (pickedDistrict) arr = arr.filter((x) => sameTR(x.district ?? "", pickedDistrict));
     if (pickedNeighborhood) arr = arr.filter((x) => sameTR(x.neighborhood ?? "", pickedNeighborhood));
     return arr;
-  }, [props.items, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
+  }, [allItems, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
+
+  const regionGeo = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+
+    for (const f of provGeo.features || []) {
+      const region = safeStr(f?.properties?.region);
+      if (!region) continue;
+      const list = grouped.get(region) ?? [];
+      list.push(f);
+      grouped.set(region, list);
+    }
+
+    const features = Array.from(grouped.entries())
+      .sort((a, b) => regionSort(a[0], b[0]))
+      .map(([region, features], i) => {
+        const coords = features.flatMap((f) => coordsFromGeometry(f.geometry));
+        if (!coords.length) return null;
+
+        let minLng = coords[0][0];
+        let minLat = coords[0][1];
+        let maxLng = coords[0][0];
+        let maxLat = coords[0][1];
+
+        for (const [lng, lat] of coords) {
+          minLng = Math.min(minLng, lng);
+          minLat = Math.min(minLat, lat);
+          maxLng = Math.max(maxLng, lng);
+          maxLat = Math.max(maxLat, lat);
+        }
+
+        return {
+          type: "Feature",
+          id: `region_${i}_${normTR(region)}`,
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [minLng, minLat],
+              [maxLng, minLat],
+              [maxLng, maxLat],
+              [minLng, maxLat],
+              [minLng, minLat],
+            ]],
+          },
+          properties: {
+            id: `region_${i}_${normTR(region)}`,
+            name: region,
+            region,
+            regionColor: getRegionColor(region),
+          },
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      type: "FeatureCollection",
+      features,
+    };
+  }, [provGeo]);
 
   const pointsGeo = useMemo(() => {
     return {
@@ -311,56 +378,54 @@ export default function MapView(props: {
   }, [itemsFiltered]);
 
   const regionCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    const m = new Map<string, { count: number; sumLng: number; sumLat: number; n: number }>();
+    const regions = Array.from(new Set(allItems.map((x) => getRegionName(x.city)))).sort(regionSort);
 
-    for (const it of props.items || []) {
-      if (!Number.isFinite(it.latitude) || !Number.isFinite(it.longitude)) continue;
-      const region = getRegionName(it.city);
-      const cur = m.get(region) ?? { count: 0, sumLng: 0, sumLat: 0, n: 0 };
-      cur.count += 1;
-      cur.sumLng += Number(it.longitude);
-      cur.sumLat += Number(it.latitude);
-      cur.n += 1;
-      m.set(region, cur);
-    }
+    const features: Feature<Point, CountPointProps>[] = regions
+      .map((region) => {
+        const list = allItems.filter((x) => getRegionName(x.city) === region);
+        const center = centroidFromItems(list);
+        if (!center || list.length === 0) return null;
 
-    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([region, v]) => ({
-      type: "Feature",
-      id: `cnt_region_${normTR(region)}`,
-      properties: {
-        name: region,
-        region,
-        count: v.count,
-        level: "region",
-      },
-      geometry: {
-        type: "Point",
-        coordinates: [v.sumLng / v.n, v.sumLat / v.n],
-      },
-    }));
+        return {
+          type: "Feature",
+          id: `cnt_region_${normTR(region)}`,
+          properties: {
+            id: `cnt_region_${normTR(region)}`,
+            name: region,
+            region,
+            count: list.length,
+            level: "region",
+          },
+          geometry: {
+            type: "Point",
+            coordinates: center,
+          },
+        };
+      })
+      .filter(Boolean) as Feature<Point, CountPointProps>[];
 
     return { type: "FeatureCollection", features };
-  }, [props.items]);
+  }, [allItems]);
 
   const provinceCounts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const it of props.items || []) {
+    for (const it of allItems) {
       if (pickedRegion && getRegionName(it.city) !== pickedRegion) continue;
       const k = normTR(it.city);
       if (!k) continue;
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
-  }, [props.items, pickedRegion]);
+  }, [allItems, pickedRegion]);
 
   const districtCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     if (!pickedCity) return { type: "FeatureCollection", features: [] };
 
-    const pickedK = normTR(pickedCity);
+    const cityK = normTR(pickedCity);
     const m = new Map<string, { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
 
-    for (const it of props.items || []) {
-      if (pickedK && normTR(it.city) !== pickedK) continue;
+    for (const it of allItems) {
+      if (normTR(it.city) !== cityK) continue;
       const dRaw = (it.district ?? "").trim();
       const dK = normTR(dRaw);
       if (!dK) continue;
@@ -376,8 +441,9 @@ export default function MapView(props: {
 
     const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([k, v]) => ({
       type: "Feature",
-      id: `cnt_d_${normTR(pickedCity)}_${k}`,
+      id: `cnt_d_${cityK}_${k}`,
       properties: {
+        id: `cnt_d_${cityK}_${k}`,
         name: v.districtRaw,
         district: v.districtRaw,
         city: pickedCity,
@@ -391,7 +457,7 @@ export default function MapView(props: {
     }));
 
     return { type: "FeatureCollection", features };
-  }, [props.items, pickedCity]);
+  }, [allItems, pickedCity]);
 
   const neighborhoodCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     if (!pickedCity || !pickedDistrict) return { type: "FeatureCollection", features: [] };
@@ -400,7 +466,7 @@ export default function MapView(props: {
     const distK = normTR(pickedDistrict);
     const m = new Map<string, { neighborhoodRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
 
-    for (const it of props.items || []) {
+    for (const it of allItems) {
       if (normTR(it.city) !== cityK) continue;
       if (normTR(it.district ?? "") !== distK) continue;
 
@@ -419,8 +485,9 @@ export default function MapView(props: {
 
     const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([k, v]) => ({
       type: "Feature",
-      id: `cnt_n_${normTR(pickedCity)}_${normTR(pickedDistrict)}_${k}`,
+      id: `cnt_n_${cityK}_${distK}_${k}`,
       properties: {
+        id: `cnt_n_${cityK}_${distK}_${k}`,
         name: v.neighborhoodRaw,
         district: pickedDistrict,
         city: pickedCity,
@@ -435,7 +502,7 @@ export default function MapView(props: {
     }));
 
     return { type: "FeatureCollection", features };
-  }, [props.items, pickedCity, pickedDistrict]);
+  }, [allItems, pickedCity, pickedDistrict]);
 
   const activeProvinceGeo = useMemo(() => {
     if (!pickedRegion) return provGeo;
@@ -446,17 +513,100 @@ export default function MapView(props: {
   }, [provGeo, pickedRegion]);
 
   const activeDistrictGeo = useMemo(() => {
+    if (!pickedCity) {
+      return { type: "FeatureCollection" as const, features: [] };
+    }
+
     return {
       type: "FeatureCollection" as const,
       features: (distGeo.features || []).filter((f: any) => sameTR(safeStr(f?.properties?.city), pickedCity)),
     };
   }, [distGeo, pickedCity]);
 
+  const neighborhoodHullGeo = useMemo(() => {
+    if (level !== "neighborhood" || !pickedCity || !pickedDistrict) {
+      return { type: "FeatureCollection" as const, features: [] };
+    }
+
+    const features = neighborhoodCenters.features.map((f) => {
+      const [lng, lat] = f.geometry.coordinates;
+      const size = 0.045;
+
+      return {
+        type: "Feature",
+        id: f.id,
+        properties: {
+          ...(f.properties || {}),
+          id: f.id,
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [[
+            [lng - size, lat - size],
+            [lng + size, lat - size],
+            [lng + size, lat + size],
+            [lng - size, lat + size],
+            [lng - size, lat - size],
+          ]],
+        },
+      };
+    });
+
+    return {
+      type: "FeatureCollection" as const,
+      features,
+    };
+  }, [level, pickedCity, pickedDistrict, neighborhoodCenters]);
+
+  const parcelFocusGeo = useMemo(() => {
+    if (level !== "parcel" || !pickedNeighborhood) {
+      return { type: "FeatureCollection" as const, features: [] };
+    }
+
+    const list = itemsFiltered;
+    if (!list.length) return { type: "FeatureCollection" as const, features: [] };
+
+    const c = centroidFromItems(list);
+    if (!c) return { type: "FeatureCollection" as const, features: [] };
+
+    const size = 0.018;
+
+    return {
+      type: "FeatureCollection" as const,
+      features: [
+        {
+          type: "Feature",
+          id: `parcel_focus_${normTR(pickedNeighborhood)}`,
+          properties: {
+            id: `parcel_focus_${normTR(pickedNeighborhood)}`,
+            name: pickedNeighborhood,
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [c[0] - size, c[1] - size],
+              [c[0] + size, c[1] - size],
+              [c[0] + size, c[1] + size],
+              [c[0] - size, c[1] + size],
+              [c[0] - size, c[1] - size],
+            ]],
+          },
+        },
+      ],
+    };
+  }, [level, pickedNeighborhood, itemsFiltered]);
+
   const activePoly = useMemo(() => {
-    if (level === "region" || level === "city") {
+    if (level === "region") {
+      return { src: SRC_REGION, fill: L_REGION_FILL, glow: L_REGION_GLOW, out: L_REGION_OUT };
+    }
+    if (level === "city") {
       return { src: SRC_PROV, fill: L_PROV_FILL, glow: L_PROV_GLOW, out: L_PROV_OUT };
     }
     if (level === "district") {
+      return { src: SRC_DIST, fill: L_DIST_FILL, glow: L_DIST_GLOW, out: L_DIST_OUT };
+    }
+    if (level === "neighborhood") {
       return { src: SRC_DIST, fill: L_DIST_FILL, glow: L_DIST_GLOW, out: L_DIST_OUT };
     }
     return null;
@@ -476,6 +626,7 @@ export default function MapView(props: {
             type: "Feature" as const,
             id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
             properties: {
+              id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
               name,
               city: name,
               count: provinceCounts.get(normTR(name)) ?? 0,
@@ -502,16 +653,17 @@ export default function MapView(props: {
   function fillPaintRegion() {
     return {
       "fill-color": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        "rgba(109,224,255,0.18)",
-        "rgba(245,215,110,0.06)",
+        "coalesce",
+        ["get", "regionColor"],
+        "#F5D76E",
       ],
       "fill-opacity": [
         "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        0.18,
         ["boolean", ["feature-state", "hover"], false],
-        0.3,
-        0.12,
+        0.15,
+        0.08,
       ],
     } as any;
   }
@@ -521,7 +673,7 @@ export default function MapView(props: {
       "fill-color": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        "rgba(245,215,110,0.16)",
+        "rgba(245,215,110,0.18)",
         ["boolean", ["feature-state", "hover"], false],
         "rgba(245,215,110,0.12)",
         "rgba(245,215,110,0.05)",
@@ -529,9 +681,9 @@ export default function MapView(props: {
       "fill-opacity": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        0.32,
+        0.3,
         ["boolean", ["feature-state", "hover"], false],
-        0.24,
+        0.22,
         0.12,
       ],
     } as any;
@@ -540,24 +692,27 @@ export default function MapView(props: {
   function glowPaintRegion() {
     return {
       "line-color": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        "rgba(109,224,255,0.95)",
-        "rgba(109,224,255,0.28)",
+        "coalesce",
+        ["get", "regionColor"],
+        "#F5D76E",
       ],
       "line-width": [
         "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        2.8,
         ["boolean", ["feature-state", "hover"], false],
-        3.5,
-        1.6,
+        2.2,
+        1.2,
       ],
       "line-blur": [
         "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        1.8,
         ["boolean", ["feature-state", "hover"], false],
-        2.6,
-        0.7,
+        1.2,
+        0.5,
       ],
-      "line-opacity": 1,
+      "line-opacity": 0.95,
     } as any;
   }
 
@@ -568,24 +723,24 @@ export default function MapView(props: {
         ["==", ["get", "id"], selectedPolyId ?? ""],
         "rgba(245,215,110,0.98)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.95)",
+        "rgba(245,215,110,0.92)",
         "rgba(245,215,110,0.38)",
       ],
       "line-width": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        3.2,
+        3.0,
         ["boolean", ["feature-state", "hover"], false],
-        2.6,
-        1.15,
+        2.2,
+        1.05,
       ],
       "line-blur": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        1.25,
+        1.0,
         ["boolean", ["feature-state", "hover"], false],
-        0.95,
-        0.12,
+        0.8,
+        0.08,
       ],
       "line-opacity": 1,
     } as any;
@@ -643,7 +798,7 @@ export default function MapView(props: {
       map.easeTo({
         center: [pts[0].longitude, pts[0].latitude],
         zoom: targetZoom,
-        duration: 500,
+        duration: 520,
       });
       return;
     }
@@ -669,6 +824,16 @@ export default function MapView(props: {
     );
   }
 
+  function zoomHome() {
+    const map = mapRef.current;
+    if (!map) return;
+    map.easeTo({
+      center: [35.0, 39.0],
+      zoom: 5.2,
+      duration: 650,
+    });
+  }
+
   function goBack() {
     clearPointHover();
     clearPolyHover();
@@ -678,34 +843,50 @@ export default function MapView(props: {
       setPickedNeighborhood("");
       props.onSetNeighborhood?.("");
       setLevel("neighborhood");
+
+      const list = allItems.filter(
+        (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", pickedDistrict)
+      );
+      zoomToItems(list, 10.9);
       return;
     }
 
     if (level === "neighborhood") {
-      setPickedNeighborhood("");
-      props.onSetNeighborhood?.("");
-      setLevel("district");
-      return;
-    }
-
-    if (level === "district") {
       setPickedDistrict("");
       setPickedNeighborhood("");
       props.onSetDistrict?.("");
       props.onSetNeighborhood?.("");
-      setLevel("city");
+      setLevel("district");
+
+      const list = allItems.filter((it) => sameTR(it.city, pickedCity));
+      zoomToItems(list, 8.1);
       return;
     }
 
-    if (level === "city") {
+    if (level === "district") {
       setPickedCity("");
       setPickedDistrict("");
       setPickedNeighborhood("");
       props.onSetCity?.("");
       props.onSetDistrict?.("");
       props.onSetNeighborhood?.("");
+      setLevel("city");
+
+      const list = allItems.filter((it) => getRegionName(it.city) === pickedRegion);
+      zoomToItems(list, 6.2);
+      return;
+    }
+
+    if (level === "city") {
       setPickedRegion("");
+      setPickedCity("");
+      setPickedDistrict("");
+      setPickedNeighborhood("");
+      props.onSetCity?.("");
+      props.onSetDistrict?.("");
+      props.onSetNeighborhood?.("");
       setLevel("region");
+      zoomHome();
     }
   }
 
@@ -723,13 +904,13 @@ export default function MapView(props: {
       props.onSetNeighborhood?.("");
       setLevel("city");
 
-      const regionItems = (props.items || []).filter((it) => getRegionName(it.city) === nameRaw);
+      const regionItems = allItems.filter((it) => getRegionName(it.city) === nameRaw);
       zoomToItems(regionItems, 6.2);
       return;
     }
 
     if (level === "city") {
-      const realCity = (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
+      const realCity = allItems.find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
 
       setPickedCity(realCity);
       props.onSetCity?.(realCity);
@@ -739,14 +920,14 @@ export default function MapView(props: {
       props.onSetNeighborhood?.("");
       setLevel("district");
 
-      const cityItems = (props.items || []).filter((it) => sameTR(it.city, realCity));
+      const cityItems = allItems.filter((it) => sameTR(it.city, realCity));
       zoomToItems(cityItems, 8.1);
       return;
     }
 
     if (level === "district") {
       const realDistrict =
-        (props.items || [])
+        allItems
           .filter((it) => sameTR(it.city, pickedCity))
           .find((it) => normTR(it.district ?? "") === normTR(nameRaw))?.district || nameRaw;
 
@@ -756,7 +937,7 @@ export default function MapView(props: {
       props.onSetNeighborhood?.("");
       setLevel("neighborhood");
 
-      const districtItems = (props.items || []).filter(
+      const districtItems = allItems.filter(
         (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
       );
       zoomToItems(districtItems, 10.9);
@@ -765,7 +946,7 @@ export default function MapView(props: {
 
     if (level === "neighborhood") {
       const realNeighborhood =
-        (props.items || [])
+        allItems
           .filter((it) => sameTR(it.city, pickedCity))
           .filter((it) => sameTR(it.district ?? "", pickedDistrict))
           .find((it) => normTR(it.neighborhood ?? "") === normTR(nameRaw))?.neighborhood || nameRaw;
@@ -774,13 +955,13 @@ export default function MapView(props: {
       props.onSetNeighborhood?.(String(realNeighborhood));
       setLevel("parcel");
 
-      const neighborhoodItems = (props.items || []).filter(
+      const neighborhoodItems = allItems.filter(
         (it) =>
           sameTR(it.city, pickedCity) &&
           sameTR(it.district ?? "", pickedDistrict) &&
           sameTR(it.neighborhood ?? "", realNeighborhood)
       );
-      zoomToItems(neighborhoodItems, 13.3);
+      zoomToItems(neighborhoodItems, 13.6);
     }
   }
 
@@ -806,7 +987,7 @@ export default function MapView(props: {
         if (id) setSelectedPolyId(id);
 
         if (level === "region") {
-          const region = String(p.region || "").trim();
+          const region = String(p.region || p.name || "").trim();
           if (region) {
             setPickedRegion(region);
             setPickedCity("");
@@ -817,7 +998,7 @@ export default function MapView(props: {
             props.onSetNeighborhood?.("");
             setLevel("city");
 
-            const regionItems = (props.items || []).filter((it) => getRegionName(it.city) === region);
+            const regionItems = allItems.filter((it) => getRegionName(it.city) === region);
             zoomToItems(regionItems, 6.2);
             return;
           }
@@ -826,9 +1007,7 @@ export default function MapView(props: {
         if (level === "city") {
           const cityNameRaw = String(p.name || p.NAME_1 || "").trim();
           if (cityNameRaw) {
-            const realCity =
-              (props.items || []).find((it) => normTR(it.city) === normTR(cityNameRaw))?.city || cityNameRaw;
-
+            const realCity = allItems.find((it) => normTR(it.city) === normTR(cityNameRaw))?.city || cityNameRaw;
             setPickedCity(realCity);
             props.onSetCity?.(realCity);
           }
@@ -846,7 +1025,7 @@ export default function MapView(props: {
           const districtNameRaw = String(p.name || p.NAME_2 || p.district || "").trim();
           if (districtNameRaw) {
             const realDistrict =
-              (props.items || [])
+              allItems
                 .filter((it) => sameTR(it.city, pickedCity))
                 .find((it) => normTR(it.district ?? "") === normTR(districtNameRaw))?.district || districtNameRaw;
 
@@ -856,10 +1035,23 @@ export default function MapView(props: {
             props.onSetNeighborhood?.("");
             setLevel("neighborhood");
 
-            const districtItems = (props.items || []).filter(
+            const districtItems = allItems.filter(
               (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
             );
             zoomToItems(districtItems, 10.9);
+          }
+          return;
+        }
+
+        if (level === "neighborhood") {
+          const districtNameRaw = String(p.name || p.NAME_2 || p.district || "").trim();
+          const districtItems = allItems.filter(
+            (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", pickedDistrict || districtNameRaw)
+          );
+
+          if (districtItems.length > 0) {
+            setLevel("parcel");
+            zoomToItems(districtItems, 12.8);
           }
           return;
         }
@@ -881,7 +1073,7 @@ export default function MapView(props: {
         source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
           if (err) return;
           const [lng, lat] = f.geometry.coordinates;
-          map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 16), duration: 450 });
+          map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 16), duration: 420 });
         });
         return;
       }
@@ -993,23 +1185,23 @@ export default function MapView(props: {
   }, [level, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
 
   const summaryText = useMemo(() => {
-    if (level === "region") return `${props.items.length} arsa • bölgesel görünüm`;
+    if (level === "region") return `${allItems.length} arsa • bölgesel görünüm`;
     if (level === "city") {
-      const count = (props.items || []).filter((x) => (!pickedRegion ? true : getRegionName(x.city) === pickedRegion)).length;
+      const count = allItems.filter((x) => (!pickedRegion ? true : getRegionName(x.city) === pickedRegion)).length;
       return `${count} arsa • il görünümü`;
     }
     if (level === "district") {
-      const count = (props.items || []).filter((x) => sameTR(x.city, pickedCity)).length;
+      const count = allItems.filter((x) => sameTR(x.city, pickedCity)).length;
       return `${count} arsa • ilçe görünümü`;
     }
     if (level === "neighborhood") {
-      const count = (props.items || []).filter(
+      const count = allItems.filter(
         (x) => sameTR(x.city, pickedCity) && sameTR(x.district ?? "", pickedDistrict)
       ).length;
       return `${count} arsa • mahalle görünümü`;
     }
     return `${itemsFiltered.length} arsa • parsel görünümü`;
-  }, [level, props.items, pickedRegion, pickedCity, pickedDistrict, itemsFiltered.length]);
+  }, [level, allItems, pickedRegion, pickedCity, pickedDistrict, itemsFiltered.length]);
 
   const interactiveLayers = useMemo(() => {
     const arr: string[] = [];
@@ -1029,54 +1221,29 @@ export default function MapView(props: {
 
   const countPinLayer: any = {
     id: L_COUNT_PIN,
-    type: "symbol",
+    type: "circle",
     source: SRC_COUNT,
-    layout: {
-      "icon-image": "marker-15",
-      "icon-size": [
-        "step",
-        ["get", "count"],
-        1.8,
-        20,
-        2.05,
-        60,
-        2.25,
-        150,
-        2.5,
-        300,
-        2.8,
-      ],
-      "icon-anchor": "bottom",
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-      "text-field": ["to-string", ["get", "count"]],
-      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": [
-        "step",
-        ["get", "count"],
-        11,
-        20,
-        12,
-        60,
-        13,
-        150,
-        14,
-        300,
-        15,
-      ],
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-      "text-anchor": "center",
-      "text-offset": [0, -0.75],
-    },
     paint: {
-      "icon-color": "#D0A42B",
-      "icon-halo-color": "rgba(0,0,0,0.65)",
-      "icon-halo-width": 1.25,
-      "icon-opacity": 0.98,
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(0,0,0,0.45)",
-      "text-halo-width": 1.1,
+      "circle-radius": [
+        "step",
+        ["get", "count"],
+        16,
+        15,
+        18,
+        40,
+        20,
+        90,
+        23,
+        180,
+        26,
+        320,
+        29,
+      ],
+      "circle-color": "rgba(201,162,39,0.95)",
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "rgba(255,255,255,0.20)",
+      "circle-blur": 0.25,
+      "circle-opacity": 0.96,
     },
   };
 
@@ -1085,59 +1252,45 @@ export default function MapView(props: {
     type: "symbol",
     source: SRC_COUNT,
     layout: {
-      "text-field": ["get", "name"],
-      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+      "text-field": ["concat", ["get", "name"], "\n", ["to-string", ["get", "count"]]],
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
       "text-size": 11,
-      "text-anchor": "top",
-      "text-offset": [0, 0.35],
-      "text-allow-overlap": false,
-      "text-ignore-placement": false,
+      "text-line-height": 1.15,
+      "text-anchor": "center",
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
     },
     paint: {
-      "text-color": "rgba(255,255,255,0.86)",
+      "text-color": "#ffffff",
       "text-halo-color": "rgba(8,12,22,0.92)",
-      "text-halo-width": 1.2,
+      "text-halo-width": 1.25,
     },
   };
 
   const clusterPinLayer: any = {
     id: L_CLUSTER_PIN,
-    type: "symbol",
+    type: "circle",
     source: SRC_POINTS,
     filter: ["has", "point_count"],
-    layout: {
-      "icon-image": "marker-15",
-      "icon-size": [
+    paint: {
+      "circle-radius": [
         "step",
         ["get", "point_count"],
-        1.65,
-        25,
-        1.9,
-        75,
-        2.15,
-        150,
-        2.35,
-        300,
-        2.65,
+        14,
+        8,
+        17,
+        20,
+        20,
+        50,
+        24,
+        120,
+        28,
       ],
-      "icon-anchor": "bottom",
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-      "text-field": ["get", "point_count_abbreviated"],
-      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": 12,
-      "text-anchor": "center",
-      "text-offset": [0, -0.75],
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-    },
-    paint: {
-      "icon-color": "#D0A42B",
-      "icon-halo-color": "rgba(8,12,22,0.88)",
-      "icon-halo-width": 1.3,
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(0,0,0,0.42)",
-      "text-halo-width": 1.1,
+      "circle-color": "rgba(201,162,39,0.96)",
+      "circle-stroke-color": "rgba(255,255,255,0.24)",
+      "circle-stroke-width": 2.2,
+      "circle-opacity": 0.96,
+      "circle-blur": 0.15,
     },
   };
 
@@ -1147,7 +1300,16 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["has", "point_count"],
     layout: {
-      "text-field": "",
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-size": 12,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
+      "text-halo-color": "rgba(8,12,22,0.92)",
+      "text-halo-width": 1.15,
     },
   };
 
@@ -1157,17 +1319,17 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 8.8, 5.8],
-      "circle-color": "rgba(8,12,22,0.86)",
+      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 8.2, 5.4],
+      "circle-color": "rgba(10,14,24,0.90)",
       "circle-stroke-color": [
         "case",
         ["boolean", ["feature-state", "hover"], false],
         "rgba(245,215,110,1)",
-        "rgba(201,162,39,0.86)",
+        "rgba(201,162,39,0.90)",
       ],
-      "circle-stroke-width": 2.2,
+      "circle-stroke-width": 2.1,
       "circle-opacity": 0.98,
-      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.78, 0.14],
+      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.45, 0.06],
     },
   };
 
@@ -1233,23 +1395,39 @@ export default function MapView(props: {
       >
         <NavigationControl position="bottom-right" />
 
-        {(level === "region" || level === "city") && (
-          <Source id={SRC_PROV} type="geojson" data={level === "region" ? provGeo : activeProvinceGeo} promoteId="id">
-            <Layer id={L_PROV_FILL} type="fill" paint={level === "region" ? fillPaintRegion() : fillPaintDefault()} />
-            <Layer id={L_PROV_GLOW} type="line" paint={level === "region" ? glowPaintRegion() : linePaintDefault()} />
+        {level === "region" && (
+          <Source id={SRC_REGION} type="geojson" data={regionGeo} promoteId="id">
+            <Layer id={L_REGION_FILL} type="fill" paint={fillPaintRegion()} />
+            <Layer id={L_REGION_GLOW} type="line" paint={glowPaintRegion()} />
             <Layer
-              id={L_PROV_OUT}
+              id={L_REGION_OUT}
               type="line"
               paint={{
-                "line-color": level === "region" ? "rgba(255,255,255,0.18)" : "rgba(245,215,110,0.48)",
-                "line-width": level === "region" ? 0.8 : 1.1,
+                "line-color": "rgba(255,255,255,0.14)",
+                "line-width": 0.9,
                 "line-opacity": 1,
               }}
             />
           </Source>
         )}
 
-        {level === "district" && (
+        {level === "city" && (
+          <Source id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
+            <Layer id={L_PROV_FILL} type="fill" paint={fillPaintDefault()} />
+            <Layer id={L_PROV_GLOW} type="line" paint={linePaintDefault()} />
+            <Layer
+              id={L_PROV_OUT}
+              type="line"
+              paint={{
+                "line-color": "rgba(245,215,110,0.46)",
+                "line-width": 1.0,
+                "line-opacity": 1,
+              }}
+            />
+          </Source>
+        )}
+
+        {(level === "district" || level === "neighborhood") && (
           <Source id={SRC_DIST} type="geojson" data={activeDistrictGeo} promoteId="id">
             <Layer id={L_DIST_FILL} type="fill" paint={fillPaintDefault()} />
             <Layer id={L_DIST_GLOW} type="line" paint={linePaintDefault()} />
@@ -1257,8 +1435,52 @@ export default function MapView(props: {
               id={L_DIST_OUT}
               type="line"
               paint={{
-                "line-color": "rgba(245,215,110,0.48)",
-                "line-width": 1.1,
+                "line-color": "rgba(245,215,110,0.44)",
+                "line-width": 1.0,
+                "line-opacity": 1,
+              }}
+            />
+          </Source>
+        )}
+
+        {level === "neighborhood" && (
+          <Source id="src-neighborhood-hulls" type="geojson" data={neighborhoodHullGeo as any}>
+            <Layer
+              id="neighborhood-hulls-fill"
+              type="fill"
+              paint={{
+                "fill-color": "rgba(245,215,110,0.06)",
+                "fill-opacity": 0.12,
+              }}
+            />
+            <Layer
+              id="neighborhood-hulls-line"
+              type="line"
+              paint={{
+                "line-color": "rgba(245,215,110,0.30)",
+                "line-width": 1.0,
+                "line-opacity": 1,
+              }}
+            />
+          </Source>
+        )}
+
+        {level === "parcel" && (
+          <Source id="src-parcel-focus" type="geojson" data={parcelFocusGeo as any}>
+            <Layer
+              id="parcel-focus-fill"
+              type="fill"
+              paint={{
+                "fill-color": "rgba(245,215,110,0.06)",
+                "fill-opacity": 0.16,
+              }}
+            />
+            <Layer
+              id="parcel-focus-line"
+              type="line"
+              paint={{
+                "line-color": "rgba(245,215,110,0.88)",
+                "line-width": 1.8,
                 "line-opacity": 1,
               }}
             />
@@ -1278,8 +1500,8 @@ export default function MapView(props: {
             type="geojson"
             data={pointsGeo as any}
             cluster={true}
-            clusterRadius={50}
-            clusterMaxZoom={13}
+            clusterRadius={42}
+            clusterMaxZoom={14}
             promoteId={"id" as any}
           >
             <Layer {...clusterPinLayer} />
