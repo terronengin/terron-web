@@ -168,17 +168,6 @@ function getRegionName(cityRaw: string) {
   return "Diğer";
 }
 
-function getRegionColor(region: string) {
-  if (region === "Marmara") return "#6DE0FF";
-  if (region === "Ege") return "#73F5C3";
-  if (region === "Akdeniz") return "#F8B24D";
-  if (region === "İç Anadolu") return "#C6A6FF";
-  if (region === "Karadeniz") return "#7ED0FF";
-  if (region === "Doğu Anadolu") return "#FF9CC7";
-  if (region === "Güneydoğu Anadolu") return "#FFB06B";
-  return "#F5D76E";
-}
-
 function regionSort(a: string, b: string) {
   const order = ["Marmara", "Ege", "Akdeniz", "İç Anadolu", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu", "Diğer"];
   return order.indexOf(a) - order.indexOf(b);
@@ -208,15 +197,10 @@ export default function MapView(props: {
   const [selectedPolyId, setSelectedPolyId] = useState<string | null>(null);
   const [hoveredPointId, setHoveredPointId] = useState<string | null>(null);
 
-  const SRC_REGION = "src-region";
   const SRC_PROV = "src-prov";
   const SRC_DIST = "src-dist";
   const SRC_COUNT = "src-count";
   const SRC_POINTS = "src-points";
-
-  const L_REGION_FILL = "region-fill";
-  const L_REGION_GLOW = "region-glow";
-  const L_REGION_OUT = "region-out";
 
   const L_PROV_FILL = "prov-fill";
   const L_PROV_GLOW = "prov-glow";
@@ -256,7 +240,6 @@ export default function MapView(props: {
               name,
               city: name,
               region,
-              regionColor: getRegionColor(region),
             },
           };
         });
@@ -326,67 +309,6 @@ export default function MapView(props: {
     return arr;
   }, [allItems, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
 
-  const regionGeo = useMemo<FeatureCollection<Polygon>>(() => {
-    const grouped = new Map<string, any[]>();
-
-    for (const f of provGeo.features || []) {
-      const region = safeStr((f as any)?.properties?.region);
-      if (!region) continue;
-      const list = grouped.get(region) ?? [];
-      list.push(f);
-      grouped.set(region, list);
-    }
-
-    const rawFeatures = Array.from(grouped.entries())
-      .sort((a, b) => regionSort(a[0], b[0]))
-      .map(([region, regionFeatures], i) => {
-        const coords = regionFeatures.flatMap((f) => coordsFromGeometry((f as any).geometry));
-        if (!coords.length) return null;
-
-        let minLng = coords[0][0];
-        let minLat = coords[0][1];
-        let maxLng = coords[0][0];
-        let maxLat = coords[0][1];
-
-        for (const [lng, lat] of coords) {
-          minLng = Math.min(minLng, lng);
-          minLat = Math.min(minLat, lat);
-          maxLng = Math.max(maxLng, lng);
-          maxLat = Math.max(maxLat, lat);
-        }
-
-        const feature: Feature<Polygon> = {
-          type: "Feature",
-          id: `region_${i}_${normTR(region)}`,
-          geometry: {
-            type: "Polygon",
-            coordinates: [[
-              [minLng, minLat],
-              [maxLng, minLat],
-              [maxLng, maxLat],
-              [minLng, maxLat],
-              [minLng, minLat],
-            ]],
-          },
-          properties: {
-            id: `region_${i}_${normTR(region)}`,
-            name: region,
-            region,
-            regionColor: getRegionColor(region),
-          },
-        };
-
-        return feature;
-      });
-
-    const features = rawFeatures.filter((f): f is Feature<Polygon> => f !== null);
-
-    return {
-      type: "FeatureCollection",
-      features,
-    };
-  }, [provGeo]);
-
   const pointsGeo = useMemo<FeatureCollection<Point>>(() => {
     return {
       type: "FeatureCollection",
@@ -413,31 +335,36 @@ export default function MapView(props: {
   const regionCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     const regions = Array.from(new Set(allItems.map((x) => getRegionName(x.city)))).sort(regionSort);
 
-    const features: Feature<Point, CountPointProps>[] = regions
-      .map((region) => {
-        const list = allItems.filter((x) => getRegionName(x.city) === region);
-        const center = centroidFromItems(list);
-        if (!center || list.length === 0) return null;
+    const rawFeatures = regions.map((region) => {
+      const list = allItems.filter((x) => getRegionName(x.city) === region);
+      const center = centroidFromItems(list);
+      if (!center || list.length === 0) return null;
 
-        return {
-          type: "Feature",
+      const feature: Feature<Point, CountPointProps> = {
+        type: "Feature",
+        id: `cnt_region_${normTR(region)}`,
+        properties: {
           id: `cnt_region_${normTR(region)}`,
-          properties: {
-            id: `cnt_region_${normTR(region)}`,
-            name: region,
-            region,
-            count: list.length,
-            level: "region",
-          },
-          geometry: {
-            type: "Point",
-            coordinates: center,
-          },
-        };
-      })
-      .filter((f): f is Feature<Point, CountPointProps> => f !== null);
+          name: region,
+          region,
+          count: list.length,
+          level: "region",
+        },
+        geometry: {
+          type: "Point",
+          coordinates: center,
+        },
+      };
 
-    return { type: "FeatureCollection", features };
+      return feature;
+    });
+
+    const features = rawFeatures.filter((f): f is Feature<Point, CountPointProps> => f !== null);
+
+    return {
+      type: "FeatureCollection",
+      features,
+    };
   }, [allItems]);
 
   const provinceCounts = useMemo(() => {
@@ -630,9 +557,6 @@ export default function MapView(props: {
   }, [level, pickedNeighborhood, itemsFiltered]);
 
   const activePoly = useMemo(() => {
-    if (level === "region") {
-      return { src: SRC_REGION, fill: L_REGION_FILL, glow: L_REGION_GLOW, out: L_REGION_OUT };
-    }
     if (level === "city") {
       return { src: SRC_PROV, fill: L_PROV_FILL, glow: L_PROV_GLOW, out: L_PROV_OUT };
     }
@@ -680,20 +604,6 @@ export default function MapView(props: {
     return { type: "FeatureCollection", features: [] };
   }, [level, regionCenters, activeProvinceGeo, provinceCounts, districtCenters, neighborhoodCenters]);
 
-  function fillPaintRegion() {
-    return {
-      "fill-color": ["coalesce", ["get", "regionColor"], "#F5D76E"],
-      "fill-opacity": [
-        "case",
-        ["==", ["get", "id"], selectedPolyId ?? ""],
-        0.18,
-        ["boolean", ["feature-state", "hover"], false],
-        0.15,
-        0.08,
-      ],
-    } as any;
-  }
-
   function fillPaintDefault() {
     return {
       "fill-color": [
@@ -712,29 +622,6 @@ export default function MapView(props: {
         0.22,
         0.12,
       ],
-    } as any;
-  }
-
-  function glowPaintRegion() {
-    return {
-      "line-color": ["coalesce", ["get", "regionColor"], "#F5D76E"],
-      "line-width": [
-        "case",
-        ["==", ["get", "id"], selectedPolyId ?? ""],
-        2.8,
-        ["boolean", ["feature-state", "hover"], false],
-        2.2,
-        1.2,
-      ],
-      "line-blur": [
-        "case",
-        ["==", ["get", "id"], selectedPolyId ?? ""],
-        1.8,
-        ["boolean", ["feature-state", "hover"], false],
-        1.2,
-        0.5,
-      ],
-      "line-opacity": 0.95,
     } as any;
   }
 
@@ -1007,24 +894,6 @@ export default function MapView(props: {
         const p = f.properties || {};
         const id = String(p.id || f.id || "");
         if (id) setSelectedPolyId(id);
-
-        if (level === "region") {
-          const region = String(p.region || p.name || "").trim();
-          if (region) {
-            setPickedRegion(region);
-            setPickedCity("");
-            setPickedDistrict("");
-            setPickedNeighborhood("");
-            props.onSetCity?.("");
-            props.onSetDistrict?.("");
-            props.onSetNeighborhood?.("");
-            setLevel("city");
-
-            const regionItems = allItems.filter((it) => getRegionName(it.city) === region);
-            zoomToItems(regionItems, 6.2);
-            return;
-          }
-        }
 
         if (level === "city") {
           const cityNameRaw = String(p.name || p.NAME_1 || "").trim();
@@ -1413,22 +1282,6 @@ export default function MapView(props: {
         style={{ width: "100%", height: "100%" }}
       >
         <NavigationControl position="bottom-right" />
-
-        {level === "region" && (
-          <Source id={SRC_REGION} type="geojson" data={regionGeo} promoteId="id">
-            <Layer id={L_REGION_FILL} type="fill" paint={fillPaintRegion()} />
-            <Layer id={L_REGION_GLOW} type="line" paint={glowPaintRegion()} />
-            <Layer
-              id={L_REGION_OUT}
-              type="line"
-              paint={{
-                "line-color": "rgba(255,255,255,0.14)",
-                "line-width": 0.9,
-                "line-opacity": 1,
-              }}
-            />
-          </Source>
-        )}
 
         {level === "city" && (
           <Source id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
