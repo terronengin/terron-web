@@ -32,10 +32,9 @@ function safeStr(x: unknown) {
 }
 
 function normTR(s: unknown) {
-  const x = (typeof s === "string" ? s : "").trim().toLowerCase();
-  return x
-    .replaceAll("İ", "i")
-    .replaceAll("I", "i")
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
     .replaceAll("ı", "i")
     .replaceAll("ğ", "g")
     .replaceAll("ü", "u")
@@ -62,11 +61,15 @@ function coordsFromGeometry(geom: any): number[][] {
   };
 
   if (t === "Polygon") {
-    if (Array.isArray(c) && c.length > 0) pushRing(c[0]);
+    if (Array.isArray(c) && c.length > 0) {
+      for (const ring of c) pushRing(ring);
+    }
   } else if (t === "MultiPolygon") {
     if (Array.isArray(c)) {
       for (const poly of c) {
-        if (Array.isArray(poly) && poly.length > 0) pushRing(poly[0]);
+        if (Array.isArray(poly)) {
+          for (const ring of poly) pushRing(ring);
+        }
       }
     }
   }
@@ -97,6 +100,7 @@ function bboxFromGeometry(geom: any) {
 function centroidFromGeometry(geom: any) {
   const pts = coordsFromGeometry(geom);
   if (pts.length === 0) return null;
+
   let sx = 0;
   let sy = 0;
   let n = 0;
@@ -105,119 +109,23 @@ function centroidFromGeometry(geom: any) {
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
     sx += lng;
     sy += lat;
-    n++;
+    n += 1;
   }
 
   if (!n) return null;
   return [sx / n, sy / n] as [number, number];
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
 function getRegionName(cityRaw: string) {
   const city = normTR(cityRaw);
 
-  const marmara = [
-    "istanbul",
-    "edirne",
-    "kirklareli",
-    "tekirdag",
-    "kocaeli",
-    "sakarya",
-    "yalova",
-    "bursa",
-    "balikesir",
-    "canakkale",
-    "bilecik",
-  ];
-
-  const ege = [
-    "izmir",
-    "manisa",
-    "aydin",
-    "mugla",
-    "denizli",
-    "usak",
-    "kutahya",
-    "afyonkarahisar",
-  ];
-
-  const akdeniz = [
-    "antalya",
-    "burdur",
-    "isparta",
-    "mersin",
-    "adana",
-    "hatay",
-    "osmaniye",
-    "kahramanmaras",
-  ];
-
-  const icAnadolu = [
-    "ankara",
-    "eskisehir",
-    "konya",
-    "aksaray",
-    "karaman",
-    "kirsehir",
-    "nevsehir",
-    "nigde",
-    "kayseri",
-    "sivas",
-    "yozgat",
-    "cankiri",
-  ];
-
-  const karadeniz = [
-    "samsun",
-    "ordu",
-    "giresun",
-    "trabzon",
-    "rize",
-    "artvin",
-    "gumushane",
-    "tokat",
-    "amasya",
-    "corum",
-    "sinop",
-    "kastamonu",
-    "zonguldak",
-    "karabuk",
-    "duzce",
-    "bolu",
-    "bartin",
-  ];
-
-  const dogu = [
-    "erzurum",
-    "erzincan",
-    "kars",
-    "igdir",
-    "agri",
-    "ardahan",
-    "mus",
-    "bingol",
-    "tunceli",
-    "malatya",
-    "elazig",
-    "van",
-    "bitlis",
-    "hakkari",
-  ];
-
-  const guneydogu = [
-    "gaziantep",
-    "sanliurfa",
-    "diyarbakir",
-    "mardin",
-    "batman",
-    "siirt",
-    "sirnak",
-    "adiyaman",
-    "kilis",
-  ];
+  const marmara = ["istanbul", "edirne", "kirklareli", "tekirdag", "kocaeli", "sakarya", "yalova", "bursa", "balikesir", "canakkale", "bilecik"];
+  const ege = ["izmir", "manisa", "aydin", "mugla", "denizli", "usak", "kutahya", "afyonkarahisar"];
+  const akdeniz = ["antalya", "burdur", "isparta", "mersin", "adana", "hatay", "osmaniye", "kahramanmaras"];
+  const icAnadolu = ["ankara", "eskisehir", "konya", "aksaray", "karaman", "kirsehir", "nevsehir", "nigde", "kayseri", "sivas", "yozgat", "cankiri"];
+  const karadeniz = ["samsun", "ordu", "giresun", "trabzon", "rize", "artvin", "gumushane", "tokat", "amasya", "corum", "sinop", "kastamonu", "zonguldak", "karabuk", "duzce", "bolu", "bartin"];
+  const dogu = ["erzurum", "erzincan", "kars", "igdir", "agri", "ardahan", "mus", "bingol", "tunceli", "malatya", "elazig", "van", "bitlis", "hakkari"];
+  const guneydogu = ["gaziantep", "sanliurfa", "diyarbakir", "mardin", "batman", "siirt", "sirnak", "adiyaman", "kilis"];
 
   if (marmara.includes(city)) return "Marmara";
   if (ege.includes(city)) return "Ege";
@@ -241,10 +149,10 @@ export default function MapView(props: {
   const mapRef = useRef<MapRef | null>(null);
 
   const [level, setLevel] = useState<Level>("region");
-  const [pickedRegion, setPickedRegion] = useState<string>("");
-  const [pickedCity, setPickedCity] = useState<string>("");
-  const [pickedDistrict, setPickedDistrict] = useState<string>("");
-  const [pickedNeighborhood, setPickedNeighborhood] = useState<string>("");
+  const [pickedRegion, setPickedRegion] = useState("");
+  const [pickedCity, setPickedCity] = useState("");
+  const [pickedDistrict, setPickedDistrict] = useState("");
+  const [pickedNeighborhood, setPickedNeighborhood] = useState("");
 
   const [provGeo, setProvGeo] = useState<any>({ type: "FeatureCollection", features: [] });
   const [distGeo, setDistGeo] = useState<any>({ type: "FeatureCollection", features: [] });
@@ -259,14 +167,17 @@ export default function MapView(props: {
   const SRC_POINTS = "src-points";
 
   const L_PROV_FILL = "prov-fill";
+  const L_PROV_GLOW = "prov-glow";
   const L_PROV_OUT = "prov-out";
+
   const L_DIST_FILL = "dist-fill";
+  const L_DIST_GLOW = "dist-glow";
   const L_DIST_OUT = "dist-out";
 
   const L_COUNT_PIN = "count-pin";
   const L_COUNT_TEXT = "count-text";
 
-  const L_CLUSTER = "clusters";
+  const L_CLUSTER_PIN = "cluster-pin";
   const L_CLUSTER_TEXT = "cluster-text";
   const L_POINT = "point";
 
@@ -282,6 +193,7 @@ export default function MapView(props: {
         const features = (gj.features || []).map((f: any, i: number) => {
           const name = safeStr(f?.properties?.NAME_1);
           const id = safeStr(f?.properties?.GID_1) || `prov_${i}`;
+          const region = getRegionName(name);
 
           return {
             ...f,
@@ -291,7 +203,23 @@ export default function MapView(props: {
               id,
               name,
               city: name,
-              region: getRegionName(name),
+              region,
+              regionColor:
+                region === "Marmara"
+                  ? "#6DE0FF"
+                  : region === "Ege"
+                  ? "#73F5C3"
+                  : region === "Akdeniz"
+                  ? "#F8B24D"
+                  : region === "İç Anadolu"
+                  ? "#C6A6FF"
+                  : region === "Karadeniz"
+                  ? "#7ED0FF"
+                  : region === "Doğu Anadolu"
+                  ? "#FF9CC7"
+                  : region === "Güneydoğu Anadolu"
+                  ? "#FFB06B"
+                  : "#F5D76E",
             },
           };
         });
@@ -383,10 +311,7 @@ export default function MapView(props: {
   }, [itemsFiltered]);
 
   const regionCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    const m = new Map<
-      string,
-      { count: number; sumLng: number; sumLat: number; n: number }
-    >();
+    const m = new Map<string, { count: number; sumLng: number; sumLat: number; n: number }>();
 
     for (const it of props.items || []) {
       if (!Number.isFinite(it.latitude) || !Number.isFinite(it.longitude)) continue;
@@ -419,9 +344,8 @@ export default function MapView(props: {
 
   const provinceCounts = useMemo(() => {
     const m = new Map<string, number>();
-    const regionFilter = pickedRegion ? pickedRegion : "";
     for (const it of props.items || []) {
-      if (regionFilter && getRegionName(it.city) !== regionFilter) continue;
+      if (pickedRegion && getRegionName(it.city) !== pickedRegion) continue;
       const k = normTR(it.city);
       if (!k) continue;
       m.set(k, (m.get(k) ?? 0) + 1);
@@ -430,15 +354,10 @@ export default function MapView(props: {
   }, [props.items, pickedRegion]);
 
   const districtCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    if (!pickedCity) {
-      return { type: "FeatureCollection", features: [] };
-    }
+    if (!pickedCity) return { type: "FeatureCollection", features: [] };
 
     const pickedK = normTR(pickedCity);
-    const m = new Map<
-      string,
-      { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }
-    >();
+    const m = new Map<string, { districtRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
 
     for (const it of props.items || []) {
       if (pickedK && normTR(it.city) !== pickedK) continue;
@@ -452,7 +371,6 @@ export default function MapView(props: {
       cur.sumLng += Number(it.longitude);
       cur.sumLat += Number(it.latitude);
       cur.n += 1;
-      cur.districtRaw = cur.districtRaw || dRaw;
       m.set(dK, cur);
     }
 
@@ -476,16 +394,11 @@ export default function MapView(props: {
   }, [props.items, pickedCity]);
 
   const neighborhoodCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    if (!pickedCity || !pickedDistrict) {
-      return { type: "FeatureCollection", features: [] };
-    }
+    if (!pickedCity || !pickedDistrict) return { type: "FeatureCollection", features: [] };
 
     const cityK = normTR(pickedCity);
     const distK = normTR(pickedDistrict);
-    const m = new Map<
-      string,
-      { neighborhoodRaw: string; count: number; sumLng: number; sumLat: number; n: number }
-    >();
+    const m = new Map<string, { neighborhoodRaw: string; count: number; sumLng: number; sumLat: number; n: number }>();
 
     for (const it of props.items || []) {
       if (normTR(it.city) !== cityK) continue;
@@ -501,7 +414,6 @@ export default function MapView(props: {
       cur.sumLng += Number(it.longitude);
       cur.sumLat += Number(it.latitude);
       cur.n += 1;
-      cur.neighborhoodRaw = cur.neighborhoodRaw || nRaw;
       m.set(nKey, cur);
     }
 
@@ -541,14 +453,14 @@ export default function MapView(props: {
   }, [distGeo, pickedCity]);
 
   const activePoly = useMemo(() => {
-    if (level === "city") {
-      return { src: SRC_PROV, geo: activeProvinceGeo, fill: L_PROV_FILL, out: L_PROV_OUT };
+    if (level === "region" || level === "city") {
+      return { src: SRC_PROV, fill: L_PROV_FILL, glow: L_PROV_GLOW, out: L_PROV_OUT };
     }
     if (level === "district") {
-      return { src: SRC_DIST, geo: activeDistrictGeo, fill: L_DIST_FILL, out: L_DIST_OUT };
+      return { src: SRC_DIST, fill: L_DIST_FILL, glow: L_DIST_GLOW, out: L_DIST_OUT };
     }
     return null;
-  }, [level, activeProvinceGeo, activeDistrictGeo]);
+  }, [level]);
 
   const countGeo = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
     if (level === "region") return regionCenters;
@@ -559,7 +471,6 @@ export default function MapView(props: {
           const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_1);
           const center = centroidFromGeometry(f.geometry);
           if (!name || !center) return null;
-          const count = provinceCounts.get(normTR(name)) ?? 0;
 
           return {
             type: "Feature" as const,
@@ -567,7 +478,7 @@ export default function MapView(props: {
             properties: {
               name,
               city: name,
-              count,
+              count: provinceCounts.get(normTR(name)) ?? 0,
               level: "city",
             },
             geometry: {
@@ -576,30 +487,81 @@ export default function MapView(props: {
             },
           };
         })
-        .filter(Boolean) as Feature<Point, CountPointProps>[];
+        .filter(Boolean)
+        .filter((x: any) => Number(x.properties?.count || 0) > 0) as Feature<Point, CountPointProps>[];
 
       return { type: "FeatureCollection", features };
     }
 
     if (level === "district") return districtCenters;
     if (level === "neighborhood") return neighborhoodCenters;
+
     return { type: "FeatureCollection", features: [] };
   }, [level, regionCenters, activeProvinceGeo, provinceCounts, districtCenters, neighborhoodCenters]);
 
-  function fillPaint() {
+  function fillPaintRegion() {
     return {
       "fill-color": [
         "case",
-        ["==", ["get", "id"], selectedPolyId ?? ""],
-        "rgba(245,215,110,0.20)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.14)",
-        "rgba(245,215,110,0.05)",
+        "rgba(109,224,255,0.18)",
+        "rgba(245,215,110,0.06)",
+      ],
+      "fill-opacity": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        0.3,
+        0.12,
       ],
     } as any;
   }
 
-  function linePaint() {
+  function fillPaintDefault() {
+    return {
+      "fill-color": [
+        "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        "rgba(245,215,110,0.16)",
+        ["boolean", ["feature-state", "hover"], false],
+        "rgba(245,215,110,0.12)",
+        "rgba(245,215,110,0.05)",
+      ],
+      "fill-opacity": [
+        "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        0.32,
+        ["boolean", ["feature-state", "hover"], false],
+        0.24,
+        0.12,
+      ],
+    } as any;
+  }
+
+  function glowPaintRegion() {
+    return {
+      "line-color": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        "rgba(109,224,255,0.95)",
+        "rgba(109,224,255,0.28)",
+      ],
+      "line-width": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        3.5,
+        1.6,
+      ],
+      "line-blur": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        2.6,
+        0.7,
+      ],
+      "line-opacity": 1,
+    } as any;
+  }
+
+  function linePaintDefault() {
     return {
       "line-color": [
         "case",
@@ -607,24 +569,25 @@ export default function MapView(props: {
         "rgba(245,215,110,0.98)",
         ["boolean", ["feature-state", "hover"], false],
         "rgba(245,215,110,0.95)",
-        "rgba(245,215,110,0.40)",
+        "rgba(245,215,110,0.38)",
       ],
       "line-width": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        3.1,
+        3.2,
         ["boolean", ["feature-state", "hover"], false],
-        2.7,
-        1.2,
+        2.6,
+        1.15,
       ],
       "line-blur": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        1.0,
+        1.25,
         ["boolean", ["feature-state", "hover"], false],
-        0.85,
-        0.1,
+        0.95,
+        0.12,
       ],
+      "line-opacity": 1,
     } as any;
   }
 
@@ -654,7 +617,7 @@ export default function MapView(props: {
     setHoveredPointId(null);
   }
 
-  function zoomToGeometry(geom: any) {
+  function zoomToGeometry(geom: any, maxZoom = 9.4) {
     const map = mapRef.current;
     if (!map) return;
     const bb = bboxFromGeometry(geom);
@@ -665,7 +628,7 @@ export default function MapView(props: {
         [bb.minLng, bb.minLat],
         [bb.maxLng, bb.maxLat],
       ],
-      { padding: 60, duration: 650 }
+      { padding: 60, duration: 650, maxZoom }
     );
   }
 
@@ -747,9 +710,6 @@ export default function MapView(props: {
   }
 
   function handleCountNavigation(f: any) {
-    const map = mapRef.current;
-    if (!map) return;
-
     const nameRaw = String(f.properties?.name || "").trim();
     if (!nameRaw) return;
 
@@ -769,8 +729,7 @@ export default function MapView(props: {
     }
 
     if (level === "city") {
-      const realCity =
-        (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
+      const realCity = (props.items || []).find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
 
       setPickedCity(realCity);
       props.onSetCity?.(realCity);
@@ -780,10 +739,8 @@ export default function MapView(props: {
       props.onSetNeighborhood?.("");
       setLevel("district");
 
-      const coords = f.geometry?.coordinates;
-      if (Array.isArray(coords)) {
-        map.easeTo({ center: coords as [number, number], zoom: 7.8, duration: 520 });
-      }
+      const cityItems = (props.items || []).filter((it) => sameTR(it.city, realCity));
+      zoomToItems(cityItems, 8.1);
       return;
     }
 
@@ -802,8 +759,7 @@ export default function MapView(props: {
       const districtItems = (props.items || []).filter(
         (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
       );
-
-      zoomToItems(districtItems, 10.8);
+      zoomToItems(districtItems, 10.9);
       return;
     }
 
@@ -824,16 +780,15 @@ export default function MapView(props: {
           sameTR(it.district ?? "", pickedDistrict) &&
           sameTR(it.neighborhood ?? "", realNeighborhood)
       );
-
-      zoomToItems(neighborhoodItems, 13.1);
+      zoomToItems(neighborhoodItems, 13.3);
     }
   }
 
-  async function onMapClick(e: any) {
+  function onMapClick(e: any) {
     const map = mapRef.current;
     if (!map) return;
 
-    if (level === "region" || level === "city" || level === "district" || level === "neighborhood") {
+    if (level !== "parcel") {
       const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_PIN, L_COUNT_TEXT] });
       if (countHits && countHits.length > 0) {
         handleCountNavigation(countHits[0]);
@@ -842,14 +797,31 @@ export default function MapView(props: {
     }
 
     if (activePoly) {
-      const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out] });
+      const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out, activePoly.glow] });
       if (hits && hits.length > 0) {
         const f: any = hits[0];
         const geom = f.geometry;
         const p = f.properties || {};
         const id = String(p.id || f.id || "");
         if (id) setSelectedPolyId(id);
-        if (geom) zoomToGeometry(geom);
+
+        if (level === "region") {
+          const region = String(p.region || "").trim();
+          if (region) {
+            setPickedRegion(region);
+            setPickedCity("");
+            setPickedDistrict("");
+            setPickedNeighborhood("");
+            props.onSetCity?.("");
+            props.onSetDistrict?.("");
+            props.onSetNeighborhood?.("");
+            setLevel("city");
+
+            const regionItems = (props.items || []).filter((it) => getRegionName(it.city) === region);
+            zoomToItems(regionItems, 6.2);
+            return;
+          }
+        }
 
         if (level === "city") {
           const cityNameRaw = String(p.name || p.NAME_1 || "").trim();
@@ -866,6 +838,7 @@ export default function MapView(props: {
           props.onSetDistrict?.("");
           props.onSetNeighborhood?.("");
           setLevel("district");
+          if (geom) zoomToGeometry(geom, 8.1);
           return;
         }
 
@@ -886,7 +859,7 @@ export default function MapView(props: {
             const districtItems = (props.items || []).filter(
               (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
             );
-            zoomToItems(districtItems, 10.8);
+            zoomToItems(districtItems, 10.9);
           }
           return;
         }
@@ -894,7 +867,7 @@ export default function MapView(props: {
     }
 
     if (level === "parcel") {
-      const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER, L_POINT] });
+      const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER_PIN, L_POINT] });
       if (!hits || hits.length === 0) return;
 
       const f: any = hits[0];
@@ -925,7 +898,7 @@ export default function MapView(props: {
     const map = mapRef.current;
     if (!map) return;
 
-    if (level === "region" || level === "city" || level === "district" || level === "neighborhood") {
+    if (level !== "parcel") {
       const countHits = map.queryRenderedFeatures(e.point, { layers: [L_COUNT_PIN, L_COUNT_TEXT] });
       if (countHits && countHits.length > 0) {
         map.getCanvas().style.cursor = "pointer";
@@ -936,7 +909,7 @@ export default function MapView(props: {
     }
 
     if (activePoly) {
-      const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out] });
+      const hits = map.queryRenderedFeatures(e.point, { layers: [activePoly.fill, activePoly.out, activePoly.glow] });
       if (hits && hits.length > 0) {
         map.getCanvas().style.cursor = "pointer";
         const f: any = hits[0];
@@ -969,7 +942,7 @@ export default function MapView(props: {
     }
 
     if (level === "parcel") {
-      const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER, L_POINT] });
+      const hits = map.queryRenderedFeatures(e.point, { layers: [L_CLUSTER_PIN, L_POINT] });
       if (!hits || hits.length === 0) {
         map.getCanvas().style.cursor = "";
         clearPointHover();
@@ -978,6 +951,12 @@ export default function MapView(props: {
 
       map.getCanvas().style.cursor = "pointer";
       const f: any = hits[0];
+      const isCluster = !!(f.properties && f.properties.cluster);
+      if (isCluster) {
+        clearPointHover();
+        return;
+      }
+
       const pid = String(f.properties?.id || "");
       if (!pid || pid === hoveredPointId) return;
 
@@ -1010,33 +989,33 @@ export default function MapView(props: {
     if (level === "city") return `İller • ${pickedRegion || "Türkiye"}`;
     if (level === "district") return `İlçeler • ${pickedCity || "—"}`;
     if (level === "neighborhood") return `Mahalleler • ${pickedCity}${pickedDistrict ? ` / ${pickedDistrict}` : ""}`;
-    return `Arsalar • ${pickedCity}${pickedDistrict ? ` / ${pickedDistrict}` : ""}${pickedNeighborhood ? ` / ${pickedNeighborhood}` : ""}`;
+    return `Parseller • ${pickedCity}${pickedDistrict ? ` / ${pickedDistrict}` : ""}${pickedNeighborhood ? ` / ${pickedNeighborhood}` : ""}`;
   }, [level, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
 
   const summaryText = useMemo(() => {
     if (level === "region") return `${props.items.length} arsa • bölgesel görünüm`;
     if (level === "city") {
       const count = (props.items || []).filter((x) => (!pickedRegion ? true : getRegionName(x.city) === pickedRegion)).length;
-      return `${count} arsa • il dağılımı`;
+      return `${count} arsa • il görünümü`;
     }
     if (level === "district") {
       const count = (props.items || []).filter((x) => sameTR(x.city, pickedCity)).length;
-      return `${count} arsa • ilçe dağılımı`;
+      return `${count} arsa • ilçe görünümü`;
     }
     if (level === "neighborhood") {
       const count = (props.items || []).filter(
         (x) => sameTR(x.city, pickedCity) && sameTR(x.district ?? "", pickedDistrict)
       ).length;
-      return `${count} arsa • mahalle dağılımı`;
+      return `${count} arsa • mahalle görünümü`;
     }
-    return `${itemsFiltered.length} arsa • tekil görünüm`;
+    return `${itemsFiltered.length} arsa • parsel görünümü`;
   }, [level, props.items, pickedRegion, pickedCity, pickedDistrict, itemsFiltered.length]);
 
   const interactiveLayers = useMemo(() => {
     const arr: string[] = [];
-    if (activePoly) arr.push(activePoly.fill, activePoly.out);
+    if (activePoly) arr.push(activePoly.fill, activePoly.glow, activePoly.out);
     arr.push(L_COUNT_PIN, L_COUNT_TEXT);
-    if (level === "parcel") arr.push(L_CLUSTER, L_POINT);
+    if (level === "parcel") arr.push(L_CLUSTER_PIN, L_POINT);
     return arr;
   }, [activePoly, level]);
 
@@ -1055,27 +1034,49 @@ export default function MapView(props: {
     layout: {
       "icon-image": "marker-15",
       "icon-size": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        4,
-        ["interpolate", ["linear"], ["get", "count"], 1, 1.1, 20, 1.18, 100, 1.28, 300, 1.38],
-        7,
-        ["interpolate", ["linear"], ["get", "count"], 1, 0.98, 20, 1.04, 100, 1.12, 300, 1.22],
-        10,
-        ["interpolate", ["linear"], ["get", "count"], 1, 0.88, 20, 0.96, 100, 1.04, 300, 1.12],
-        13,
-        ["interpolate", ["linear"], ["get", "count"], 1, 0.8, 20, 0.88, 100, 0.96, 300, 1.04],
+        "step",
+        ["get", "count"],
+        1.8,
+        20,
+        2.05,
+        60,
+        2.25,
+        150,
+        2.5,
+        300,
+        2.8,
       ],
       "icon-anchor": "bottom",
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
+      "text-field": ["to-string", ["get", "count"]],
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-size": [
+        "step",
+        ["get", "count"],
+        11,
+        20,
+        12,
+        60,
+        13,
+        150,
+        14,
+        300,
+        15,
+      ],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+      "text-anchor": "center",
+      "text-offset": [0, -0.75],
     },
     paint: {
-      "icon-color": "#D4AF37",
-      "icon-halo-color": "rgba(8,12,22,0.95)",
-      "icon-halo-width": 2.2,
+      "icon-color": "#D0A42B",
+      "icon-halo-color": "rgba(0,0,0,0.65)",
+      "icon-halo-width": 1.25,
       "icon-opacity": 0.98,
+      "text-color": "#ffffff",
+      "text-halo-color": "rgba(0,0,0,0.45)",
+      "text-halo-width": 1.1,
     },
   };
 
@@ -1084,45 +1085,59 @@ export default function MapView(props: {
     type: "symbol",
     source: SRC_COUNT,
     layout: {
-      "text-field": ["to-string", ["get", "count"]],
-      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        4,
-        10,
-        7,
-        11,
-        10,
-        11.5,
-        13,
-        12,
-      ],
-      "text-anchor": "center",
-      "text-offset": [0, -1.15],
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
+      "text-field": ["get", "name"],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+      "text-size": 11,
+      "text-anchor": "top",
+      "text-offset": [0, 0.35],
+      "text-allow-overlap": false,
+      "text-ignore-placement": false,
     },
     paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(8,12,22,0.75)",
+      "text-color": "rgba(255,255,255,0.86)",
+      "text-halo-color": "rgba(8,12,22,0.92)",
       "text-halo-width": 1.2,
     },
   };
 
-  const clusterLayer: any = {
-    id: L_CLUSTER,
-    type: "circle",
+  const clusterPinLayer: any = {
+    id: L_CLUSTER_PIN,
+    type: "symbol",
     source: SRC_POINTS,
     filter: ["has", "point_count"],
+    layout: {
+      "icon-image": "marker-15",
+      "icon-size": [
+        "step",
+        ["get", "point_count"],
+        1.65,
+        25,
+        1.9,
+        75,
+        2.15,
+        150,
+        2.35,
+        300,
+        2.65,
+      ],
+      "icon-anchor": "bottom",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-size": 12,
+      "text-anchor": "center",
+      "text-offset": [0, -0.75],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
     paint: {
-      "circle-radius": ["step", ["get", "point_count"], 15, 20, 17, 60, 19, 150, 22, 300, 25],
-      "circle-color": "rgba(8,12,22,0.75)",
-      "circle-stroke-color": "rgba(245,215,110,0.98)",
-      "circle-stroke-width": 2.1,
-      "circle-opacity": 0.98,
-      "circle-blur": 0.12,
+      "icon-color": "#D0A42B",
+      "icon-halo-color": "rgba(8,12,22,0.88)",
+      "icon-halo-width": 1.3,
+      "text-color": "#ffffff",
+      "text-halo-color": "rgba(0,0,0,0.42)",
+      "text-halo-width": 1.1,
     },
   };
 
@@ -1132,16 +1147,7 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["has", "point_count"],
     layout: {
-      "text-field": ["get", "point_count_abbreviated"],
-      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": 12,
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-    },
-    paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(0,0,0,0.35)",
-      "text-halo-width": 1,
+      "text-field": "",
     },
   };
 
@@ -1151,17 +1157,17 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 8, 5.2],
-      "circle-color": "rgba(8,12,22,0.84)",
+      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 8.8, 5.8],
+      "circle-color": "rgba(8,12,22,0.86)",
       "circle-stroke-color": [
         "case",
         ["boolean", ["feature-state", "hover"], false],
         "rgba(245,215,110,1)",
-        "rgba(201,162,39,0.82)",
+        "rgba(201,162,39,0.86)",
       ],
-      "circle-stroke-width": 2,
+      "circle-stroke-width": 2.2,
       "circle-opacity": 0.98,
-      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.7, 0.12],
+      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.78, 0.14],
     },
   };
 
@@ -1227,21 +1233,39 @@ export default function MapView(props: {
       >
         <NavigationControl position="bottom-right" />
 
-        {level === "city" && (
-          <Source id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
-            <Layer id={L_PROV_FILL} type="fill" paint={fillPaint()} />
-            <Layer id={L_PROV_OUT} type="line" paint={linePaint()} />
+        {(level === "region" || level === "city") && (
+          <Source id={SRC_PROV} type="geojson" data={level === "region" ? provGeo : activeProvinceGeo} promoteId="id">
+            <Layer id={L_PROV_FILL} type="fill" paint={level === "region" ? fillPaintRegion() : fillPaintDefault()} />
+            <Layer id={L_PROV_GLOW} type="line" paint={level === "region" ? glowPaintRegion() : linePaintDefault()} />
+            <Layer
+              id={L_PROV_OUT}
+              type="line"
+              paint={{
+                "line-color": level === "region" ? "rgba(255,255,255,0.18)" : "rgba(245,215,110,0.48)",
+                "line-width": level === "region" ? 0.8 : 1.1,
+                "line-opacity": 1,
+              }}
+            />
           </Source>
         )}
 
         {level === "district" && (
           <Source id={SRC_DIST} type="geojson" data={activeDistrictGeo} promoteId="id">
-            <Layer id={L_DIST_FILL} type="fill" paint={fillPaint()} />
-            <Layer id={L_DIST_OUT} type="line" paint={linePaint()} />
+            <Layer id={L_DIST_FILL} type="fill" paint={fillPaintDefault()} />
+            <Layer id={L_DIST_GLOW} type="line" paint={linePaintDefault()} />
+            <Layer
+              id={L_DIST_OUT}
+              type="line"
+              paint={{
+                "line-color": "rgba(245,215,110,0.48)",
+                "line-width": 1.1,
+                "line-opacity": 1,
+              }}
+            />
           </Source>
         )}
 
-        {(level === "region" || level === "city" || level === "district" || level === "neighborhood") && (
+        {level !== "parcel" && (
           <Source id={SRC_COUNT} type="geojson" data={countGeo}>
             <Layer {...countPinLayer} />
             <Layer {...countTextLayer} />
@@ -1254,11 +1278,11 @@ export default function MapView(props: {
             type="geojson"
             data={pointsGeo as any}
             cluster={true}
-            clusterRadius={48}
-            clusterMaxZoom={12}
+            clusterRadius={50}
+            clusterMaxZoom={13}
             promoteId={"id" as any}
           >
-            <Layer {...clusterLayer} />
+            <Layer {...clusterPinLayer} />
             <Layer {...clusterTextLayer} />
             <Layer {...pointLayer} />
           </Source>

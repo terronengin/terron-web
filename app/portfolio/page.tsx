@@ -32,6 +32,24 @@ type PositionRow = {
   entry_price: number | null;
   created_at: string;
   property?: PositionProperty | null;
+  is_demo?: boolean;
+};
+
+type DemoPosition = {
+  id: string;
+  property_id: string;
+  m2: number;
+  total_paid: number;
+  entry_price_m2: number;
+  created_at: string;
+  snapshot?: {
+    title?: string;
+    city?: string;
+    district?: string | null;
+    neighborhood?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  };
 };
 
 type EnrichedPositionRow = PositionRow & {
@@ -106,6 +124,21 @@ export default function PortfolioPage() {
     const price = Math.max(1, Number(entryPriceM2 || 1)) * drift * (1 + noise);
 
     return Math.max(1, price);
+  }
+
+  function loadDemoPositions(): DemoPosition[] {
+    try {
+      const raw = localStorage.getItem("terron_demo_positions");
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveDemoPositions(list: DemoPosition[]) {
+    localStorage.setItem("terron_demo_positions", JSON.stringify(list));
   }
 
   async function ensureAndLoadWallet(currentUserId: string) {
@@ -185,17 +218,48 @@ export default function PortfolioPage() {
       if (error) {
         console.error("[portfolio] load error:", error);
         setErrorMsg(error.message);
-        setRows([]);
-        setLoading(false);
-        return;
       }
 
-      const normalizedRows: PositionRow[] = ((data ?? []) as any[]).map((row) => ({
+      const normalizedDbRows: PositionRow[] = ((data ?? []) as any[]).map((row) => ({
         ...row,
         property: Array.isArray(row.property) ? row.property[0] ?? null : row.property ?? null,
+        is_demo: false,
       }));
 
-      setRows(normalizedRows);
+      const demoRows: PositionRow[] = loadDemoPositions().map((d) => ({
+        id: d.id,
+        user_id: userId,
+        property_id: d.property_id,
+        m2: Number(d.m2 ?? 0),
+        total_paid: Number(d.total_paid ?? 0),
+        entry_price_m2: Number(d.entry_price_m2 ?? 0),
+        amount: Number(d.total_paid ?? 0),
+        units: Number(d.m2 ?? 0),
+        entry_price: Number(d.entry_price_m2 ?? 0),
+        created_at: d.created_at,
+        is_demo: true,
+        property: {
+          id: d.property_id,
+          title: d.snapshot?.title || "Demo Arsa",
+          city: d.snapshot?.city || "—",
+          district: d.snapshot?.district ?? null,
+          neighborhood: d.snapshot?.neighborhood ?? null,
+          expected_annual_return: 18,
+          risk_score: 40,
+          development_score: 60,
+          last_30d_change: 2,
+          total_area_m2: null,
+          available_m2: null,
+          sold_m2: null,
+          price_per_m2: Number(d.entry_price_m2 ?? 0),
+        },
+      }));
+
+      const merged = [...demoRows, ...normalizedDbRows].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setRows(merged);
       setLoading(false);
     };
 
@@ -224,7 +288,7 @@ export default function PortfolioPage() {
           ? Number(r.amount)
           : m2 * entryM2;
 
-      const annual = Number(r.property?.expected_annual_return ?? 0);
+      const annual = Number(r.property?.expected_annual_return ?? 18);
       const currentPriceM2 = simulateCurrentPricePerM2(r.property_id, annual, entryM2);
       const currentValue = m2 * currentPriceM2;
 
@@ -290,6 +354,34 @@ export default function PortfolioPage() {
     setWalletBalance((prev) => Math.round(Number(prev ?? 0) + sellValue));
 
     try {
+      if (row.is_demo) {
+        const demoList = loadDemoPositions();
+        const nextDemoList = demoList.filter((x) => x.id !== row.id);
+        saveDemoPositions(nextDemoList);
+
+        const { data: walletRow, error: walletErr } = await supabase
+          .from("wallets")
+          .select("balance")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (walletErr) throw walletErr;
+
+        const dbBalance = Math.round(Number(walletRow?.balance ?? 0));
+        const nextBalance = dbBalance + sellValue;
+
+        const { error: walletUpdateErr } = await supabase
+          .from("wallets")
+          .update({ balance: nextBalance, updated_at: new Date().toISOString() })
+          .eq("user_id", userId);
+
+        if (walletUpdateErr) throw walletUpdateErr;
+
+        setWalletBalance(nextBalance);
+        alert("Demo pozisyon satıldı ✅");
+        return;
+      }
+
       const { data: walletRow, error: walletErr } = await supabase
         .from("wallets")
         .select("balance")
@@ -506,11 +598,11 @@ export default function PortfolioPage() {
                               color: "white",
                               cursor: sellingId === r.id ? "not-allowed" : "pointer",
                               fontWeight: 900,
-                              minWidth: 90,
+                              minWidth: 110,
                               opacity: sellingId === r.id ? 0.7 : 1,
                             }}
                           >
-                            {sellingId === r.id ? "Satılıyor..." : "Sat"}
+                            {sellingId === r.id ? "Satılıyor..." : r.is_demo ? "Demo Sat" : "Sat"}
                           </button>
                         </td>
                       </tr>

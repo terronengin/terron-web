@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView from "../components/map/MapView";
 import { supabase } from "../../lib/supabaseClient";
@@ -54,8 +54,35 @@ type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
 type InsightTab = "arsa" | "gelisim" | "risk";
 
 const USE_DEMO_SEED_IF_EMPTY = true;
-const DEMO_CITY_COUNT = 60;
-const DEMO_PROPERTY_COUNT = 2200;
+const DEMO_CITY_COUNT = 30;
+const DEMO_PROPERTY_COUNT = 6000;
+const DEMO_MIN_PER_DISTRICT = 15;
+const DEMO_MAX_PER_DISTRICT = 20;
+
+type CartItem = {
+  key: string;
+  property: Property;
+  m2: number;
+  pricePerM2: number;
+  totalPaid: number;
+};
+
+type DemoPosition = {
+  id: string;
+  property_id: string;
+  m2: number;
+  total_paid: number;
+  entry_price_m2: number;
+  created_at: string;
+  snapshot: {
+    title?: string;
+    city?: string;
+    district?: string | null;
+    neighborhood?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  };
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -91,50 +118,14 @@ export default function DashboardPage() {
 
   const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
 
-  type CartItem = {
-    key: string;
-    property: Property;
-    m2: number;
-    pricePerM2: number;
-    totalPaid: number;
-  };
-
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
-
-  const [simDayOffset, setSimDayOffset] = useState<number>(0);
-  const [ticking, setTicking] = useState(false);
-
-  const INFO_OPEN_H = 860;
-  const INFO_TRAVEL = INFO_OPEN_H - 88;
-
-  const [infoOpen, setInfoOpen] = useState(true);
-  const [dragY, setDragY] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const dragStartRef = useRef<{ y: number; start: number } | null>(null);
 
   const HEADER_H = 64;
 
   function isDemoPropertyId(id: string) {
     return typeof id === "string" && id.startsWith("demo_");
   }
-
-  type DemoPosition = {
-    id: string;
-    property_id: string;
-    m2: number;
-    total_paid: number;
-    entry_price_m2: number;
-    created_at: string;
-    snapshot: {
-      title?: string;
-      city?: string;
-      district?: string | null;
-      neighborhood?: string | null;
-      latitude?: number | null;
-      longitude?: number | null;
-    };
-  };
 
   function loadDemoPositions(): DemoPosition[] {
     try {
@@ -376,15 +367,21 @@ export default function DashboardPage() {
     const list = (data ?? []) as Property[];
 
     if (USE_DEMO_SEED_IF_EMPTY && list.length < 100) {
-      const seeded = generateDemoProperties({
-        countCities: DEMO_CITY_COUNT,
-        countProps: DEMO_PROPERTY_COUNT,
-        seed: 1337,
-      });
+      try {
+        const seeded = await generateDemoPropertiesFromDistrictGeo({
+          countCities: DEMO_CITY_COUNT,
+          countProps: DEMO_PROPERTY_COUNT,
+          minPerDistrict: DEMO_MIN_PER_DISTRICT,
+          maxPerDistrict: DEMO_MAX_PER_DISTRICT,
+          seed: 1337,
+        });
 
-      setItems(seeded);
-      setSelected((prev) => prev ?? seeded[0] ?? null);
-      return;
+        setItems(seeded);
+        setSelected((prev) => prev ?? seeded[0] ?? null);
+        return;
+      } catch (e) {
+        console.error("[DEMO] seed error:", e);
+      }
     }
 
     setItems(list);
@@ -498,23 +495,6 @@ export default function DashboardPage() {
   }, [city, district, neighborhood]);
 
   async function logout() {
-    const rememberPref =
-      typeof window !== "undefined" ? localStorage.getItem("terron_remember_me") : null;
-
-    let keepRemember = rememberPref === "true";
-
-    if (typeof window !== "undefined") {
-      keepRemember = window.confirm(
-        "Bu cihazda girişin hatırlansın mı?\n\nTamam = Hatırla\nİptal = Unut"
-      );
-
-      localStorage.setItem("terron_remember_me", String(keepRemember));
-
-      if (!keepRemember) {
-        localStorage.removeItem("terron_saved_email");
-      }
-    }
-
     await supabase.auth.signOut();
     router.replace("/login");
   }
@@ -554,51 +534,10 @@ export default function DashboardPage() {
     setWalletBalance(Number(ins.balance));
   }
 
-  async function ensureAndLoadSimDay() {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .upsert({ id: user.id, sim_day_offset: 0 }, { onConflict: "id" })
-      .select("sim_day_offset")
-      .single();
-
-    if (error) {
-      console.warn("[profiles] upsert/select error:", error);
-      return;
-    }
-
-    setSimDayOffset(Number(data?.sim_day_offset ?? 0));
-  }
-
   useEffect(() => {
     if (!email) return;
     ensureAndLoadWallet();
-    ensureAndLoadSimDay();
   }, [email]);
-
-  async function setSimDay(next: number) {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) return;
-
-    setTicking(true);
-
-    const safe = Math.max(0, next);
-
-    const { error } = await supabase.from("profiles").update({ sim_day_offset: safe }).eq("id", user.id);
-
-    if (error) {
-      alert("Sim gün güncellenemedi: " + error.message);
-      setTicking(false);
-      return;
-    }
-
-    setSimDayOffset(safe);
-    setTicking(false);
-  }
 
   function getRealEstateSim(p: Property) {
     if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
@@ -632,7 +571,7 @@ export default function DashboardPage() {
       },
     };
 
-    const out = simulatePropertyPriceTRY(propertyForSim as any, simDayOffset, seedScope);
+    const out = simulatePropertyPriceTRY(propertyForSim as any, 0, seedScope);
     const totalShares = Number(p.total_shares ?? 100000);
     const sharePrice = out.price / Math.max(1, totalShares);
 
@@ -681,7 +620,6 @@ export default function DashboardPage() {
         }
 
         setOpening(true);
-
         setWalletBalance(currentBalance - totalPaid);
 
         const list = loadDemoPositions();
@@ -708,9 +646,7 @@ export default function DashboardPage() {
         alert("Demo m² yatırımı açıldı ✅");
         setOpening(false);
         return;
-      }
-
-      setOpening(true);
+      }      setOpening(true);
 
       const { data: userRes } = await supabase.auth.getUser();
       const user = userRes?.user;
@@ -1047,45 +983,6 @@ export default function DashboardPage() {
     }
   }
 
-  function openInfo() {
-    setInfoOpen(true);
-    setDragY(0);
-  }
-
-  function closeInfo() {
-    setInfoOpen(false);
-    setDragY(INFO_TRAVEL);
-  }
-
-  function onHandlePointerDown(e: React.PointerEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
-    setDragging(true);
-    dragStartRef.current = { y: e.clientY, start: dragY };
-  }
-
-  function onHandlePointerMove(e: React.PointerEvent) {
-    if (!dragging || !dragStartRef.current) return;
-    const dy = e.clientY - dragStartRef.current.y;
-    const next = clamp(dragStartRef.current.start + dy, 0, INFO_TRAVEL);
-    setDragY(next);
-  }
-
-  function onHandlePointerUp() {
-    setDragging(false);
-    dragStartRef.current = null;
-
-    const threshold = INFO_TRAVEL * 0.45;
-    if (dragY > threshold) closeInfo();
-    else openInfo();
-  }
-
-  useEffect(() => {
-    if (infoOpen) setDragY(0);
-    else setDragY(INFO_TRAVEL);
-  }, [infoOpen]);
-
   const selectedSim = selected ? getRealEstateSim(selected) : null;
   const selectedPricePerM2 = selected ? getEffectivePricePerM2(selected) : 0;
   const selectedAvailableM2 = getPropertyAvailableM2(selected);
@@ -1126,25 +1023,13 @@ export default function DashboardPage() {
   const developmentHistory = useMemo(() => {
     if (!selected) return [];
     const base = clamp(Number(selected.development_score ?? 50), 0, 100);
-    return [
-      clamp(base - 20, 0, 100),
-      clamp(base - 14, 0, 100),
-      clamp(base - 8, 0, 100),
-      clamp(base - 3, 0, 100),
-      clamp(base, 0, 100),
-    ];
+    return [clamp(base - 20, 0, 100), clamp(base - 14, 0, 100), clamp(base - 8, 0, 100), clamp(base - 3, 0, 100), clamp(base, 0, 100)];
   }, [selected]);
 
   const riskHistory = useMemo(() => {
     if (!selected) return [];
     const base = clamp(Number(selected.risk_score ?? 50), 0, 100);
-    return [
-      clamp(base + 8, 0, 100),
-      clamp(base + 5, 0, 100),
-      clamp(base + 3, 0, 100),
-      clamp(base + 1, 0, 100),
-      clamp(base, 0, 100),
-    ];
+    return [clamp(base + 8, 0, 100), clamp(base + 5, 0, 100), clamp(base + 3, 0, 100), clamp(base + 1, 0, 100), clamp(base, 0, 100)];
   }, [selected]);
 
   if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
@@ -1307,19 +1192,13 @@ export default function DashboardPage() {
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Trend (Son 30 gün)</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <button
-              onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")}
-              style={chip(trendBand === "rising")}
-            >
+            <button onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")} style={chip(trendBand === "rising")}>
               Yükselen
             </button>
             <button onClick={() => setTrendBand(trendBand === "flat" ? "" : "flat")} style={chip(trendBand === "flat")}>
               Sabit
             </button>
-            <button
-              onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")}
-              style={chip(trendBand === "falling")}
-            >
+            <button onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")} style={chip(trendBand === "falling")}>
               Düşen
             </button>
           </div>
@@ -1391,17 +1270,13 @@ export default function DashboardPage() {
                 onClick={() => {
                   setSelected(p);
                   setPanelOpen(false);
-                  openInfo();
                 }}
                 style={{
                   textAlign: "left",
                   padding: 12,
                   borderRadius: 14,
                   background: selected?.id === p.id ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
-                  border:
-                    selected?.id === p.id
-                      ? "1px solid rgba(255,255,255,0.18)"
-                      : "1px solid rgba(255,255,255,0.08)",
+                  border: selected?.id === p.id ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.08)",
                   color: "white",
                   cursor: "pointer",
                 }}
@@ -1423,17 +1298,13 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk %{Math.round(p.risk_score)} • Gelişim %{Math.round(
-                    p.development_score
-                  )}
+                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk %{Math.round(p.risk_score)} • Gelişim %{Math.round(p.development_score)}
                 </div>
               </button>
             );
           })}
         </div>
-      </div>
-
-      <section style={{ position: "absolute", inset: 0 }}>
+      </div>      <section style={{ position: "absolute", inset: 0 }}>
         <div
           style={{
             height: HEADER_H,
@@ -1650,12 +1521,9 @@ export default function DashboardPage() {
             }}
             onSelectPropertyId={(id) => {
               const found = items.find((x) => x.id === id) || filteredItems.find((x) => x.id === id) || null;
-              if (found) {
-                setSelected(found);
-                openInfo();
-              }
+              if (found) setSelected(found);
             }}
-            onOpenInfo={() => openInfo()}
+            onOpenInfo={() => undefined}
           />
         </div>
 
@@ -1664,11 +1532,9 @@ export default function DashboardPage() {
             style={{
               position: "absolute",
               right: 16,
-              bottom: 16,
-              width: 390,
-              height: INFO_OPEN_H,
-              transform: `translateY(${dragY}px)`,
-              transition: dragging ? "none" : "transform 220ms ease",
+              top: HEADER_H + 12,
+              width: 370,
+              maxHeight: "calc(100vh - 88px)",
               borderRadius: 18,
               background: "rgba(10,14,24,0.70)",
               border: "1px solid rgba(255,255,255,0.12)",
@@ -1679,37 +1545,28 @@ export default function DashboardPage() {
             }}
           >
             <div
-              onClick={() => setInfoOpen((v) => !v)}
-              onPointerDown={onHandlePointerDown}
-              onPointerMove={onHandlePointerMove}
-              onPointerUp={onHandlePointerUp}
               style={{
-                height: 48,
+                height: 46,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "10px 12px",
                 borderBottom: "1px solid rgba(255,255,255,0.10)",
-                cursor: "grab",
-                userSelect: "none",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 34, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
-                <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900, letterSpacing: 0.5 }}>m² Yatırım Paneli</div>
+              <div style={{ fontSize: 12, opacity: 0.84, fontWeight: 900, letterSpacing: 0.5 }}>
+                m² Yatırım Paneli
               </div>
-
-              <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 900 }}>{infoOpen ? "Kapat ▾" : "Aç ▴"}</div>
+              <button onClick={() => setSelected(null)} style={smallGhostBtn} title="Kapat">
+                ✕
+              </button>
             </div>
 
             <div
               style={{
-                height: INFO_OPEN_H - 48,
-                padding: 14,
-                overflowY: infoOpen ? "auto" : "hidden",
-              }}
-              onClick={() => {
-                if (!infoOpen) setInfoOpen(true);
+                padding: 12,
+                overflowY: "auto",
+                maxHeight: "calc(100vh - 134px)",
               }}
             >
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -1730,7 +1587,9 @@ export default function DashboardPage() {
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 11, opacity: 0.7 }}>Arsa Değeri</div>
                   <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
-                    {selectedSim ? `₺${formatTRY(selectedSim.price)}` : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
+                    {selectedSim
+                      ? `₺${formatTRY(selectedSim.price)}`
+                      : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
                   </div>
                   <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
                     {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
@@ -1771,22 +1630,13 @@ export default function DashboardPage() {
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
-                <button
-                  onClick={() => setActiveInsightTab("arsa")}
-                  style={tabBtn(activeInsightTab === "arsa")}
-                >
+                <button onClick={() => setActiveInsightTab("arsa")} style={tabBtn(activeInsightTab === "arsa")}>
                   Arsa Bilgisi
                 </button>
-                <button
-                  onClick={() => setActiveInsightTab("gelisim")}
-                  style={tabBtn(activeInsightTab === "gelisim")}
-                >
+                <button onClick={() => setActiveInsightTab("gelisim")} style={tabBtn(activeInsightTab === "gelisim")}>
                   Gelişim
                 </button>
-                <button
-                  onClick={() => setActiveInsightTab("risk")}
-                  style={tabBtn(activeInsightTab === "risk")}
-                >
+                <button onClick={() => setActiveInsightTab("risk")} style={tabBtn(activeInsightTab === "risk")}>
                   Risk
                 </button>
               </div>
@@ -1834,8 +1684,8 @@ export default function DashboardPage() {
                 {activeInsightTab === "gelisim" && (
                   <div style={{ display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                      Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme, ulaşım
-                      etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
+                      Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme,
+                      ulaşım etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
                     </div>
 
                     <MiniBars title="Son 5 Yıl Gelişim Skoru" values={developmentHistory} suffix="%" />
@@ -1856,8 +1706,8 @@ export default function DashboardPage() {
                 {activeInsightTab === "risk" && (
                   <div style={{ display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                      Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği, çevresel
-                      dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
+                      Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği,
+                      çevresel dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
                     </div>
 
                     <MiniBars title="Son 5 Yıl Risk Skoru" values={riskHistory} suffix="%" />
@@ -1910,7 +1760,8 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
-                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım: {formatNumber(selectedMinBuyM2)} m²
+                  Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım:{" "}
+                  {formatNumber(selectedMinBuyM2)} m²
                 </div>
               </div>
 
@@ -1981,15 +1832,13 @@ export default function DashboardPage() {
                       {formatDecimal(buyM2)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                      Tek sefer maksimum: {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                      Tek sefer maksimum:{" "}
+                      {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
                     </div>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <button
-                      style={neutralActionBtn}
-                      onClick={addSelectedToCart}
-                    >
+                    <button style={neutralActionBtn} onClick={addSelectedToCart}>
                       Sepete Ekle
                     </button>
 
@@ -2021,15 +1870,12 @@ export default function DashboardPage() {
                   <div style={{ lineHeight: 1.1 }}>
                     <div style={{ fontSize: 14, fontWeight: 1000 }}>Sepet</div>
                     <div style={{ fontSize: 13, opacity: 0.78, marginTop: 4 }}>
-                      {cart.length} ürün • Genel Toplam: <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
+                      {cart.length} ürün • Genel Toplam:{" "}
+                      <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
                     </div>
                   </div>
 
-                  <button
-                    onClick={clearCart}
-                    style={smallGhostBtn}
-                    title="Sepeti temizle"
-                  >
+                  <button onClick={clearCart} style={smallGhostBtn} title="Sepeti temizle">
                     Temizle
                   </button>
                 </div>
@@ -2040,7 +1886,7 @@ export default function DashboardPage() {
                     display: "flex",
                     flexDirection: "column",
                     gap: 8,
-                    maxHeight: 220,
+                    maxHeight: 180,
                     overflow: "auto",
                   }}
                 >
@@ -2086,11 +1932,7 @@ export default function DashboardPage() {
                           {formatNumber(Math.round(it.totalPaid))} Çip
                         </div>
 
-                        <button
-                          onClick={() => removeFromCart(it.key)}
-                          style={smallGhostBtn}
-                          title="Sepetten çıkar"
-                        >
+                        <button onClick={() => removeFromCart(it.key)} style={smallGhostBtn} title="Sepetten çıkar">
                           ✕
                         </button>
                       </div>
@@ -2116,73 +1958,6 @@ export default function DashboardPage() {
                 >
                   {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
                 </button>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
-                    <div style={{ fontSize: 11, opacity: 0.75 }}>Sim Gün Kontrolü</div>
-                    <div style={{ fontSize: 14, fontWeight: 1000 }}>
-                      Sim Gün: <span style={{ color: "#F5D76E" }}>{simDayOffset}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button
-                      disabled={ticking}
-                      onClick={() => setSimDay(simDayOffset - 1)}
-                      style={{ ...miniBtn, width: 34, height: 34, borderRadius: 12, opacity: ticking ? 0.6 : 1 }}
-                      title="Gün azalt"
-                    >
-                      −
-                    </button>
-                    <button
-                      disabled={ticking}
-                      onClick={() => setSimDay(simDayOffset + 1)}
-                      style={{ ...miniBtn, width: 34, height: 34, borderRadius: 12, opacity: ticking ? 0.6 : 1 }}
-                      title="Gün artır"
-                    >
-                      +
-                    </button>
-                    <button
-                      disabled={ticking}
-                      onClick={() => setSimDay(0)}
-                      style={{
-                        ...miniBtn,
-                        width: 40,
-                        height: 34,
-                        borderRadius: 12,
-                        fontWeight: 1000,
-                        opacity: ticking ? 0.6 : 1,
-                      }}
-                      title="Sıfırla"
-                    >
-                      0
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 11, opacity: 0.7, minWidth: 24 }}>0</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={365}
-                    value={simDayOffset}
-                    disabled={ticking}
-                    onChange={(e) => setSimDay(Number(e.target.value))}
-                    style={{ width: "100%", cursor: ticking ? "not-allowed" : "pointer" }}
-                  />
-                  <span style={{ fontSize: 11, opacity: 0.7, minWidth: 36, textAlign: "right" }}>365</span>
-                </div>
               </div>
             </div>
           </div>
@@ -2272,7 +2047,6 @@ function signedPct(n: number | null | undefined) {
 }
 
 const labelStyle: React.CSSProperties = { fontSize: 12, opacity: 0.72, marginBottom: 6 };
-
 const tinyLabel: React.CSSProperties = { fontSize: 11, opacity: 0.72, marginBottom: 6 };
 
 const selectStyle: React.CSSProperties = {
@@ -2330,12 +2104,6 @@ const badgeBox: React.CSSProperties = {
   flexDirection: "column",
   justifyContent: "center",
   lineHeight: 1.05,
-};
-
-const miniBtn: React.CSSProperties = {
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
 };
 
 const smallGhostBtn: React.CSSProperties = {
@@ -2405,10 +2173,50 @@ const miniInfoCard: React.CSSProperties = {
 const miniInfoLabel: React.CSSProperties = { fontSize: 11, opacity: 0.7, fontWeight: 800 };
 const miniInfoText: React.CSSProperties = { fontSize: 12, opacity: 0.9, marginTop: 6, lineHeight: 1.4 };
 
-function generateDemoProperties(opts: { countCities: number; countProps: number; seed: number }): Property[] {
+async function generateDemoPropertiesFromDistrictGeo(opts: {
+  countCities: number;
+  countProps: number;
+  minPerDistrict: number;
+  maxPerDistrict: number;
+  seed: number;
+}): Promise<Property[]> {
   const rng = mulberry32(opts.seed);
 
-  const citiesAll = [
+  const res = await fetch("/geo/gadm41_TUR_2.json", { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error("İlçe geojson okunamadı: /geo/gadm41_TUR_2.json");
+  }
+
+  const gj = await res.json();
+  const rawFeatures = Array.isArray(gj?.features) ? gj.features : [];
+
+  const districtFeatures = rawFeatures
+    .map((f: any) => {
+      const city = String(f?.properties?.NAME_1 || "").trim();
+      const district = String(f?.properties?.NAME_2 || "").trim();
+      if (!city || !district || !f?.geometry) return null;
+
+      const bbox = bboxFromGeometryLocal(f.geometry);
+      const centroid = centroidFromGeometryLocal(f.geometry);
+      if (!bbox || !centroid) return null;
+
+      return {
+        city,
+        district,
+        geometry: f.geometry,
+        bbox,
+        centroid,
+      };
+    })
+    .filter(Boolean) as Array<{
+      city: string;
+      district: string;
+      geometry: any;
+      bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number };
+      centroid: [number, number];
+    }>;
+
+  const cityOrder = [
     "İstanbul",
     "Ankara",
     "İzmir",
@@ -2439,105 +2247,13 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     "Malatya",
     "Kahramanmaraş",
     "Hatay",
-    "Çanakkale",
-    "Edirne",
-    "Kırklareli",
-    "Yalova",
-    "Afyonkarahisar",
-    "Isparta",
-    "Burdur",
-    "Uşak",
-    "Kütahya",
-    "Bilecik",
-    "Aksaray",
-    "Niğde",
-    "Sivas",
-    "Tokat",
-    "Çorum",
-    "Kastamonu",
-    "Zonguldak",
-    "Karabük",
-    "Düzce",
-    "Van",
-    "Batman",
-    "Mardin",
-    "Siirt",
-    "Elazığ",
-    "Amasya",
-    "Kırşehir",
-    "Nevşehir",
-    "Çankırı",
-    "Yozgat",
-    "Gümüşhane",
   ];
 
-  const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-    İstanbul: { lat: 41.0082, lng: 28.9784 },
-    Ankara: { lat: 39.9334, lng: 32.8597 },
-    İzmir: { lat: 38.4237, lng: 27.1428 },
-    Bursa: { lat: 40.195, lng: 29.06 },
-    Antalya: { lat: 36.8969, lng: 30.7133 },
-    Adana: { lat: 36.9914, lng: 35.3308 },
-    Konya: { lat: 37.8746, lng: 32.4932 },
-    Kocaeli: { lat: 40.7667, lng: 29.9167 },
-    Gaziantep: { lat: 37.0662, lng: 37.3833 },
-    Mersin: { lat: 36.8121, lng: 34.6415 },
-    Kayseri: { lat: 38.7225, lng: 35.4875 },
-    Samsun: { lat: 41.2867, lng: 36.33 },
-    Eskişehir: { lat: 39.7767, lng: 30.5206 },
-    Denizli: { lat: 37.7765, lng: 29.0864 },
-    Tekirdağ: { lat: 40.9781, lng: 27.511 },
-    Sakarya: { lat: 40.7569, lng: 30.3781 },
-    Balıkesir: { lat: 39.6484, lng: 27.8826 },
-    Manisa: { lat: 38.6191, lng: 27.4289 },
-    Aydın: { lat: 37.845, lng: 27.8396 },
-    Muğla: { lat: 37.2153, lng: 28.3636 },
-    Trabzon: { lat: 41.0015, lng: 39.7178 },
-    Ordu: { lat: 40.9862, lng: 37.8797 },
-    Giresun: { lat: 40.9128, lng: 38.3895 },
-    Rize: { lat: 41.0255, lng: 40.5177 },
-    Erzurum: { lat: 39.9043, lng: 41.2679 },
-    Diyarbakır: { lat: 37.9144, lng: 40.2306 },
-    Şanlıurfa: { lat: 37.1674, lng: 38.7955 },
-    Malatya: { lat: 38.3552, lng: 38.3095 },
-    Kahramanmaraş: { lat: 37.5753, lng: 36.9228 },
-    Hatay: { lat: 36.202, lng: 36.16 },
-    Çanakkale: { lat: 40.1553, lng: 26.4142 },
-    Edirne: { lat: 41.6764, lng: 26.5557 },
-    Kırklareli: { lat: 41.7356, lng: 27.2252 },
-    Yalova: { lat: 40.65, lng: 29.2667 },
-    Afyonkarahisar: { lat: 38.7578, lng: 30.5387 },
-    Isparta: { lat: 37.7648, lng: 30.5566 },
-    Burdur: { lat: 37.7183, lng: 30.2833 },
-    Uşak: { lat: 38.6823, lng: 29.4082 },
-    Kütahya: { lat: 39.4191, lng: 29.9857 },
-    Bilecik: { lat: 40.1451, lng: 29.979 },
-    Aksaray: { lat: 38.3687, lng: 34.037 },
-    Niğde: { lat: 37.9667, lng: 34.6833 },
-    Sivas: { lat: 39.7477, lng: 37.0179 },
-    Tokat: { lat: 40.3167, lng: 36.55 },
-    Çorum: { lat: 40.5506, lng: 34.9556 },
-    Kastamonu: { lat: 41.3766, lng: 33.7765 },
-    Zonguldak: { lat: 41.4564, lng: 31.7987 },
-    Karabük: { lat: 41.2061, lng: 32.6204 },
-    Düzce: { lat: 40.8438, lng: 31.1565 },
-    Van: { lat: 38.4891, lng: 43.4089 },
-    Batman: { lat: 37.8874, lng: 41.1322 },
-    Mardin: { lat: 37.3131, lng: 40.7436 },
-    Siirt: { lat: 37.9333, lng: 41.95 },
-    Elazığ: { lat: 38.6743, lng: 39.2232 },
-    Amasya: { lat: 40.6539, lng: 35.8331 },
-    Kırşehir: { lat: 39.1461, lng: 34.1595 },
-    Nevşehir: { lat: 38.6244, lng: 34.7239 },
-    Çankırı: { lat: 40.6013, lng: 33.6134 },
-    Yozgat: { lat: 39.82, lng: 34.8044 },
-    Gümüşhane: { lat: 40.46, lng: 39.48 },
-  };
-
-  const chosen = citiesAll.slice(0, Math.min(opts.countCities, citiesAll.length));
+  const citySet = new Set(districtFeatures.map((x) => x.city));
+  const chosenCities = cityOrder.filter((c) => citySet.has(c)).slice(0, opts.countCities);
 
   const cityMult: Record<string, number> = {};
-  for (const c of chosen) {
+  for (const c of chosenCities) {
     let m = 1.0;
     if (c === "İstanbul") m = 2.35;
     else if (c === "Ankara" || c === "İzmir") m = 1.85;
@@ -2549,7 +2265,7 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
   }
 
   const demoAreas: Record<string, MarketArea> = {};
-  for (const c of chosen) {
+  for (const c of chosenCities) {
     const base = Math.round(12000 * (cityMult[c] ?? 1));
     demoAreas[c] = {
       id: `area_${slug(c)}`,
@@ -2566,67 +2282,73 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     };
   }
 
-  const propsOut: Property[] = [];
+  const targetDistricts = districtFeatures.filter((x) => chosenCities.includes(x.city));
+  const out: Property[] = [];
+  let idx = 0;
 
-  for (let i = 0; i < opts.countProps; i++) {
-    const city = chosen[Math.floor(rng() * chosen.length)];
-    const mult = cityMult[city] ?? 1.0;
+  for (const dist of targetDistricts) {
+    const mult = cityMult[dist.city] ?? 1;
+    const propertyCount =
+      opts.minPerDistrict + Math.floor(rng() * (opts.maxPerDistrict - opts.minPerDistrict + 1));
 
-    const zoning: "imarli" | "imarsiz" = rng() < 0.58 ? "imarli" : "imarsiz";
+    const neighborhoodNames = buildNeighborhoodPool(dist.district, rng);
 
-    const baseImarli = 12000 * mult;
-    const baseImarsiz = 4500 * mult;
+    for (let i = 0; i < propertyCount; i++) {
+      if (out.length >= opts.countProps) break;
 
-    const pricePerM2 = zoning === "imarli" ? jitter(rng, baseImarli, 0.22) : jitter(rng, baseImarsiz, 0.28);
-    const areaM2 = zoning === "imarli" ? Math.round(300 + rng() * 2400) : Math.round(800 + rng() * 9200);
+      const zoning: "imarli" | "imarsiz" = rng() < 0.62 ? "imarli" : "imarsiz";
 
-    const dev = clampInt(25 + rng() * 65 + (zoning === "imarli" ? 10 : -5), 0, 100);
-    const risk = clampInt(15 + rng() * 75 + (zoning === "imarsiz" ? 10 : -6), 0, 100);
+      const baseImarli = 12000 * mult;
+      const baseImarsiz = 4800 * mult;
 
-    const last30 = (rng() - 0.5) * 18 + (zoning === "imarli" ? 3 : 0);
-    const expAnnual = 8 + rng() * 18 + (zoning === "imarli" ? 4 : 0);
+      const pricePerM2 = zoning === "imarli" ? jitter(rng, baseImarli, 0.22) : jitter(rng, baseImarsiz, 0.28);
+      const areaM2 = zoning === "imarli" ? Math.round(350 + rng() * 2800) : Math.round(900 + rng() * 9800);
 
-    const ada = 10 + Math.floor(rng() * 200);
-    const parsel = 1 + Math.floor(rng() * 500);
+      const dev = clampInt(28 + rng() * 62 + (zoning === "imarli" ? 10 : -6), 0, 100);
+      const risk = clampInt(18 + rng() * 70 + (zoning === "imarsiz" ? 10 : -6), 0, 100);
 
-    const title = `${city} ${ada} Ada ${parsel} Parsel`;
+      const last30 = (rng() - 0.5) * 16 + (zoning === "imarli" ? 2.5 : 0);
+      const expAnnual = 8 + rng() * 18 + (zoning === "imarli" ? 4 : 0);
 
-    const district = demoDistrict(city, rng);
-    const neighborhood = demoNeighborhood(rng);
+      const neighborhood = neighborhoodNames[Math.floor(rng() * neighborhoodNames.length)];
+      const point = randomPointInGeometry(dist.geometry, dist.bbox, rng) ?? dist.centroid;
 
-    const base = CITY_COORDS[city] ?? { lat: 39 + (rng() - 0.5) * 6, lng: 35 + (rng() - 0.5) * 8 };
-    const spread = zoning === "imarli" ? 0.10 : 0.22;
-    const lat = base.lat + (rng() - 0.5) * spread;
-    const lng = base.lng + (rng() - 0.5) * spread * 1.25;
+      const ada = 10 + Math.floor(rng() * 350);
+      const parsel = 1 + Math.floor(rng() * 900);
 
-    propsOut.push({
-      id: `demo_${i}_${slug(city)}_${ada}_${parsel}`,
-      title,
-      country: "Türkiye",
-      city,
-      district,
-      neighborhood,
-      zoning_status: zoning,
-      price_per_m2: Math.round(pricePerM2),
-      total_area_m2: areaM2,
-      available_m2: areaM2,
-      sold_m2: 0,
-      min_buy_m2: 1,
-      max_buy_m2: Math.max(50, Math.round(areaM2 * 0.25)),
-      risk_score: risk,
-      development_score: dev,
-      expected_annual_return: Number(expAnnual.toFixed(2)),
-      last_30d_change: Number(last30.toFixed(2)),
-      latitude: Number(lat.toFixed(6)),
-      longitude: Number(lng.toFixed(6)),
-      quality_score: clamp01(0.45 + dev / 220 - risk / 260 + (rng() - 0.5) * 0.08),
-      rental_yield_annual: clamp01(0.035 + rng() * 0.03),
-      total_shares: 100000,
-      area: demoAreas[city],
-    });
+      out.push({
+        id: `demo_${idx}_${slug(dist.city)}_${slug(dist.district)}_${ada}_${parsel}`,
+        title: `${dist.city} ${dist.district} ${ada} Ada ${parsel} Parsel`,
+        country: "Türkiye",
+        city: dist.city,
+        district: dist.district,
+        neighborhood,
+        zoning_status: zoning,
+        price_per_m2: Math.round(pricePerM2),
+        total_area_m2: areaM2,
+        available_m2: areaM2,
+        sold_m2: 0,
+        min_buy_m2: 1,
+        max_buy_m2: Math.max(50, Math.round(areaM2 * 0.25)),
+        risk_score: risk,
+        development_score: dev,
+        expected_annual_return: Number(expAnnual.toFixed(2)),
+        last_30d_change: Number(last30.toFixed(2)),
+        latitude: Number(point[1].toFixed(6)),
+        longitude: Number(point[0].toFixed(6)),
+        quality_score: clamp01(0.45 + dev / 220 - risk / 260 + (rng() - 0.5) * 0.08),
+        rental_yield_annual: clamp01(0.035 + rng() * 0.03),
+        total_shares: 100000,
+        area: demoAreas[dist.city],
+      });
+
+      idx += 1;
+    }
+
+    if (out.length >= opts.countProps) break;
   }
 
-  propsOut.sort((a, b) => {
+  out.sort((a, b) => {
     const sa =
       Number(a.development_score ?? 0) * 1.25 +
       Number(a.expected_annual_return ?? 0) -
@@ -2640,24 +2362,136 @@ function generateDemoProperties(opts: { countCities: number; countProps: number;
     return sb - sa;
   });
 
-  return propsOut;
+  return out;
 }
 
-function demoDistrict(city: string, rng: () => number) {
-  const pool: Record<string, string[]> = {
-    İstanbul: ["Çekmeköy", "Ümraniye", "Beylikdüzü", "Başakşehir", "Pendik", "Kartal", "Arnavutköy", "Silivri"],
-    Ankara: ["Gölbaşı", "Çankaya", "Etimesgut", "Yenimahalle", "Sincan", "Keçiören"],
-    İzmir: ["Bornova", "Karşıyaka", "Menemen", "Torbalı", "Urla", "Çeşme"],
-    Antalya: ["Kepez", "Konyaaltı", "Muratpaşa", "Aksu", "Döşemealtı"],
+function buildNeighborhoodPool(district: string, rng: () => number) {
+  const fixed = [
+    "Atatürk Mah.",
+    "Cumhuriyet Mah.",
+    "Bahçelievler Mah.",
+    "Yıldız Mah.",
+    "Kurtuluş Mah.",
+    "Pınar Mah.",
+    "Yeni Mah.",
+    "Çınar Mah.",
+  ];
+
+  const districtStem = district.replace(/( Belediyesi| İlçesi| Merkez)/gi, "").trim();
+  const extra = [
+    `${districtStem} Merkez Mah.`,
+    `${districtStem} Yeni Yerleşim Mah.`,
+    `${districtStem} Kuzey Mah.`,
+    `${districtStem} Güney Mah.`,
+    `${districtStem} Vadi Mah.`,
+    `${districtStem} Park Mah.`,
+  ];
+
+  const merged = [...fixed, ...extra];
+  const shuffled = [...merged].sort(() => rng() - 0.5);
+  return shuffled.slice(0, 6 + Math.floor(rng() * 4));
+}
+
+function coordsFromGeometryLocal(geom: any): number[][] {
+  if (!geom) return [];
+  const out: number[][] = [];
+
+  const walk = (arr: any) => {
+    if (!Array.isArray(arr)) return;
+    if (arr.length >= 2 && typeof arr[0] === "number" && typeof arr[1] === "number") {
+      out.push([Number(arr[0]), Number(arr[1])]);
+      return;
+    }
+    for (const x of arr) walk(x);
   };
 
-  const arr = pool[city] ?? ["Merkez", "Sanayi", "Yeni Mah.", "Organize", "Kuzey", "Güney"];
-  return arr[Math.floor(rng() * arr.length)];
+  walk(geom.coordinates);
+  return out;
 }
 
-function demoNeighborhood(rng: () => number) {
-  const arr = ["Atatürk", "Cumhuriyet", "Yeni", "Bahçelievler", "Yıldız", "Gazi", "Çınar", "Pınar", "Kurtuluş"];
-  return `${arr[Math.floor(rng() * arr.length)]} Mah.`;
+function bboxFromGeometryLocal(geom: any) {
+  const pts = coordsFromGeometryLocal(geom);
+  if (!pts.length) return null;
+
+  let minLng = pts[0][0];
+  let minLat = pts[0][1];
+  let maxLng = pts[0][0];
+  let maxLat = pts[0][1];
+
+  for (const [lng, lat] of pts) {
+    minLng = Math.min(minLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLng = Math.max(maxLng, lng);
+    maxLat = Math.max(maxLat, lat);
+  }
+
+  return { minLng, minLat, maxLng, maxLat };
+}
+
+function centroidFromGeometryLocal(geom: any): [number, number] | null {
+  const pts = coordsFromGeometryLocal(geom);
+  if (!pts.length) return null;
+
+  let sx = 0;
+  let sy = 0;
+  for (const [lng, lat] of pts) {
+    sx += lng;
+    sy += lat;
+  }
+  return [sx / pts.length, sy / pts.length];
+}
+
+function randomPointInGeometry(
+  geom: any,
+  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+  rng: () => number
+): [number, number] | null {
+  for (let i = 0; i < 60; i++) {
+    const lng = bbox.minLng + rng() * (bbox.maxLng - bbox.minLng);
+    const lat = bbox.minLat + rng() * (bbox.maxLat - bbox.minLat);
+    if (pointInGeometry([lng, lat], geom)) return [lng, lat];
+  }
+  return null;
+}
+
+function pointInGeometry(point: [number, number], geom: any) {
+  if (!geom) return false;
+  if (geom.type === "Polygon") return pointInPolygon(point, geom.coordinates);
+  if (geom.type === "MultiPolygon") {
+    return geom.coordinates.some((poly: any) => pointInPolygon(point, poly));
+  }
+  return false;
+}
+
+function pointInPolygon(point: [number, number], polygonCoords: any[]) {
+  if (!Array.isArray(polygonCoords) || polygonCoords.length === 0) return false;
+
+  const outerRing = polygonCoords[0];
+  let inside = rayCast(point, outerRing);
+  if (!inside) return false;
+
+  for (let i = 1; i < polygonCoords.length; i++) {
+    if (rayCast(point, polygonCoords[i])) return false;
+  }
+  return true;
+}
+
+function rayCast(point: [number, number], ring: any[]) {
+  let inside = false;
+  const x = point[0];
+  const y = point[1];
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
 }
 
 function mulberry32(seed: number) {
