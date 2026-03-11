@@ -23,12 +23,20 @@ type ProjectedPoint = {
 };
 
 type MarketResponse = {
+  usdtry?: string | number | null;
+  eurtry?: string | number | null;
+  gbptry?: string | number | null;
   USDTRY?: string | number | null;
   EURTRY?: string | number | null;
   GBPTRY?: string | number | null;
   BTC?: number | null;
   ETH?: number | null;
   error?: string;
+  hasApiKey?: boolean;
+  source?: {
+    fx?: string;
+    crypto?: string;
+  };
 };
 
 const GLOBE_POINTS: GlobePoint[] = [
@@ -154,7 +162,7 @@ export default function LoginPage() {
         if (!mounted) return;
         if (!data?.error) setMarketData(data);
       } catch {
-        // fallback
+        // ignore
       }
     }
 
@@ -315,10 +323,14 @@ export default function LoginPage() {
 
     if (!marketData) return fallback;
 
+    const usdValue = marketData.usdtry ?? marketData.USDTRY;
+    const eurValue = marketData.eurtry ?? marketData.EURTRY;
+    const gbpValue = marketData.gbptry ?? marketData.GBPTRY;
+
     return [
-      { label: "USD/TRY", value: formatTryPair(marketData.USDTRY), positive: true },
-      { label: "EUR/TRY", value: formatTryPair(marketData.EURTRY), positive: true },
-      { label: "GBP/TRY", value: formatTryPair(marketData.GBPTRY), positive: true },
+      { label: "USD/TRY", value: formatTryPair(usdValue), positive: true },
+      { label: "EUR/TRY", value: formatTryPair(eurValue), positive: true },
+      { label: "GBP/TRY", value: formatTryPair(gbpValue), positive: true },
       { label: "BTC/USD", value: formatUsd(marketData.BTC), positive: true },
       { label: "ETH/USD", value: formatUsd(marketData.ETH), positive: true },
       { label: "LIVE", value: "REAL DATA", positive: true },
@@ -475,6 +487,7 @@ export default function LoginPage() {
           .terron-logo-wrap {
             gap: 10px !important;
             margin-bottom: 8px !important;
+            justify-content: center !important;
           }
 
           .terron-logo-icon {
@@ -486,6 +499,8 @@ export default function LoginPage() {
 
           .terron-logo-right {
             height: 60px !important;
+            text-align: center !important;
+            align-items: center !important;
           }
 
           .terron-logo-title {
@@ -548,8 +563,9 @@ export default function LoginPage() {
           }
 
           .terron-logo-wrap {
-            justify-content: flex-start !important;
+            justify-content: center !important;
             margin-bottom: 6px !important;
+            width: 100% !important;
           }
 
           .terron-logo-icon {
@@ -561,6 +577,8 @@ export default function LoginPage() {
 
           .terron-logo-right {
             height: 56px !important;
+            text-align: center !important;
+            align-items: center !important;
           }
 
           .terron-logo-title {
@@ -665,7 +683,7 @@ export default function LoginPage() {
           accent="#f7d27a"
         />
 
-        <div style={{ height: 8 }} />
+        <div style={{ height: 5 }} />
 
         <TickerBar
           items={cityTickerItems}
@@ -1234,7 +1252,7 @@ function TickerBar({
         position: "relative",
         zIndex: 1,
         overflow: "hidden",
-        borderRadius: 14,
+        borderRadius: 12,
         border: "1px solid rgba(255,255,255,0.06)",
         background: "rgba(255,255,255,0.025)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
@@ -1244,28 +1262,30 @@ function TickerBar({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: "8px 12px",
+          gap: 8,
+          padding: "5px 10px",
+          minHeight: 24,
           borderBottom: "1px solid rgba(255,255,255,0.05)",
           background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
         }}
       >
         <span
           style={{
-            width: 8,
-            height: 8,
+            width: 6,
+            height: 6,
             borderRadius: "50%",
             background: accent,
-            boxShadow: `0 0 16px ${accent}55`,
+            boxShadow: `0 0 14px ${accent}55`,
             flexShrink: 0,
           }}
         />
         <span
           style={{
             color: "#e2e8f0",
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
-            letterSpacing: 1.2,
+            letterSpacing: 1,
+            lineHeight: 1,
           }}
         >
           {title}
@@ -1280,8 +1300,9 @@ function TickerBar({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
-                padding: "11px 16px",
+                gap: 8,
+                padding: "6px 12px",
+                minHeight: 24,
                 borderRight: "1px solid rgba(255,255,255,0.06)",
                 whiteSpace: "nowrap",
                 flexShrink: 0,
@@ -1289,20 +1310,21 @@ function TickerBar({
             >
               <span
                 style={{
-                  width: 8,
-                  height: 8,
+                  width: 6,
+                  height: 6,
                   borderRadius: "50%",
                   background: accent,
-                  boxShadow: `0 0 14px ${accent}66`,
+                  boxShadow: `0 0 12px ${accent}66`,
                   flexShrink: 0,
                 }}
               />
               <span
                 style={{
                   color: "#e2e8f0",
-                  fontSize: 12,
+                  fontSize: 10,
                   fontWeight: 700,
-                  letterSpacing: 0.4,
+                  letterSpacing: 0.3,
+                  lineHeight: 1,
                 }}
               >
                 {item.label}
@@ -1310,8 +1332,9 @@ function TickerBar({
               <span
                 style={{
                   color: item.positive ? "#86efac" : "#fca5a5",
-                  fontSize: 12,
+                  fontSize: 10,
                   fontWeight: 800,
+                  lineHeight: 1,
                 }}
               >
                 {item.value}
