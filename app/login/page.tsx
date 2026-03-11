@@ -125,7 +125,7 @@ export default function LoginPage() {
 
   const [marketData, setMarketData] = useState<MarketResponse | null>(null);
 
-  const totalUsers = 2122645;
+  const totalUsers = 212;
 
   useEffect(() => {
     const remembered =
