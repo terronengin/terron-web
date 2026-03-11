@@ -1,10 +1,105 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
 type ViewMode = "login" | "register" | "forgot";
+
+type GlobePoint = {
+  id: string;
+  lat: number;
+  lon: number;
+  size?: number;
+};
+
+type ProjectedPoint = {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  visible: boolean;
+  size: number;
+};
+
+type MarketResponse = {
+  USDTRY?: string;
+  EURTRY?: string;
+  GBPTRY?: string;
+  BTC?: number;
+  ETH?: number;
+  error?: string;
+};
+
+const GLOBE_POINTS: GlobePoint[] = [
+  { id: "ny", lat: 40.7128, lon: -74.006, size: 1.2 },
+  { id: "la", lat: 34.0522, lon: -118.2437, size: 0.98 },
+  { id: "toronto", lat: 43.6532, lon: -79.3832, size: 0.9 },
+  { id: "mexico", lat: 19.4326, lon: -99.1332, size: 0.88 },
+  { id: "bogota", lat: 4.711, lon: -74.0721, size: 0.84 },
+  { id: "lima", lat: -12.0464, lon: -77.0428, size: 0.84 },
+  { id: "saopaulo", lat: -23.5505, lon: -46.6333, size: 1.02 },
+  { id: "buenosaires", lat: -34.6037, lon: -58.3816, size: 0.86 },
+
+  { id: "london", lat: 51.5072, lon: -0.1276, size: 1.08 },
+  { id: "paris", lat: 48.8566, lon: 2.3522, size: 0.92 },
+  { id: "madrid", lat: 40.4168, lon: -3.7038, size: 0.9 },
+  { id: "berlin", lat: 52.52, lon: 13.405, size: 0.92 },
+  { id: "amsterdam", lat: 52.3676, lon: 4.9041, size: 0.86 },
+  { id: "rome", lat: 41.9028, lon: 12.4964, size: 0.86 },
+  { id: "stockholm", lat: 59.3293, lon: 18.0686, size: 0.82 },
+
+  { id: "istanbul", lat: 41.0082, lon: 28.9784, size: 1.28 },
+  { id: "ankara", lat: 39.9334, lon: 32.8597, size: 0.88 },
+  { id: "izmir", lat: 38.4237, lon: 27.1428, size: 0.86 },
+  { id: "dubai", lat: 25.2048, lon: 55.2708, size: 1.04 },
+  { id: "riyadh", lat: 24.7136, lon: 46.6753, size: 0.84 },
+  { id: "doha", lat: 25.2854, lon: 51.531, size: 0.8 },
+  { id: "tehran", lat: 35.6892, lon: 51.389, size: 0.84 },
+
+  { id: "cairo", lat: 30.0444, lon: 31.2357, size: 0.9 },
+  { id: "lagos", lat: 6.5244, lon: 3.3792, size: 0.88 },
+  { id: "nairobi", lat: -1.2921, lon: 36.8219, size: 0.84 },
+  { id: "johannesburg", lat: -26.2041, lon: 28.0473, size: 0.86 },
+  { id: "casablanca", lat: 33.5731, lon: -7.5898, size: 0.8 },
+
+  { id: "mumbai", lat: 19.076, lon: 72.8777, size: 1.0 },
+  { id: "delhi", lat: 28.6139, lon: 77.209, size: 0.94 },
+  { id: "karachi", lat: 24.8607, lon: 67.0011, size: 0.84 },
+  { id: "bangkok", lat: 13.7563, lon: 100.5018, size: 0.88 },
+  { id: "singapore", lat: 1.3521, lon: 103.8198, size: 1.0 },
+  { id: "jakarta", lat: -6.2088, lon: 106.8456, size: 0.88 },
+  { id: "hongkong", lat: 22.3193, lon: 114.1694, size: 0.9 },
+  { id: "seoul", lat: 37.5665, lon: 126.978, size: 0.9 },
+  { id: "tokyo", lat: 35.6762, lon: 139.6503, size: 1.14 },
+  { id: "osaka", lat: 34.6937, lon: 135.5023, size: 0.84 },
+  { id: "beijing", lat: 39.9042, lon: 116.4074, size: 0.92 },
+  { id: "shanghai", lat: 31.2304, lon: 121.4737, size: 0.94 },
+
+  { id: "sydney", lat: -33.8688, lon: 151.2093, size: 0.96 },
+  { id: "melbourne", lat: -37.8136, lon: 144.9631, size: 0.9 },
+  { id: "auckland", lat: -36.8509, lon: 174.7645, size: 0.8 },
+];
+
+const EXTRA_GLOW_POINTS: GlobePoint[] = [
+  { id: "miami", lat: 25.7617, lon: -80.1918, size: 0.58 },
+  { id: "chicago", lat: 41.8781, lon: -87.6298, size: 0.56 },
+  { id: "santiago", lat: -33.4489, lon: -70.6693, size: 0.54 },
+  { id: "lisbon", lat: 38.7223, lon: -9.1393, size: 0.54 },
+  { id: "vienna", lat: 48.2082, lon: 16.3738, size: 0.5 },
+  { id: "athens", lat: 37.9838, lon: 23.7275, size: 0.5 },
+  { id: "baku", lat: 40.4093, lon: 49.8671, size: 0.52 },
+  { id: "jeddah", lat: 21.4858, lon: 39.1925, size: 0.52 },
+  { id: "algiers", lat: 36.7538, lon: 3.0588, size: 0.5 },
+  { id: "accra", lat: 5.6037, lon: -0.187, size: 0.5 },
+  { id: "addis", lat: 8.9806, lon: 38.7578, size: 0.5 },
+  { id: "almaty", lat: 43.222, lon: 76.8512, size: 0.5 },
+  { id: "manila", lat: 14.5995, lon: 120.9842, size: 0.52 },
+  { id: "taipei", lat: 25.033, lon: 121.5654, size: 0.52 },
+  { id: "perth", lat: -31.9505, lon: 115.8605, size: 0.48 },
+];
+
+const ALL_GLOBE_POINTS = [...GLOBE_POINTS, ...EXTRA_GLOW_POINTS];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,8 +123,9 @@ export default function LoginPage() {
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
 
-  const [displayUsers, setDisplayUsers] = useState(0);
-  const targetUsers = 4;
+  const [marketData, setMarketData] = useState<MarketResponse | null>(null);
+
+  const totalUsers = 2122645;
 
   useEffect(() => {
     const remembered =
@@ -37,33 +133,41 @@ export default function LoginPage() {
     const savedEmail =
       typeof window !== "undefined" ? localStorage.getItem("terron_saved_email") : null;
 
-    if (remembered !== null) {
-      setRememberMe(remembered === "true");
-    }
-
-    if (savedEmail) {
-      setLoginEmail(savedEmail);
-    }
+    if (remembered !== null) setRememberMe(remembered === "true");
+    if (savedEmail) setLoginEmail(savedEmail);
 
     async function checkSession() {
       const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        router.push("/dashboard");
-      }
+      if (data.session) router.push("/dashboard");
     }
 
     checkSession();
   }, [router]);
 
   useEffect(() => {
-    let current = 0;
-    const timer = setInterval(() => {
-      current += 1;
-      setDisplayUsers(current);
-      if (current >= targetUsers) clearInterval(timer);
-    }, 220);
+    let mounted = true;
 
-    return () => clearInterval(timer);
+    async function loadMarket() {
+      try {
+        const res = await fetch("/api/market", { cache: "no-store" });
+        const data: MarketResponse = await res.json();
+        if (!mounted) return;
+
+        if (!data?.error) {
+          setMarketData(data);
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    loadMarket();
+    const timer = setInterval(loadMarket, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
   }, []);
 
   function showMessage(text: string, error = false) {
@@ -82,14 +186,12 @@ export default function LoginPage() {
       });
 
       if (error) {
-        console.log("SIGN IN ERROR:", error);
         showMessage(error.message, true);
         return;
       }
 
       if (typeof window !== "undefined") {
         localStorage.setItem("terron_remember_me", String(rememberMe));
-
         if (rememberMe) {
           localStorage.setItem("terron_saved_email", loginEmail.trim());
         } else {
@@ -137,7 +239,6 @@ export default function LoginPage() {
       });
 
       if (error) {
-        console.log("SIGN UP ERROR:", error);
         showMessage(error.message, true);
         return;
       }
@@ -145,7 +246,7 @@ export default function LoginPage() {
       const userId = data.user?.id;
 
       if (userId) {
-        const { error: profileError } = await supabase.from("profiles").upsert({
+        await supabase.from("profiles").upsert({
           id: userId,
           full_name: fullName,
           username,
@@ -153,10 +254,6 @@ export default function LoginPage() {
           city,
           district,
         });
-
-        if (profileError) {
-          console.log("PROFILE SAVE ERROR:", profileError);
-        }
       }
 
       showMessage("Üyelik oluşturuldu. Giriş yapabilirsiniz.");
@@ -183,7 +280,6 @@ export default function LoginPage() {
       });
 
       if (error) {
-        console.log("RESET ERROR:", error);
         showMessage(error.message, true);
         return;
       }
@@ -194,20 +290,45 @@ export default function LoginPage() {
     }
   }
 
-  const chartBars = useMemo(() => [36, 54, 41, 68, 57, 82, 73, 94], []);
-  const tickerItems = useMemo(
+  const cityTickerItems = useMemo(
     () => [
-      { label: "İSTANBUL", value: "+12.4%" },
-      { label: "ANKARA", value: "+8.1%" },
-      { label: "İZMİR", value: "+9.7%" },
-      { label: "ANTALYA", value: "+14.2%" },
-      { label: "BURSA", value: "+7.8%" },
-      { label: "KOCAELİ", value: "+10.5%" },
-      { label: "MERSİN", value: "+11.3%" },
-      { label: "MUĞLA", value: "+13.9%" },
+      { label: "İSTANBUL", value: "+12.4%", positive: true },
+      { label: "ANKARA", value: "+8.1%", positive: true },
+      { label: "İZMİR", value: "+9.7%", positive: true },
+      { label: "ANTALYA", value: "+14.2%", positive: true },
+      { label: "BURSA", value: "+7.8%", positive: true },
+      { label: "KOCAELİ", value: "+10.5%", positive: true },
+      { label: "LONDON", value: "+6.9%", positive: true },
+      { label: "DUBAI", value: "+11.8%", positive: true },
+      { label: "SINGAPORE", value: "+5.7%", positive: true },
+      { label: "TOKYO", value: "+4.6%", positive: true },
     ],
     []
   );
+
+  const financeTickerItems = useMemo(() => {
+    const fallback = [
+      { label: "USD/TRY", value: "…", positive: true },
+      { label: "EUR/TRY", value: "…", positive: true },
+      { label: "GBP/TRY", value: "…", positive: true },
+      { label: "BTC/USD", value: "…", positive: true },
+      { label: "ETH/USD", value: "…", positive: true },
+      { label: "LIVE", value: "MARKET", positive: true },
+    ];
+
+    if (!marketData) return fallback;
+
+    return [
+      { label: "USD/TRY", value: formatTryPair(marketData.USDTRY), positive: true },
+      { label: "EUR/TRY", value: formatTryPair(marketData.EURTRY), positive: true },
+      { label: "GBP/TRY", value: formatTryPair(marketData.GBPTRY), positive: true },
+      { label: "BTC/USD", value: formatUsd(marketData.BTC), positive: true },
+      { label: "ETH/USD", value: formatUsd(marketData.ETH), positive: true },
+      { label: "LIVE", value: "REAL DATA", positive: true },
+    ];
+  }, [marketData]);
+
+  const isRegister = mode === "register";
 
   return (
     <div
@@ -216,68 +337,243 @@ export default function LoginPage() {
         position: "relative",
         overflow: "hidden",
         background:
-          "radial-gradient(circle at top, #14284d 0%, #08152d 34%, #030712 72%, #01040a 100%)",
+          "radial-gradient(circle at top, #18345c 0%, #0a1731 24%, #061020 50%, #030812 74%, #010307 100%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 24,
+        padding: "clamp(12px, 2vw, 24px)",
       }}
     >
-      <style jsx>{`
+      <style jsx global>{`
+        * {
+          box-sizing: border-box;
+        }
+
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+
+        input::placeholder {
+          color: rgba(203, 213, 225, 0.48);
+        }
+
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        textarea:-webkit-autofill,
+        select:-webkit-autofill {
+          -webkit-text-fill-color: #ffffff;
+          -webkit-box-shadow: 0 0 0px 1000px rgba(255, 255, 255, 0.04) inset;
+          transition: background-color 9999s ease-in-out 0s;
+        }
+
         @keyframes terronTicker {
           0% {
-            transform: translateX(0%);
+            transform: translate3d(0, 0, 0);
           }
           100% {
-            transform: translateX(-50%);
+            transform: translate3d(-50%, 0, 0);
           }
         }
 
-        @keyframes terronPulse {
+        @keyframes terronTickerReverse {
+          0% {
+            transform: translate3d(-50%, 0, 0);
+          }
+          100% {
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        @keyframes terronGlowPulse {
           0%,
           100% {
-            opacity: 0.75;
+            opacity: 0.72;
             transform: scale(1);
           }
           50% {
             opacity: 1;
-            transform: scale(1.04);
+            transform: scale(1.12);
           }
+        }
+
+        @keyframes terronFloat {
+          0%,
+          100% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-6px);
+          }
+        }
+
+        @keyframes terronSoftPulse {
+          0%,
+          100% {
+            opacity: 0.5;
+          }
+          50% {
+            opacity: 0.95;
+          }
+        }
+
+        .terron-ticker-shell {
+          overflow: hidden;
+          width: 100%;
         }
 
         .terron-ticker-track {
           display: flex;
           width: max-content;
-          animation: terronTicker 22s linear infinite;
+          min-width: max-content;
+          will-change: transform;
+          animation: terronTicker 28s linear infinite;
         }
 
-        .terron-pulse {
-          animation: terronPulse 2.6s ease-in-out infinite;
+        .terron-ticker-track-reverse {
+          display: flex;
+          width: max-content;
+          min-width: max-content;
+          will-change: transform;
+          animation: terronTickerReverse 32s linear infinite;
         }
 
-        @media (max-width: 900px) {
-          .terron-top-panels {
-            display: none !important;
+        .terron-glow-dot {
+          animation: terronGlowPulse 2.8s ease-in-out infinite;
+          transform-origin: center;
+          transform-box: fill-box;
+        }
+
+        .terron-float {
+          animation: terronFloat 5s ease-in-out infinite;
+        }
+
+        .terron-soft-pulse {
+          animation: terronSoftPulse 2.6s ease-in-out infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .terron-ticker-track,
+          .terron-ticker-track-reverse,
+          .terron-glow-dot,
+          .terron-float,
+          .terron-soft-pulse {
+            animation: none !important;
           }
+        }
 
-          .terron-hero-grid {
+        @media (max-width: 1060px) {
+          .terron-main-grid {
             grid-template-columns: 1fr !important;
             gap: 18px !important;
           }
 
-          .terron-map-panel {
-            min-height: 180px !important;
+          .terron-globe-panel {
+            min-height: 420px !important;
             order: 2;
           }
 
-          .terron-copy-panel {
+          .terron-form-panel {
             order: 1;
           }
         }
 
-        @media (max-width: 640px) {
-          .terron-stats-grid {
+        @media (max-width: 760px) {
+          .terron-page-shell {
+            border-radius: 26px !important;
+            padding: 16px !important;
+          }
+
+          .terron-logo-wrap {
+            gap: 12px !important;
+            align-items: center !important;
+          }
+
+          .terron-logo-icon {
+            width: 64px !important;
+            height: 76px !important;
+            border-radius: 18px !important;
+            font-size: 30px !important;
+          }
+
+          .terron-logo-title {
+            font-size: 34px !important;
+          }
+
+          .terron-logo-civil {
+            font-size: 11px !important;
+            letter-spacing: 4.4px !important;
+          }
+
+          .terron-globe-panel {
+            min-height: 350px !important;
+          }
+
+          .terron-mobile-stack {
             grid-template-columns: 1fr !important;
+          }
+
+          .terron-register-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .terron-page-shell {
+            min-height: calc(100vh - 24px);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            border-radius: 24px !important;
+            padding: 14px !important;
+            backdrop-filter: blur(22px);
+          }
+
+          .terron-logo-wrap {
+            justify-content: flex-start !important;
+          }
+
+          .terron-logo-icon {
+            width: 58px !important;
+            height: 72px !important;
+            font-size: 28px !important;
+          }
+
+          .terron-logo-title {
+            font-size: 28px !important;
+            letter-spacing: 0.5px !important;
+          }
+
+          .terron-logo-civil {
+            font-size: 10px !important;
+            letter-spacing: 3.8px !important;
+          }
+
+          .terron-brand-sub {
+            font-size: 10px !important;
+            letter-spacing: 1.8px !important;
+          }
+
+          .terron-user-card {
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+
+          .terron-globe-panel {
+            min-height: 300px !important;
+          }
+
+          .terron-globe-topbar {
+            top: 12px !important;
+            left: 12px !important;
+            right: 12px !important;
+          }
+
+          .terron-form-actions-row {
+            flex-direction: column !important;
+            align-items: stretch !important;
           }
         }
       `}</style>
@@ -287,11 +583,11 @@ export default function LoginPage() {
           position: "absolute",
           inset: 0,
           backgroundImage: `
-            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)
+            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)
           `,
-          backgroundSize: "44px 44px",
-          opacity: 0.18,
+          backgroundSize: "42px 42px",
+          opacity: 0.12,
           pointerEvents: "none",
         }}
       />
@@ -301,12 +597,12 @@ export default function LoginPage() {
           position: "absolute",
           inset: 0,
           pointerEvents: "none",
-          opacity: 0.22,
+          opacity: 0.26,
           background: `
-            radial-gradient(circle at 18% 22%, rgba(255,215,120,0.16), transparent 18%),
-            radial-gradient(circle at 78% 14%, rgba(234,29,36,0.14), transparent 16%),
-            radial-gradient(circle at 70% 70%, rgba(255,215,120,0.09), transparent 20%),
-            radial-gradient(circle at 28% 78%, rgba(255,255,255,0.05), transparent 18%)
+            radial-gradient(circle at 14% 16%, rgba(255,215,120,0.12), transparent 18%),
+            radial-gradient(circle at 82% 14%, rgba(234,29,36,0.08), transparent 16%),
+            radial-gradient(circle at 72% 72%, rgba(255,215,120,0.10), transparent 20%),
+            radial-gradient(circle at 24% 78%, rgba(255,255,255,0.04), transparent 18%)
           `,
         }}
       />
@@ -314,14 +610,14 @@ export default function LoginPage() {
       <div
         style={{
           position: "absolute",
-          top: "12%",
-          left: "8%",
-          width: 320,
-          height: 320,
+          top: "7%",
+          left: "4%",
+          width: 360,
+          height: 360,
           borderRadius: "50%",
           background:
             "radial-gradient(circle, rgba(255,215,120,0.12) 0%, rgba(255,215,120,0.02) 45%, transparent 72%)",
-          filter: "blur(10px)",
+          filter: "blur(22px)",
           pointerEvents: "none",
         }}
       />
@@ -329,143 +625,32 @@ export default function LoginPage() {
       <div
         style={{
           position: "absolute",
-          bottom: "8%",
-          right: "7%",
-          width: 340,
-          height: 340,
+          bottom: "7%",
+          right: "4%",
+          width: 380,
+          height: 380,
           borderRadius: "50%",
           background:
-            "radial-gradient(circle, rgba(234,29,36,0.10) 0%, rgba(234,29,36,0.02) 45%, transparent 70%)",
-          filter: "blur(18px)",
+            "radial-gradient(circle, rgba(234,29,36,0.08) 0%, rgba(234,29,36,0.02) 45%, transparent 70%)",
+          filter: "blur(24px)",
           pointerEvents: "none",
         }}
       />
 
       <div
-        className="terron-top-panels"
-        style={{
-          position: "absolute",
-          top: 34,
-          left: 34,
-          right: 34,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
-          pointerEvents: "none",
-        }}
-      >
-        <div
-          style={{
-            padding: "12px 16px",
-            borderRadius: 18,
-            border: "1px solid rgba(255,215,120,0.18)",
-            background: "rgba(7, 16, 34, 0.42)",
-            backdropFilter: "blur(12px)",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.22)",
-            maxWidth: 270,
-          }}
-        >
-          <div
-            style={{
-              color: "#f7d27a",
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: 1.3,
-              marginBottom: 8,
-            }}
-          >
-            GLOBAL MARKET OVERVIEW
-          </div>
-
-          <div style={{ display: "flex", alignItems: "end", gap: 6, height: 76 }}>
-            {chartBars.map((bar, i) => (
-              <div
-                key={i}
-                style={{
-                  width: 18,
-                  height: `${bar}%`,
-                  borderRadius: 999,
-                  background:
-                    i === chartBars.length - 1
-                      ? "linear-gradient(180deg, #f7d27a 0%, #c89a38 100%)"
-                      : "linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(148,163,184,0.5) 100%)",
-                  boxShadow:
-                    i === chartBars.length - 1 ? "0 0 20px rgba(247,210,122,0.35)" : "none",
-                }}
-              />
-            ))}
-          </div>
-
-          <div
-            style={{
-              marginTop: 10,
-              color: "#94a3b8",
-              fontSize: 11,
-              lineHeight: 1.5,
-            }}
-          >
-            Dijital arsa yatırımı, veri destekli fiyat görünümü ve ölçeklenebilir işlem deneyimi.
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "12px 15px",
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background: "rgba(7, 16, 34, 0.36)",
-            backdropFilter: "blur(12px)",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.20)",
-            minWidth: 152,
-            textAlign: "right",
-          }}
-        >
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: 10,
-              letterSpacing: 1.2,
-              fontWeight: 800,
-              marginBottom: 4,
-            }}
-          >
-            PLATFORM STATUS
-          </div>
-          <div
-            style={{
-              color: "#ffffff",
-              fontSize: 22,
-              fontWeight: 800,
-            }}
-          >
-            TERRONTR.COM
-          </div>
-          <div
-            className="terron-pulse"
-            style={{
-              marginTop: 6,
-              color: "#86efac",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            System Online
-          </div>
-        </div>
-      </div>
-
-      <div
+        className="terron-page-shell"
         style={{
           position: "relative",
           width: "100%",
-          maxWidth: mode === "register" ? 980 : 1040,
-          background: "linear-gradient(180deg, rgba(5,12,24,0.82) 0%, rgba(6,17,39,0.90) 100%)",
+          maxWidth: isRegister ? 980 : 1180,
+          background:
+            "linear-gradient(180deg, rgba(5,12,24,0.82) 0%, rgba(5,15,34,0.92) 46%, rgba(6,17,39,0.96) 100%)",
           border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 30,
-          padding: mode === "register" ? 34 : 32,
-          boxShadow: "0 30px 80px rgba(0,0,0,0.46)",
-          backdropFilter: "blur(16px)",
+          borderRadius: 32,
+          padding: isRegister ? 28 : 24,
+          boxShadow:
+            "0 34px 100px rgba(0,0,0,0.54), inset 0 1px 0 rgba(255,255,255,0.04)",
+          backdropFilter: "blur(18px)",
           overflow: "hidden",
         }}
       >
@@ -473,103 +658,53 @@ export default function LoginPage() {
           style={{
             position: "absolute",
             top: 0,
-            left: 28,
-            right: 28,
+            left: 22,
+            right: 22,
             height: 1,
             background:
-              "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.7) 25%, rgba(247,210,122,0.95) 50%, rgba(247,210,122,0.7) 75%, transparent 100%)",
+              "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.72) 25%, rgba(247,210,122,0.96) 50%, rgba(247,210,122,0.72) 75%, transparent 100%)",
           }}
         />
 
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at top, rgba(247,210,122,0.08) 0%, transparent 24%)",
-          }}
+        <TickerBar
+          items={financeTickerItems}
+          title="GLOBAL MARKET FEED"
+          reverse={false}
+          accent="#f7d27a"
+        />
+
+        <div style={{ height: 10 }} />
+
+        <TickerBar
+          items={cityTickerItems}
+          title="CITY PERFORMANCE BELT"
+          reverse
+          accent="#9fb6d9"
         />
 
         <div
-          style={{
-            position: "relative",
-            zIndex: 1,
-            overflow: "hidden",
-            borderRadius: 16,
-            border: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.025)",
-            marginBottom: 22,
-          }}
-        >
-          <div className="terron-ticker-track">
-            {[...tickerItems, ...tickerItems].map((item, index) => (
-              <div
-                key={`${item.label}-${index}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "12px 18px",
-                  borderRight: "1px solid rgba(255,255,255,0.06)",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "#f7d27a",
-                    boxShadow: "0 0 14px rgba(247,210,122,0.55)",
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    color: "#e2e8f0",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  {item.label}
-                </span>
-                <span
-                  style={{
-                    color: "#86efac",
-                    fontSize: 12,
-                    fontWeight: 800,
-                  }}
-                >
-                  {item.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div
-          className="terron-hero-grid"
+          className="terron-main-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: mode === "register" ? "1fr" : "1.02fr 0.98fr",
-            gap: 28,
+            gridTemplateColumns: isRegister ? "1fr" : "1.06fr 0.94fr",
+            gap: 24,
             alignItems: "stretch",
+            marginTop: 18,
           }}
         >
-          {mode !== "register" && (
+          {!isRegister && (
             <div
-              className="terron-map-panel"
+              className="terron-globe-panel"
               style={{
                 position: "relative",
-                borderRadius: 24,
+                borderRadius: 28,
                 overflow: "hidden",
-                minHeight: 560,
+                minHeight: 620,
                 border: "1px solid rgba(255,255,255,0.07)",
                 background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.02) 100%)",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+                  "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 100%)",
+                boxShadow:
+                  "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -30px 70px rgba(0,0,0,0.2)",
               }}
             >
               <div
@@ -577,50 +712,29 @@ export default function LoginPage() {
                   position: "absolute",
                   inset: 0,
                   backgroundImage: `
-                    linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px)
+                    linear-gradient(rgba(247,210,122,0.032) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(247,210,122,0.032) 1px, transparent 1px)
                   `,
                   backgroundSize: "28px 28px",
-                  opacity: 0.3,
+                  opacity: 0.22,
+                  pointerEvents: "none",
                 }}
               />
 
               <div
+                className="terron-globe-topbar"
                 style={{
                   position: "absolute",
                   top: 18,
                   left: 18,
                   right: 18,
                   display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
+                  justifyContent: "flex-end",
                   alignItems: "center",
+                  gap: 12,
+                  zIndex: 2,
                 }}
               >
-                <div>
-                  <div
-                    style={{
-                      color: "#f7d27a",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      letterSpacing: 1.2,
-                    }}
-                  >
-                    GLOBAL ACCESS MAP
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      color: "#cbd5e1",
-                      fontSize: 13,
-                      lineHeight: 1.5,
-                      maxWidth: 260,
-                    }}
-                  >
-                    Şeffaf fiyatlama, dijital metrekare alımı ve çok bölgeli yatırım erişimi.
-                  </div>
-                </div>
-
                 <div
                   style={{
                     padding: "8px 12px",
@@ -630,8 +744,9 @@ export default function LoginPage() {
                     color: "#f5deb0",
                     fontSize: 11,
                     fontWeight: 800,
-                    letterSpacing: 0.8,
+                    letterSpacing: 0.9,
                     whiteSpace: "nowrap",
+                    backdropFilter: "blur(10px)",
                   }}
                 >
                   TERRONTR.COM
@@ -641,105 +756,60 @@ export default function LoginPage() {
               <div
                 style={{
                   position: "absolute",
-                  inset: 0,
+                  left: 0,
+                  right: 0,
+                  top: 58,
+                  bottom: 74,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "80px 28px 72px",
+                  padding: "0 12px",
                 }}
               >
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 520,
-                    opacity: 0.95,
-                    position: "relative",
-                  }}
-                >
-                  <WorldMapSilhouette />
-
-                  <MapPulse top="29%" left="19%" />
-                  <MapPulse top="34%" left="43%" />
-                  <MapPulse top="38%" left="50%" />
-                  <MapPulse top="48%" left="76%" />
-                  <MapPulse top="59%" left="33%" />
-                  <MapPulse top="67%" left="81%" />
-
-                  <ConnectionLine
-                    x1="20%"
-                    y1="30%"
-                    x2="44%"
-                    y2="34%"
-                  />
-                  <ConnectionLine
-                    x1="44%"
-                    y1="34%"
-                    x2="50%"
-                    y2="38%"
-                  />
-                  <ConnectionLine
-                    x1="50%"
-                    y1="38%"
-                    x2="76%"
-                    y2="48%"
-                  />
-                  <ConnectionLine
-                    x1="44%"
-                    y1="34%"
-                    x2="33%"
-                    y2="59%"
-                  />
-                  <ConnectionLine
-                    x1="76%"
-                    y1="48%"
-                    x2="81%"
-                    y2="67%"
-                  />
-                </div>
+                <InteractiveGlobe />
               </div>
 
               <div
                 style={{
                   position: "absolute",
-                  left: 18,
-                  right: 18,
-                  bottom: 18,
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                  gap: 10,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  bottom: 16,
+                  zIndex: 2,
                 }}
               >
-                <MiniMetric label="Aktif Bölge" value="12" />
                 <MiniMetric label="Veri Katmanı" value="CANLI" highlight />
-                <MiniMetric label="Min Yatırım" value="1 m²" />
               </div>
             </div>
           )}
 
-          <div className="terron-copy-panel">
-            <div style={{ textAlign: "center", marginBottom: 28, position: "relative", zIndex: 1 }}>
+          <div className="terron-form-panel" style={{ position: "relative", zIndex: 1 }}>
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div
+                className="terron-logo-wrap"
                 style={{
                   display: "flex",
                   justifyContent: "center",
                   alignItems: "center",
                   gap: 14,
-                  marginBottom: 18,
+                  marginBottom: 16,
                 }}
               >
                 <div
+                  className="terron-logo-icon terron-float"
                   style={{
                     width: 72,
-                    height: 72,
-                    borderRadius: 20,
+                    height: 86,
+                    borderRadius: 22,
                     background: "linear-gradient(135deg, #ea1d24 0%, #a60f14 100%)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     color: "#ffffff",
                     fontSize: 36,
-                    fontWeight: 800,
-                    boxShadow: "0 18px 34px rgba(234, 29, 36, 0.28)",
+                    fontWeight: 900,
+                    boxShadow:
+                      "0 20px 36px rgba(234,29,36,0.30), inset 0 1px 0 rgba(255,255,255,0.14)",
                     border: "1px solid rgba(255,255,255,0.10)",
                     flexShrink: 0,
                   }}
@@ -747,25 +817,84 @@ export default function LoginPage() {
                   T
                 </div>
 
-                <div style={{ textAlign: "left" }}>
+                <div
+                  style={{
+                    textAlign: "left",
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    height: 86,
+                  }}
+                >
                   <div
                     style={{
-                      color: "#ffffff",
-                      fontSize: 42,
-                      fontWeight: 900,
-                      letterSpacing: 0.8,
-                      lineHeight: 1,
+                      position: "relative",
+                      width: "fit-content",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
                     }}
                   >
-                    TERRON
+                    <div
+                      className="terron-logo-title"
+                      style={{
+                        color: "#ffffff",
+                        fontSize: 40,
+                        fontWeight: 900,
+                        letterSpacing: 0.9,
+                        lineHeight: 0.95,
+                        textShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      TERRON
+                    </div>
+
+                    <div
+                      className="terron-logo-civil"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#f7d27a",
+                        fontSize: 12,
+                        fontWeight: 900,
+                        letterSpacing: 5.6,
+                        textTransform: "uppercase",
+                        whiteSpace: "nowrap",
+                        textShadow: "0 0 18px rgba(247,210,122,0.22)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      CIVIL
+                    </div>
+
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: "50%",
+                        height: 1,
+                        background:
+                          "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.0) 8%, rgba(247,210,122,0.48) 50%, rgba(247,210,122,0.0) 92%, transparent 100%)",
+                        transform: "translateY(-1px)",
+                        pointerEvents: "none",
+                        opacity: 0.72,
+                      }}
+                    />
                   </div>
+
                   <div
+                    className="terron-brand-sub"
                     style={{
-                      marginTop: 6,
+                      marginTop: 8,
                       color: "#f7d27a",
                       fontSize: 11,
                       fontWeight: 800,
-                      letterSpacing: 2.2,
+                      letterSpacing: 2.3,
                     }}
                   >
                     DIGITAL LAND INVESTMENT
@@ -779,7 +908,7 @@ export default function LoginPage() {
                   alignItems: "center",
                   justifyContent: "center",
                   padding: "8px 14px",
-                  marginBottom: 16,
+                  marginBottom: 14,
                   borderRadius: 999,
                   border: "1px solid rgba(247,215,122,0.18)",
                   background: "rgba(247,215,122,0.06)",
@@ -803,8 +932,8 @@ export default function LoginPage() {
                   margin: 0,
                   color: "#cbd5e1",
                   fontSize: 15,
-                  lineHeight: 1.8,
-                  maxWidth: 430,
+                  lineHeight: 1.75,
+                  maxWidth: 460,
                   marginInline: "auto",
                 }}
               >
@@ -812,27 +941,64 @@ export default function LoginPage() {
               </p>
 
               <div
-                className="terron-stats-grid"
+                className="terron-mobile-stack"
                 style={{
-                  marginTop: 22,
+                  marginTop: 20,
                   display: "grid",
-                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gridTemplateColumns: "1fr",
                   gap: 12,
+                  justifyContent: "center",
                 }}
               >
-                <StatCard label="Toplam Kullanıcı" value={String(displayUsers)} highlight />
-                <StatCard label="Aktif Bölge" value="12" />
-                <StatCard label="Başlangıç" value="1 m²" />
+                <div
+                  className="terron-user-card"
+                  style={{
+                    minWidth: 164,
+                    padding: "12px 14px",
+                    borderRadius: 18,
+                    background:
+                      "linear-gradient(180deg, rgba(247,210,122,0.10) 0%, rgba(247,210,122,0.04) 100%)",
+                    border: "1px solid rgba(247,210,122,0.16)",
+                    boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
+                    textAlign: "center",
+                    maxWidth: 240,
+                    marginInline: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#f4d58d",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Toplam Kullanıcı
+                  </div>
+                  <div
+                    style={{
+                      color: "#ffffff",
+                      fontSize: 22,
+                      fontWeight: 900,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {totalUsers.toLocaleString("tr-TR")}
+                  </div>
+                </div>
               </div>
             </div>
 
             {mode === "login" && (
-              <div style={{ display: "grid", gap: 14, position: "relative", zIndex: 1 }}>
+              <div style={{ display: "grid", gap: 14 }}>
                 <Field label="E-posta">
                   <input
                     type="email"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="ornek@eposta.com"
                     style={inputStyle}
                   />
                 </Field>
@@ -842,11 +1008,13 @@ export default function LoginPage() {
                     type="password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
                     style={inputStyle}
                   />
                 </Field>
 
                 <div
+                  className="terron-form-actions-row"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -862,6 +1030,7 @@ export default function LoginPage() {
                       color: "#cbd5e1",
                       fontSize: 14,
                       cursor: "pointer",
+                      userSelect: "none",
                     }}
                   >
                     <input
@@ -904,12 +1073,13 @@ export default function LoginPage() {
             )}
 
             {mode === "forgot" && (
-              <div style={{ display: "grid", gap: 14, position: "relative", zIndex: 1 }}>
+              <div style={{ display: "grid", gap: 14 }}>
                 <Field label="Kayıtlı e-posta">
                   <input
                     type="email"
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="ornek@eposta.com"
                     style={inputStyle}
                   />
                 </Field>
@@ -932,8 +1102,9 @@ export default function LoginPage() {
             )}
 
             {mode === "register" && (
-              <div style={{ display: "grid", gap: 18, position: "relative", zIndex: 1 }}>
+              <div style={{ display: "grid", gap: 18 }}>
                 <div
+                  className="terron-register-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -945,6 +1116,7 @@ export default function LoginPage() {
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Ad Soyad"
                       style={inputStyle}
                     />
                   </Field>
@@ -954,6 +1126,7 @@ export default function LoginPage() {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
+                      placeholder="@kullaniciadi"
                       style={inputStyle}
                     />
                   </Field>
@@ -963,6 +1136,7 @@ export default function LoginPage() {
                       type="email"
                       value={registerEmail}
                       onChange={(e) => setRegisterEmail(e.target.value)}
+                      placeholder="ornek@eposta.com"
                       style={inputStyle}
                     />
                   </Field>
@@ -972,6 +1146,7 @@ export default function LoginPage() {
                       type="password"
                       value={registerPassword}
                       onChange={(e) => setRegisterPassword(e.target.value)}
+                      placeholder="En az 6 karakter"
                       style={inputStyle}
                     />
                   </Field>
@@ -981,6 +1156,7 @@ export default function LoginPage() {
                       type="password"
                       value={registerPasswordConfirm}
                       onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
+                      placeholder="Şifre tekrar"
                       style={inputStyle}
                     />
                   </Field>
@@ -990,6 +1166,7 @@ export default function LoginPage() {
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
+                      placeholder="İstanbul"
                       style={inputStyle}
                     />
                   </Field>
@@ -999,6 +1176,7 @@ export default function LoginPage() {
                       type="text"
                       value={district}
                       onChange={(e) => setDistrict(e.target.value)}
+                      placeholder="Kadıköy"
                       style={inputStyle}
                     />
                   </Field>
@@ -1033,8 +1211,6 @@ export default function LoginPage() {
                     : "1px solid rgba(34, 197, 94, 0.22)",
                   color: isError ? "#fca5a5" : "#86efac",
                   fontSize: 14,
-                  position: "relative",
-                  zIndex: 1,
                 }}
               >
                 {msg}
@@ -1043,18 +1219,123 @@ export default function LoginPage() {
 
             <div
               style={{
-                marginTop: 24,
+                marginTop: 22,
                 textAlign: "center",
                 color: "#64748b",
                 fontSize: 12,
                 letterSpacing: 0.5,
-                position: "relative",
-                zIndex: 1,
               }}
             >
               TERRONTR.COM • Profesyonel dijital gayrimenkul yatırım deneyimi
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TickerBar({
+  items,
+  title,
+  reverse = false,
+  accent,
+}: {
+  items: { label: string; value: string; positive: boolean }[];
+  title: string;
+  reverse?: boolean;
+  accent: string;
+}) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        zIndex: 1,
+        overflow: "hidden",
+        borderRadius: 16,
+        border: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.025)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "8px 14px",
+          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: accent,
+            boxShadow: `0 0 16px ${accent}55`,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            color: "#e2e8f0",
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 1.2,
+          }}
+        >
+          {title}
+        </span>
+      </div>
+
+      <div className="terron-ticker-shell">
+        <div className={reverse ? "terron-ticker-track-reverse" : "terron-ticker-track"}>
+          {[...items, ...items].map((item, index) => (
+            <div
+              key={`${item.label}-${index}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "12px 18px",
+                borderRight: "1px solid rgba(255,255,255,0.06)",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: accent,
+                  boxShadow: `0 0 14px ${accent}66`,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  color: "#e2e8f0",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {item.label}
+              </span>
+              <span
+                style={{
+                  color: item.positive ? "#86efac" : "#fca5a5",
+                  fontSize: 12,
+                  fontWeight: 800,
+                }}
+              >
+                {item.value}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1080,54 +1361,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function StatCard({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        padding: "12px 12px",
-        borderRadius: 18,
-        background: highlight
-          ? "linear-gradient(180deg, rgba(247,210,122,0.12) 0%, rgba(247,210,122,0.05) 100%)"
-          : "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)",
-        border: highlight
-          ? "1px solid rgba(247,210,122,0.20)"
-          : "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.14)",
-      }}
-    >
-      <div
-        style={{
-          color: highlight ? "#f4d58d" : "#94a3b8",
-          fontSize: 11,
-          fontWeight: 700,
-          marginBottom: 6,
-          letterSpacing: 0.4,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          color: "#ffffff",
-          fontSize: 24,
-          fontWeight: 900,
-          lineHeight: 1,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function MiniMetric({
   label,
   value,
@@ -1140,13 +1373,16 @@ function MiniMetric({
   return (
     <div
       style={{
-        padding: "10px 10px",
-        borderRadius: 16,
-        background: highlight ? "rgba(247,210,122,0.08)" : "rgba(255,255,255,0.04)",
+        minWidth: 182,
+        padding: "12px 18px",
+        borderRadius: 18,
+        background: highlight ? "rgba(247,210,122,0.09)" : "rgba(255,255,255,0.04)",
         border: highlight
-          ? "1px solid rgba(247,210,122,0.18)"
+          ? "1px solid rgba(247,210,122,0.20)"
           : "1px solid rgba(255,255,255,0.08)",
-        backdropFilter: "blur(8px)",
+        backdropFilter: "blur(10px)",
+        textAlign: "center",
+        boxShadow: highlight ? "0 10px 24px rgba(0,0,0,0.18)" : undefined,
       }}
     >
       <div
@@ -1155,7 +1391,7 @@ function MiniMetric({
           fontSize: 10,
           fontWeight: 800,
           marginBottom: 5,
-          letterSpacing: 0.7,
+          letterSpacing: 0.8,
         }}
       >
         {label}
@@ -1163,7 +1399,7 @@ function MiniMetric({
       <div
         style={{
           color: "#ffffff",
-          fontSize: 16,
+          fontSize: 18,
           fontWeight: 900,
         }}
       >
@@ -1173,111 +1409,673 @@ function MiniMetric({
   );
 }
 
-function MapPulse({ top, left }: { top: string; left: string }) {
+function InteractiveGlobe() {
+  const [rotation, setRotation] = useState({ x: -16, y: 18 });
+  const [dragging, setDragging] = useState(false);
+
+  const dragState = useRef({
+    startX: 0,
+    startY: 0,
+    baseX: -16,
+    baseY: 18,
+  });
+
+  useEffect(() => {
+    if (dragging) return;
+
+    const timer = setInterval(() => {
+      setRotation((prev) => ({ ...prev, y: prev.y + 0.18 }));
+    }, 24);
+
+    return () => clearInterval(timer);
+  }, [dragging]);
+
+  function startDrag(clientX: number, clientY: number) {
+    dragState.current = {
+      startX: clientX,
+      startY: clientY,
+      baseX: rotation.x,
+      baseY: rotation.y,
+    };
+    setDragging(true);
+  }
+
+  function moveDrag(clientX: number, clientY: number) {
+    if (!dragging) return;
+
+    const dx = clientX - dragState.current.startX;
+    const dy = clientY - dragState.current.startY;
+
+    setRotation({
+      x: clamp(dragState.current.baseX - dy * 0.18, -55, 55),
+      y: dragState.current.baseY + dx * 0.22,
+    });
+  }
+
+  function endDrag() {
+    setDragging(false);
+  }
+
+  const projected = useMemo(() => {
+    return projectPoints(ALL_GLOBE_POINTS, rotation.x, rotation.y, 150);
+  }, [rotation]);
+
+  const visiblePoints = projected.filter((p) => p.visible).sort((a, b) => a.z - b.z);
+
   return (
     <div
-      className="terron-pulse"
-      style={{
-        position: "absolute",
-        top,
-        left,
-        width: 12,
-        height: 12,
-        marginLeft: -6,
-        marginTop: -6,
-        borderRadius: "50%",
-        background: "#f7d27a",
-        boxShadow: "0 0 0 6px rgba(247,210,122,0.12), 0 0 18px rgba(247,210,122,0.55)",
+      onMouseDown={(e) => startDrag(e.clientX, e.clientY)}
+      onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
+      onMouseUp={endDrag}
+      onMouseLeave={endDrag}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (t) startDrag(t.clientX, t.clientY);
       }}
-    />
-  );
-}
-
-function ConnectionLine({
-  x1,
-  y1,
-  x2,
-  y2,
-}: {
-  x1: string;
-  y1: string;
-  x2: string;
-  y2: string;
-}) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
+      onTouchMove={(e) => {
+        const t = e.touches[0];
+        if (t) moveDrag(t.clientX, t.clientY);
+      }}
+      onTouchEnd={endDrag}
       style={{
-        position: "absolute",
-        inset: 0,
+        position: "relative",
         width: "100%",
-        height: "100%",
-        overflow: "visible",
-        pointerEvents: "none",
+        maxWidth: 575,
+        aspectRatio: "1 / 1",
+        cursor: dragging ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
       }}
     >
-      <line
-        x1={parseFloat(x1)}
-        y1={parseFloat(y1)}
-        x2={parseFloat(x2)}
-        y2={parseFloat(y2)}
-        stroke="rgba(247,210,122,0.34)"
-        strokeWidth="0.35"
-        strokeDasharray="1.6 1.2"
+      <style jsx>{`
+        @keyframes terronOrbitSpin {
+          0% {
+            transform: translate(-50%, -50%) rotate(0deg);
+          }
+          100% {
+            transform: translate(-50%, -50%) rotate(360deg);
+          }
+        }
+
+        @keyframes terronOrbitReverse {
+          0% {
+            transform: translate(-50%, -50%) rotate(360deg);
+          }
+          100% {
+            transform: translate(-50%, -50%) rotate(0deg);
+          }
+        }
+
+        @keyframes terronRingGlow {
+          0%,
+          100% {
+            opacity: 0.68;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
+        @keyframes terronScan {
+          0% {
+            transform: translateY(-8px);
+            opacity: 0.22;
+          }
+          50% {
+            opacity: 0.7;
+          }
+          100% {
+            transform: translateY(8px);
+            opacity: 0.22;
+          }
+        }
+
+        .terron-orbit-ring {
+          animation: terronOrbitSpin 26s linear infinite;
+        }
+
+        .terron-orbit-ring-reverse {
+          animation: terronOrbitReverse 36s linear infinite;
+        }
+
+        .terron-ring-glow {
+          animation: terronRingGlow 3.2s ease-in-out infinite;
+        }
+
+        .terron-scan-line {
+          animation: terronScan 4.5s ease-in-out infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .terron-orbit-ring,
+          .terron-orbit-ring-reverse,
+          .terron-ring-glow,
+          .terron-scan-line {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: "10% 10% 14% 10%",
+          borderRadius: "50%",
+          background: "radial-gradient(circle at 50% 50%, rgba(247,210,122,0.18), transparent 72%)",
+          filter: "blur(26px)",
+          pointerEvents: "none",
+        }}
       />
-    </svg>
+
+      <div
+        style={{
+          position: "absolute",
+          left: "8%",
+          right: "8%",
+          bottom: "4%",
+          height: "12%",
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(247,210,122,0.22), rgba(247,210,122,0.02) 70%, transparent 85%)",
+          filter: "blur(18px)",
+          transform: "scaleX(0.92)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        className="terron-orbit-ring terron-ring-glow"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "94%",
+          height: "94%",
+          transform: "translate(-50%, -50%)",
+          borderRadius: "50%",
+          border: "1px solid rgba(247,210,122,0.24)",
+          boxShadow: "0 0 34px rgba(247,210,122,0.12)",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "4.5%",
+            left: "50%",
+            width: 10,
+            height: 10,
+            marginLeft: -5,
+            borderRadius: "50%",
+            background: "#f7d27a",
+            boxShadow: "0 0 16px rgba(247,210,122,0.78)",
+          }}
+        />
+      </div>
+
+      <div
+        className="terron-orbit-ring-reverse"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "79%",
+          height: "79%",
+          transform: "translate(-50%, -50%) rotate(18deg)",
+          borderRadius: "50%",
+          border: "1px dashed rgba(247,210,122,0.16)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle at 34% 28%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.07) 14%, rgba(20,41,78,0.24) 28%, rgba(8,18,36,0.9) 60%, rgba(3,7,14,1) 100%)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          boxShadow:
+            "inset -34px -42px 94px rgba(0,0,0,0.52), inset 30px 20px 70px rgba(255,255,255,0.05), 0 32px 60px rgba(0,0,0,0.26)",
+          overflow: "hidden",
+        }}
+      >
+        <svg
+          viewBox="0 0 400 400"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+          }}
+        >
+          <defs>
+            <radialGradient id="globeCenterGlow" cx="50%" cy="50%" r="60%">
+              <stop offset="0%" stopColor="rgba(255,215,120,0.18)" />
+              <stop offset="100%" stopColor="rgba(255,215,120,0)" />
+            </radialGradient>
+
+            <linearGradient id="earthStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.20)" />
+              <stop offset="100%" stopColor="rgba(247,210,122,0.18)" />
+            </linearGradient>
+
+            <linearGradient id="mapLineStrong" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.18)" />
+              <stop offset="100%" stopColor="rgba(247,210,122,0.14)" />
+            </linearGradient>
+
+            <linearGradient id="networkStrong" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="rgba(247,210,122,0.04)" />
+              <stop offset="50%" stopColor="rgba(247,210,122,0.34)" />
+              <stop offset="100%" stopColor="rgba(247,210,122,0.04)" />
+            </linearGradient>
+          </defs>
+
+          <circle cx="200" cy="200" r="198" fill="url(#globeCenterGlow)" />
+
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+            const rx = 165;
+            const ry = 165 - i * 20;
+            return (
+              <ellipse
+                key={`lat-${i}`}
+                cx="200"
+                cy="200"
+                rx={rx}
+                ry={ry}
+                fill="none"
+                stroke={i === 3 ? "rgba(247,210,122,0.12)" : "rgba(247,210,122,0.08)"}
+                strokeWidth={i === 3 ? "1.2" : "1"}
+              />
+            );
+          })}
+
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+            const scaleX = Math.abs(Math.cos(((i + 1) * Math.PI) / 8));
+            return (
+              <ellipse
+                key={`lon-${i}`}
+                cx="200"
+                cy="200"
+                rx={165 * scaleX}
+                ry="165"
+                fill="none"
+                stroke={i === 2 || i === 4 ? "rgba(247,210,122,0.11)" : "rgba(247,210,122,0.07)"}
+                strokeWidth={i === 2 || i === 4 ? "1.1" : "1"}
+              />
+            );
+          })}
+
+          <GlobeContinents rotationX={rotation.x} rotationY={rotation.y} />
+
+          <circle
+            cx="200"
+            cy="200"
+            r="164"
+            fill="none"
+            stroke="url(#mapLineStrong)"
+            strokeWidth="1"
+            strokeDasharray="2 4"
+            opacity="0.62"
+          />
+
+          <path
+            d="M70 170 C120 120, 180 130, 220 100 S320 80, 345 130"
+            fill="none"
+            stroke="rgba(255,255,255,0.11)"
+            strokeWidth="1.1"
+            opacity="0.62"
+          />
+          <path
+            d="M75 230 C140 210, 180 235, 240 210 S305 185, 334 215"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth="1.1"
+            opacity="0.56"
+          />
+          <path
+            d="M100 85 C155 115, 195 105, 250 125"
+            fill="none"
+            stroke="rgba(247,210,122,0.16)"
+            strokeWidth="1.1"
+            opacity="0.56"
+          />
+          <path
+            d="M98 300 C152 270, 215 280, 288 248"
+            fill="none"
+            stroke="rgba(247,210,122,0.16)"
+            strokeWidth="1.1"
+            opacity="0.54"
+          />
+
+          {drawVisibleConnections(visiblePoints).map((line, i) => (
+            <line
+              key={`line-${i}`}
+              x1={line.x1}
+              y1={line.y1}
+              x2={line.x2}
+              y2={line.y2}
+              stroke="url(#networkStrong)"
+              strokeWidth={line.strong ? 1.4 : 1}
+              strokeDasharray={line.strong ? "0" : "4 4"}
+              opacity={line.strong ? 0.95 : 0.88}
+            />
+          ))}
+
+          {visiblePoints.map((point, index) => {
+            const pulseDelay = `${(index % 8) * 0.16}s`;
+            const outerR = point.size >= 0.75 ? 7.2 * point.size : 5.4 * point.size;
+            const innerR = point.size >= 0.75 ? 3.6 * point.size : 2.7 * point.size;
+            const isMajor = point.size >= 0.8;
+
+            return (
+              <g key={point.id} transform={`translate(${point.x}, ${point.y})`}>
+                <circle
+                  className="terron-glow-dot"
+                  r={outerR}
+                  fill={isMajor ? "rgba(247,210,122,0.14)" : "rgba(247,210,122,0.09)"}
+                  style={{ animationDelay: pulseDelay }}
+                />
+                <circle
+                  className="terron-glow-dot"
+                  r={innerR}
+                  fill="#f7d27a"
+                  style={{
+                    animationDelay: pulseDelay,
+                    filter: isMajor
+                      ? "drop-shadow(0 0 12px rgba(247,210,122,0.78))"
+                      : "drop-shadow(0 0 8px rgba(247,210,122,0.48))",
+                  }}
+                />
+              </g>
+            );
+          })}
+
+          <circle
+            cx="200"
+            cy="200"
+            r="198"
+            fill="none"
+            stroke="url(#earthStroke)"
+            strokeWidth="1.2"
+          />
+
+          <ellipse
+            cx="130"
+            cy="100"
+            rx="66"
+            ry="122"
+            fill="rgba(255,255,255,0.05)"
+            transform="rotate(-28 130 100)"
+          />
+        </svg>
+
+        <div
+          className="terron-scan-line"
+          style={{
+            position: "absolute",
+            left: "10%",
+            right: "10%",
+            top: "48%",
+            height: 2,
+            background:
+              "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.0) 10%, rgba(247,210,122,0.48) 50%, rgba(247,210,122,0.0) 90%, transparent 100%)",
+            filter: "blur(0.6px)",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "108%",
+          height: "108%",
+          borderRadius: "50%",
+          border: "1px solid rgba(247,210,122,0.08)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: 14,
+          transform: "translateX(-50%)",
+          padding: "9px 14px",
+          borderRadius: 999,
+          background: "rgba(247,210,122,0.08)",
+          border: "1px solid rgba(247,210,122,0.16)",
+          color: "#f4d58d",
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: 1.3,
+          whiteSpace: "nowrap",
+          backdropFilter: "blur(10px)",
+        }}
+      >
+        TERRON GLOBAL NETWORK
+      </div>
+    </div>
   );
 }
 
-function WorldMapSilhouette() {
-  return (
-    <svg
-      viewBox="0 0 900 430"
-      style={{ width: "100%", height: "auto", display: "block" }}
-      fill="none"
-    >
-      <defs>
-        <linearGradient id="mapGlow" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="rgba(247,210,122,0.40)" />
-          <stop offset="100%" stopColor="rgba(255,255,255,0.10)" />
-        </linearGradient>
-      </defs>
-
-      <g opacity="0.9">
-        <path
-          d="M76 145c18-14 37-18 58-17 13 1 24-4 35-10 12-6 24-9 39-8 17 1 28 8 42 16 15 9 34 14 50 20 15 6 17 15 9 27-6 10-16 16-26 22-16 10-16 16-1 28 16 13 19 27 7 45-10 15-25 23-44 26-13 2-24-1-34-8-15-10-29-12-47-9-29 5-55-4-74-27-8-9-11-20-10-32 2-18-4-31-16-45-17-20-14-22 12-28z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-        <path
-          d="M308 101c18-8 37-10 56-3 11 4 21 5 33 4 19-2 35 5 49 17 17 15 38 24 57 36 11 7 12 18 2 28-11 12-25 15-41 13-18-2-32 5-46 14-19 11-39 18-62 14-24-4-42-16-55-36-9-13-12-28-9-44 3-14 2-28 16-36z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-        <path
-          d="M428 206c16-11 34-13 53-8 18 5 30-5 44-11 26-11 51-10 75 5 20 13 39 27 58 41 15 11 28 11 42-1 11-9 24-11 38-8 19 5 37 11 52 24 14 13 16 24 3 39-15 18-34 26-57 26-14 0-27 4-39 11-17 10-34 16-55 14-26-2-47-14-64-33-15-17-31-24-53-27-34-4-61-22-82-49-10-13-10-16-2-23 8-7 17-13 27-20z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-        <path
-          d="M666 122c16-9 32-10 49-6 18 4 33 13 46 26 11 11 24 17 40 19 14 2 25 9 35 19 13 13 13 25-1 37-17 14-37 18-58 18-16 0-31 2-46 6-13 4-24 0-32-11-11-14-23-28-34-42-8-10-8-20 0-30z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-        <path
-          d="M322 302c13-12 29-17 47-17 22 0 40 9 55 25 14 15 16 31 6 49-10 17-24 31-43 39-14 6-27 4-39-5-9-8-16-18-21-29-7-15-17-27-24-41-5-8-2-15 4-21 4-3 9-6 15-9z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-        <path
-          d="M768 292c14-9 29-10 44-3 12 6 20 15 24 27 7 18-6 44-24 50-17 6-31-1-42-14-12-14-18-30-19-48 0-5 5-9 17-12z"
-          fill="rgba(255,255,255,0.08)"
-          stroke="rgba(247,210,122,0.18)"
-        />
-      </g>
-    </svg>
+function GlobeContinents({
+  rotationX,
+  rotationY,
+}: {
+  rotationX: number;
+  rotationY: number;
+}) {
+  const continentShapes = useMemo(
+    () => [
+      { id: "north-america", lat: 39, lon: -104, width: 72, height: 34, rot: -18 },
+      { id: "greenland", lat: 72, lon: -40, width: 24, height: 12, rot: -10 },
+      { id: "south-america", lat: -17, lon: -60, width: 34, height: 60, rot: 12 },
+      { id: "europe", lat: 51, lon: 12, width: 30, height: 16, rot: -8 },
+      { id: "africa", lat: 8, lon: 19, width: 40, height: 66, rot: 6 },
+      { id: "middle-east", lat: 27, lon: 46, width: 22, height: 16, rot: 4 },
+      { id: "asia-west", lat: 42, lon: 70, width: 54, height: 24, rot: 8 },
+      { id: "asia-east", lat: 30, lon: 112, width: 68, height: 36, rot: 12 },
+      { id: "india", lat: 22, lon: 79, width: 20, height: 26, rot: 8 },
+      { id: "southeast-asia", lat: 8, lon: 104, width: 22, height: 20, rot: 18 },
+      { id: "australia", lat: -25, lon: 134, width: 34, height: 22, rot: 8 },
+    ],
+    []
   );
+
+  const projected = projectShapes(continentShapes, rotationX, rotationY, 150);
+
+  return (
+    <>
+      {projected
+        .filter((shape) => shape.visible)
+        .sort((a, b) => a.z - b.z)
+        .map((shape) => (
+          <g key={shape.id}>
+            <ellipse
+              cx={shape.x}
+              cy={shape.y}
+              rx={shape.width}
+              ry={shape.height}
+              fill="rgba(198,214,235,0.14)"
+              stroke="rgba(247,210,122,0.18)"
+              strokeWidth="1"
+              transform={`rotate(${shape.rot} ${shape.x} ${shape.y})`}
+            />
+            <ellipse
+              cx={shape.x}
+              cy={shape.y}
+              rx={shape.width * 0.84}
+              ry={shape.height * 0.84}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="0.9"
+              transform={`rotate(${shape.rot} ${shape.x} ${shape.y})`}
+            />
+          </g>
+        ))}
+    </>
+  );
+}
+
+function projectPoints(points: GlobePoint[], rotXDeg: number, rotYDeg: number, radius: number): ProjectedPoint[] {
+  const rotX = degToRad(rotXDeg);
+  const rotY = degToRad(rotYDeg);
+
+  return points.map((point) => {
+    const lat = degToRad(point.lat);
+    const lon = degToRad(point.lon);
+
+    let x = radius * Math.cos(lat) * Math.sin(lon);
+    let y = radius * Math.sin(lat);
+    let z = radius * Math.cos(lat) * Math.cos(lon);
+
+    const x1 = x * Math.cos(rotY) + z * Math.sin(rotY);
+    const z1 = -x * Math.sin(rotY) + z * Math.cos(rotY);
+    x = x1;
+    z = z1;
+
+    const y1 = y * Math.cos(rotX) - z * Math.sin(rotX);
+    const z2 = y * Math.sin(rotX) + z * Math.cos(rotX);
+    y = y1;
+    z = z2;
+
+    return {
+      id: point.id,
+      x: 200 + x,
+      y: 200 - y,
+      z,
+      visible: z > -8,
+      size: point.size ?? 1,
+    };
+  });
+}
+
+function projectShapes(
+  shapes: { id: string; lat: number; lon: number; width: number; height: number; rot: number }[],
+  rotXDeg: number,
+  rotYDeg: number,
+  radius: number
+) {
+  const rotX = degToRad(rotXDeg);
+  const rotY = degToRad(rotYDeg);
+
+  return shapes.map((shape) => {
+    const lat = degToRad(shape.lat);
+    const lon = degToRad(shape.lon);
+
+    let x = radius * Math.cos(lat) * Math.sin(lon);
+    let y = radius * Math.sin(lat);
+    let z = radius * Math.cos(lat) * Math.cos(lon);
+
+    const x1 = x * Math.cos(rotY) + z * Math.sin(rotY);
+    const z1 = -x * Math.sin(rotY) + z * Math.cos(rotY);
+    x = x1;
+    z = z1;
+
+    const y1 = y * Math.cos(rotX) - z * Math.sin(rotX);
+    const z2 = y * Math.sin(rotX) + z * Math.cos(rotX);
+    y = y1;
+    z = z2;
+
+    const perspective = 0.78 + ((z + radius) / (2 * radius)) * 0.42;
+
+    return {
+      ...shape,
+      x: 200 + x,
+      y: 200 - y,
+      z,
+      visible: z > -28,
+      width: shape.width * perspective,
+      height: shape.height * perspective,
+    };
+  });
+}
+
+function drawVisibleConnections(points: ProjectedPoint[]) {
+  const connections = [
+    ["ny", "toronto", true],
+    ["ny", "london", true],
+    ["la", "tokyo", true],
+    ["mexico", "bogota", false],
+    ["bogota", "saopaulo", false],
+    ["saopaulo", "buenosaires", false],
+
+    ["london", "paris", false],
+    ["paris", "berlin", false],
+    ["london", "madrid", false],
+    ["amsterdam", "stockholm", false],
+    ["rome", "istanbul", false],
+
+    ["london", "istanbul", true],
+    ["berlin", "istanbul", true],
+    ["istanbul", "ankara", false],
+    ["istanbul", "izmir", false],
+    ["istanbul", "dubai", true],
+    ["dubai", "riyadh", false],
+    ["dubai", "doha", false],
+    ["tehran", "dubai", false],
+
+    ["cairo", "istanbul", false],
+    ["casablanca", "madrid", false],
+    ["lagos", "london", false],
+    ["lagos", "nairobi", false],
+    ["nairobi", "johannesburg", false],
+
+    ["dubai", "mumbai", true],
+    ["mumbai", "delhi", false],
+    ["delhi", "bangkok", false],
+    ["bangkok", "singapore", true],
+    ["singapore", "jakarta", false],
+    ["hongkong", "shanghai", false],
+    ["beijing", "seoul", false],
+    ["seoul", "tokyo", true],
+    ["shanghai", "tokyo", true],
+    ["singapore", "sydney", true],
+    ["sydney", "melbourne", false],
+    ["melbourne", "auckland", false],
+  ] as const;
+
+  return connections
+    .map(([a, b, strong]) => {
+      const p1 = points.find((p) => p.id === a && p.visible);
+      const p2 = points.find((p) => p.id === b && p.visible);
+      if (!p1 || !p2) return null;
+      return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, strong };
+    })
+    .filter(Boolean) as { x1: number; y1: number; x2: number; y2: number; strong: boolean }[];
+}
+
+function degToRad(deg: number) {
+  return (deg * Math.PI) / 180;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatTryPair(value?: string) {
+  if (!value) return "…";
+  const num = Number(value);
+  if (Number.isNaN(num)) return value;
+  return `₺${num.toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatUsd(value?: number) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "…";
+  return `$${value.toLocaleString("en-US", {
+    maximumFractionDigits: 0,
+  })}`;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -1291,6 +2089,7 @@ const inputStyle: React.CSSProperties = {
   fontSize: 15,
   boxSizing: "border-box",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+  transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
 };
 
 const primaryButtonStyle: React.CSSProperties = {
@@ -1304,6 +2103,7 @@ const primaryButtonStyle: React.CSSProperties = {
   fontWeight: 900,
   cursor: "pointer",
   boxShadow: "0 16px 30px rgba(212,166,74,0.24)",
+  transition: "transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
@@ -1316,6 +2116,7 @@ const secondaryButtonStyle: React.CSSProperties = {
   fontSize: 15,
   fontWeight: 700,
   cursor: "pointer",
+  transition: "transform 0.18s ease, background 0.18s ease, border-color 0.18s ease",
 };
 
 const linkButtonStyle: React.CSSProperties = {
