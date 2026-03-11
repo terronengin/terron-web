@@ -23,11 +23,11 @@ type ProjectedPoint = {
 };
 
 type MarketResponse = {
-  USDTRY?: string;
-  EURTRY?: string;
-  GBPTRY?: string;
-  BTC?: number;
-  ETH?: number;
+  USDTRY?: string | number | null;
+  EURTRY?: string | number | null;
+  GBPTRY?: string | number | null;
+  BTC?: number | null;
+  ETH?: number | null;
   error?: string;
 };
 
@@ -125,7 +125,7 @@ export default function LoginPage() {
 
   const [marketData, setMarketData] = useState<MarketResponse | null>(null);
 
-  const totalUsers = 212;
+  const totalUsers = 216;
 
   useEffect(() => {
     const remembered =
@@ -152,10 +152,7 @@ export default function LoginPage() {
         const res = await fetch("/api/market", { cache: "no-store" });
         const data: MarketResponse = await res.json();
         if (!mounted) return;
-
-        if (!data?.error) {
-          setMarketData(data);
-        }
+        if (!data?.error) setMarketData(data);
       } catch {
         // fallback
       }
@@ -341,7 +338,7 @@ export default function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "clamp(12px, 2vw, 24px)",
+        padding: "clamp(10px, 2vw, 20px)",
       }}
     >
       <style jsx global>{`
@@ -395,7 +392,7 @@ export default function LoginPage() {
           }
           50% {
             opacity: 1;
-            transform: scale(1.12);
+            transform: scale(1.1);
           }
         }
 
@@ -405,17 +402,7 @@ export default function LoginPage() {
             transform: translateY(0px);
           }
           50% {
-            transform: translateY(-6px);
-          }
-        }
-
-        @keyframes terronSoftPulse {
-          0%,
-          100% {
-            opacity: 0.5;
-          }
-          50% {
-            opacity: 0.95;
+            transform: translateY(-5px);
           }
         }
 
@@ -450,16 +437,11 @@ export default function LoginPage() {
           animation: terronFloat 5s ease-in-out infinite;
         }
 
-        .terron-soft-pulse {
-          animation: terronSoftPulse 2.6s ease-in-out infinite;
-        }
-
         @media (prefers-reduced-motion: reduce) {
           .terron-ticker-track,
           .terron-ticker-track-reverse,
           .terron-glow-dot,
-          .terron-float,
-          .terron-soft-pulse {
+          .terron-float {
             animation: none !important;
           }
         }
@@ -467,11 +449,11 @@ export default function LoginPage() {
         @media (max-width: 1060px) {
           .terron-main-grid {
             grid-template-columns: 1fr !important;
-            gap: 18px !important;
+            gap: 12px !important;
           }
 
           .terron-globe-panel {
-            min-height: 420px !important;
+            min-height: 260px !important;
             order: 2;
           }
 
@@ -482,98 +464,138 @@ export default function LoginPage() {
 
         @media (max-width: 760px) {
           .terron-page-shell {
-            border-radius: 26px !important;
-            padding: 16px !important;
-          }
-
-          .terron-logo-wrap {
-            gap: 12px !important;
-            align-items: center !important;
-          }
-
-          .terron-logo-icon {
-            width: 64px !important;
-            height: 76px !important;
-            border-radius: 18px !important;
-            font-size: 30px !important;
-          }
-
-          .terron-logo-title {
-            font-size: 34px !important;
-          }
-
-          .terron-logo-civil {
-            font-size: 11px !important;
-            letter-spacing: 4.4px !important;
-          }
-
-          .terron-globe-panel {
-            min-height: 350px !important;
-          }
-
-          .terron-mobile-stack {
-            grid-template-columns: 1fr !important;
+            border-radius: 24px !important;
+            padding: 14px !important;
           }
 
           .terron-register-grid {
             grid-template-columns: 1fr !important;
           }
-        }
-
-        @media (max-width: 560px) {
-          .terron-page-shell {
-            min-height: calc(100vh - 24px);
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-            border-radius: 24px !important;
-            padding: 14px !important;
-            backdrop-filter: blur(22px);
-          }
 
           .terron-logo-wrap {
-            justify-content: flex-start !important;
+            gap: 10px !important;
+            margin-bottom: 8px !important;
           }
 
           .terron-logo-icon {
-            width: 58px !important;
-            height: 72px !important;
-            font-size: 28px !important;
+            width: 50px !important;
+            height: 60px !important;
+            border-radius: 16px !important;
+            font-size: 24px !important;
+          }
+
+          .terron-logo-right {
+            height: 60px !important;
           }
 
           .terron-logo-title {
-            font-size: 28px !important;
+            font-size: 26px !important;
             letter-spacing: 0.5px !important;
           }
 
           .terron-logo-civil {
-            font-size: 10px !important;
-            letter-spacing: 3.8px !important;
+            font-size: 9px !important;
+            letter-spacing: 3px !important;
           }
 
           .terron-brand-sub {
-            font-size: 10px !important;
-            letter-spacing: 1.8px !important;
-          }
-
-          .terron-user-card {
-            min-width: 0 !important;
-            width: 100% !important;
+            font-size: 8px !important;
+            letter-spacing: 1.3px !important;
+            margin-top: 4px !important;
           }
 
           .terron-globe-panel {
-            min-height: 300px !important;
+            min-height: 220px !important;
           }
 
-          .terron-globe-topbar {
-            top: 12px !important;
-            left: 12px !important;
-            right: 12px !important;
+          .terron-mobile-stack {
+            margin-top: 8px !important;
+          }
+
+          .terron-user-card {
+            max-width: 120px !important;
+            padding: 8px 10px !important;
+            border-radius: 12px !important;
+          }
+
+          .terron-user-card-label {
+            font-size: 8px !important;
+            margin-bottom: 3px !important;
+          }
+
+          .terron-user-card-value {
+            font-size: 16px !important;
+          }
+        }
+
+        @media (max-width: 560px) {
+          .terron-page-shell {
+            min-height: calc(100vh - 20px);
+            border-radius: 22px !important;
+            padding: 12px !important;
+          }
+
+          .terron-main-grid {
+            gap: 10px !important;
+          }
+
+          .terron-globe-panel {
+            min-height: 200px !important;
+          }
+
+          .terron-form-panel {
+            margin-top: 4px !important;
+          }
+
+          .terron-logo-wrap {
+            justify-content: flex-start !important;
+            margin-bottom: 6px !important;
+          }
+
+          .terron-logo-icon {
+            width: 46px !important;
+            height: 56px !important;
+            font-size: 22px !important;
+            border-radius: 14px !important;
+          }
+
+          .terron-logo-right {
+            height: 56px !important;
+          }
+
+          .terron-logo-title {
+            font-size: 24px !important;
+            letter-spacing: 0.35px !important;
+          }
+
+          .terron-logo-civil {
+            font-size: 8px !important;
+            letter-spacing: 2.6px !important;
+          }
+
+          .terron-brand-sub {
+            font-size: 7px !important;
+            letter-spacing: 1.1px !important;
           }
 
           .terron-form-actions-row {
-            flex-direction: column !important;
-            align-items: stretch !important;
+            gap: 8px !important;
+          }
+
+          .terron-bottom-note {
+            font-size: 11px !important;
+            line-height: 1.55 !important;
+            margin-top: 16px !important;
+          }
+
+          .terron-globe-topbar {
+            top: 10px !important;
+            left: 10px !important;
+            right: 10px !important;
+          }
+
+          .terron-user-card {
+            margin-top: 4px !important;
           }
         }
       `}</style>
@@ -587,7 +609,7 @@ export default function LoginPage() {
             linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)
           `,
           backgroundSize: "42px 42px",
-          opacity: 0.12,
+          opacity: 0.11,
           pointerEvents: "none",
         }}
       />
@@ -597,43 +619,13 @@ export default function LoginPage() {
           position: "absolute",
           inset: 0,
           pointerEvents: "none",
-          opacity: 0.26,
+          opacity: 0.24,
           background: `
             radial-gradient(circle at 14% 16%, rgba(255,215,120,0.12), transparent 18%),
             radial-gradient(circle at 82% 14%, rgba(234,29,36,0.08), transparent 16%),
             radial-gradient(circle at 72% 72%, rgba(255,215,120,0.10), transparent 20%),
             radial-gradient(circle at 24% 78%, rgba(255,255,255,0.04), transparent 18%)
           `,
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          top: "7%",
-          left: "4%",
-          width: 360,
-          height: 360,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(255,215,120,0.12) 0%, rgba(255,215,120,0.02) 45%, transparent 72%)",
-          filter: "blur(22px)",
-          pointerEvents: "none",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          bottom: "7%",
-          right: "4%",
-          width: 380,
-          height: 380,
-          borderRadius: "50%",
-          background:
-            "radial-gradient(circle, rgba(234,29,36,0.08) 0%, rgba(234,29,36,0.02) 45%, transparent 70%)",
-          filter: "blur(24px)",
-          pointerEvents: "none",
         }}
       />
 
@@ -646,8 +638,8 @@ export default function LoginPage() {
           background:
             "linear-gradient(180deg, rgba(5,12,24,0.82) 0%, rgba(5,15,34,0.92) 46%, rgba(6,17,39,0.96) 100%)",
           border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 32,
-          padding: isRegister ? 28 : 24,
+          borderRadius: 28,
+          padding: isRegister ? 22 : 18,
           boxShadow:
             "0 34px 100px rgba(0,0,0,0.54), inset 0 1px 0 rgba(255,255,255,0.04)",
           backdropFilter: "blur(18px)",
@@ -658,8 +650,8 @@ export default function LoginPage() {
           style={{
             position: "absolute",
             top: 0,
-            left: 22,
-            right: 22,
+            left: 18,
+            right: 18,
             height: 1,
             background:
               "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.72) 25%, rgba(247,210,122,0.96) 50%, rgba(247,210,122,0.72) 75%, transparent 100%)",
@@ -673,7 +665,7 @@ export default function LoginPage() {
           accent="#f7d27a"
         />
 
-        <div style={{ height: 10 }} />
+        <div style={{ height: 8 }} />
 
         <TickerBar
           items={cityTickerItems}
@@ -686,10 +678,10 @@ export default function LoginPage() {
           className="terron-main-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: isRegister ? "1fr" : "1.06fr 0.94fr",
-            gap: 24,
+            gridTemplateColumns: isRegister ? "1fr" : "1.04fr 0.96fr",
+            gap: 18,
             alignItems: "stretch",
-            marginTop: 18,
+            marginTop: 12,
           }}
         >
           {!isRegister && (
@@ -697,9 +689,9 @@ export default function LoginPage() {
               className="terron-globe-panel"
               style={{
                 position: "relative",
-                borderRadius: 28,
+                borderRadius: 24,
                 overflow: "hidden",
-                minHeight: 620,
+                minHeight: 520,
                 border: "1px solid rgba(255,255,255,0.07)",
                 background:
                   "linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 100%)",
@@ -712,8 +704,8 @@ export default function LoginPage() {
                   position: "absolute",
                   inset: 0,
                   backgroundImage: `
-                    linear-gradient(rgba(247,210,122,0.032) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(247,210,122,0.032) 1px, transparent 1px)
+                    linear-gradient(rgba(247,210,122,0.03) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(247,210,122,0.03) 1px, transparent 1px)
                   `,
                   backgroundSize: "28px 28px",
                   opacity: 0.22,
@@ -725,24 +717,23 @@ export default function LoginPage() {
                 className="terron-globe-topbar"
                 style={{
                   position: "absolute",
-                  top: 18,
-                  left: 18,
-                  right: 18,
+                  top: 14,
+                  left: 14,
+                  right: 14,
                   display: "flex",
                   justifyContent: "flex-end",
                   alignItems: "center",
-                  gap: 12,
                   zIndex: 2,
                 }}
               >
                 <div
                   style={{
-                    padding: "8px 12px",
+                    padding: "7px 10px",
                     borderRadius: 999,
                     background: "rgba(247,210,122,0.08)",
                     border: "1px solid rgba(247,210,122,0.18)",
                     color: "#f5deb0",
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 800,
                     letterSpacing: 0.9,
                     whiteSpace: "nowrap",
@@ -758,12 +749,12 @@ export default function LoginPage() {
                   position: "absolute",
                   left: 0,
                   right: 0,
-                  top: 58,
-                  bottom: 74,
+                  top: 44,
+                  bottom: 56,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "0 12px",
+                  padding: "0 8px",
                 }}
               >
                 <InteractiveGlobe />
@@ -774,7 +765,7 @@ export default function LoginPage() {
                   position: "absolute",
                   left: "50%",
                   transform: "translateX(-50%)",
-                  bottom: 16,
+                  bottom: 12,
                   zIndex: 2,
                 }}
               >
@@ -784,29 +775,29 @@ export default function LoginPage() {
           )}
 
           <div className="terron-form-panel" style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
               <div
                 className="terron-logo-wrap"
                 style={{
                   display: "flex",
                   justifyContent: "center",
                   alignItems: "center",
-                  gap: 14,
-                  marginBottom: 16,
+                  gap: 12,
+                  marginBottom: 8,
                 }}
               >
                 <div
                   className="terron-logo-icon terron-float"
                   style={{
-                    width: 72,
-                    height: 86,
-                    borderRadius: 22,
+                    width: 58,
+                    height: 68,
+                    borderRadius: 18,
                     background: "linear-gradient(135deg, #ea1d24 0%, #a60f14 100%)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     color: "#ffffff",
-                    fontSize: 36,
+                    fontSize: 28,
                     fontWeight: 900,
                     boxShadow:
                       "0 20px 36px rgba(234,29,36,0.30), inset 0 1px 0 rgba(255,255,255,0.14)",
@@ -818,13 +809,14 @@ export default function LoginPage() {
                 </div>
 
                 <div
+                  className="terron-logo-right"
                   style={{
                     textAlign: "left",
                     minWidth: 0,
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "center",
-                    height: 86,
+                    height: 68,
                   }}
                 >
                   <div
@@ -835,16 +827,16 @@ export default function LoginPage() {
                       flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
-                      gap: 4,
+                      gap: 2,
                     }}
                   >
                     <div
                       className="terron-logo-title"
                       style={{
                         color: "#ffffff",
-                        fontSize: 40,
+                        fontSize: 30,
                         fontWeight: 900,
-                        letterSpacing: 0.9,
+                        letterSpacing: 0.6,
                         lineHeight: 0.95,
                         textShadow: "0 8px 24px rgba(0,0,0,0.25)",
                       }}
@@ -859,9 +851,9 @@ export default function LoginPage() {
                         alignItems: "center",
                         justifyContent: "center",
                         color: "#f7d27a",
-                        fontSize: 12,
+                        fontSize: 10,
                         fontWeight: 900,
-                        letterSpacing: 5.6,
+                        letterSpacing: 3.8,
                         textTransform: "uppercase",
                         whiteSpace: "nowrap",
                         textShadow: "0 0 18px rgba(247,210,122,0.22)",
@@ -882,7 +874,7 @@ export default function LoginPage() {
                           "linear-gradient(90deg, transparent 0%, rgba(247,210,122,0.0) 8%, rgba(247,210,122,0.48) 50%, rgba(247,210,122,0.0) 92%, transparent 100%)",
                         transform: "translateY(-1px)",
                         pointerEvents: "none",
-                        opacity: 0.72,
+                        opacity: 0.7,
                       }}
                     />
                   </div>
@@ -890,11 +882,11 @@ export default function LoginPage() {
                   <div
                     className="terron-brand-sub"
                     style={{
-                      marginTop: 8,
+                      marginTop: 5,
                       color: "#f7d27a",
-                      fontSize: 11,
+                      fontSize: 9,
                       fontWeight: 800,
-                      letterSpacing: 2.3,
+                      letterSpacing: 1.6,
                     }}
                   >
                     DIGITAL LAND INVESTMENT
@@ -907,8 +899,8 @@ export default function LoginPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "8px 14px",
-                  marginBottom: 14,
+                  padding: "7px 12px",
+                  marginBottom: 8,
                   borderRadius: 999,
                   border: "1px solid rgba(247,215,122,0.18)",
                   background: "rgba(247,215,122,0.06)",
@@ -918,69 +910,58 @@ export default function LoginPage() {
                 <span
                   style={{
                     color: "#f4e3b2",
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: 800,
-                    letterSpacing: 1.4,
+                    letterSpacing: 1.2,
                   }}
                 >
                   DİJİTAL YATIRIM PLATFORMU
                 </span>
               </div>
 
-              <p
-                style={{
-                  margin: 0,
-                  color: "#cbd5e1",
-                  fontSize: 15,
-                  lineHeight: 1.75,
-                  maxWidth: 460,
-                  marginInline: "auto",
-                }}
-              >
-                Metrekare bazlı dijital erişim, şeffaf fiyatlama ve ölçeklenebilir yatırım deneyimi tek platformda.
-              </p>
-
               <div
                 className="terron-mobile-stack"
                 style={{
-                  marginTop: 20,
+                  marginTop: 10,
                   display: "grid",
                   gridTemplateColumns: "1fr",
-                  gap: 12,
+                  gap: 8,
                   justifyContent: "center",
                 }}
               >
                 <div
                   className="terron-user-card"
                   style={{
-                    minWidth: 164,
-                    padding: "12px 14px",
-                    borderRadius: 18,
+                    minWidth: 0,
+                    padding: "9px 12px",
+                    borderRadius: 14,
                     background:
                       "linear-gradient(180deg, rgba(247,210,122,0.10) 0%, rgba(247,210,122,0.04) 100%)",
                     border: "1px solid rgba(247,210,122,0.16)",
                     boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
                     textAlign: "center",
-                    maxWidth: 240,
+                    maxWidth: 140,
                     marginInline: "auto",
                   }}
                 >
                   <div
+                    className="terron-user-card-label"
                     style={{
                       color: "#f4d58d",
-                      fontSize: 10,
+                      fontSize: 8,
                       fontWeight: 800,
                       letterSpacing: 1,
                       textTransform: "uppercase",
-                      marginBottom: 6,
+                      marginBottom: 4,
                     }}
                   >
                     Toplam Kullanıcı
                   </div>
                   <div
+                    className="terron-user-card-value"
                     style={{
                       color: "#ffffff",
-                      fontSize: 22,
+                      fontSize: 18,
                       fontWeight: 900,
                       lineHeight: 1,
                     }}
@@ -992,7 +973,7 @@ export default function LoginPage() {
             </div>
 
             {mode === "login" && (
-              <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 12 }}>
                 <Field label="E-posta">
                   <input
                     type="email"
@@ -1019,7 +1000,7 @@ export default function LoginPage() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    gap: 12,
+                    gap: 10,
                   }}
                 >
                   <label
@@ -1073,7 +1054,7 @@ export default function LoginPage() {
             )}
 
             {mode === "forgot" && (
-              <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 12 }}>
                 <Field label="Kayıtlı e-posta">
                   <input
                     type="email"
@@ -1102,13 +1083,13 @@ export default function LoginPage() {
             )}
 
             {mode === "register" && (
-              <div style={{ display: "grid", gap: 18 }}>
+              <div style={{ display: "grid", gap: 14 }}>
                 <div
                   className="terron-register-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
+                    gap: 12,
                   }}
                 >
                   <Field label="İsim Soyisim *">
@@ -1202,9 +1183,9 @@ export default function LoginPage() {
             {msg && (
               <div
                 style={{
-                  marginTop: 18,
-                  borderRadius: 16,
-                  padding: "13px 14px",
+                  marginTop: 14,
+                  borderRadius: 14,
+                  padding: "12px 13px",
                   background: isError ? "rgba(239, 68, 68, 0.10)" : "rgba(34, 197, 94, 0.10)",
                   border: isError
                     ? "1px solid rgba(239, 68, 68, 0.22)"
@@ -1218,12 +1199,13 @@ export default function LoginPage() {
             )}
 
             <div
+              className="terron-bottom-note"
               style={{
-                marginTop: 22,
+                marginTop: 18,
                 textAlign: "center",
                 color: "#64748b",
                 fontSize: 12,
-                letterSpacing: 0.5,
+                letterSpacing: 0.4,
               }}
             >
               TERRONTR.COM • Profesyonel dijital gayrimenkul yatırım deneyimi
@@ -1252,7 +1234,7 @@ function TickerBar({
         position: "relative",
         zIndex: 1,
         overflow: "hidden",
-        borderRadius: 16,
+        borderRadius: 14,
         border: "1px solid rgba(255,255,255,0.06)",
         background: "rgba(255,255,255,0.025)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
@@ -1263,7 +1245,7 @@ function TickerBar({
           display: "flex",
           alignItems: "center",
           gap: 10,
-          padding: "8px 14px",
+          padding: "8px 12px",
           borderBottom: "1px solid rgba(255,255,255,0.05)",
           background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))",
         }}
@@ -1299,7 +1281,7 @@ function TickerBar({
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
-                padding: "12px 18px",
+                padding: "11px 16px",
                 borderRight: "1px solid rgba(255,255,255,0.06)",
                 whiteSpace: "nowrap",
                 flexShrink: 0,
@@ -1320,7 +1302,7 @@ function TickerBar({
                   color: "#e2e8f0",
                   fontSize: 12,
                   fontWeight: 700,
-                  letterSpacing: 0.5,
+                  letterSpacing: 0.4,
                 }}
               >
                 {item.label}
@@ -1351,7 +1333,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
           marginBottom: 8,
           color: "#cbd5e1",
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: 700,
         }}
       >
         {label}
@@ -1373,9 +1355,9 @@ function MiniMetric({
   return (
     <div
       style={{
-        minWidth: 182,
-        padding: "12px 18px",
-        borderRadius: 18,
+        minWidth: 140,
+        padding: "10px 14px",
+        borderRadius: 14,
         background: highlight ? "rgba(247,210,122,0.09)" : "rgba(255,255,255,0.04)",
         border: highlight
           ? "1px solid rgba(247,210,122,0.20)"
@@ -1388,9 +1370,9 @@ function MiniMetric({
       <div
         style={{
           color: highlight ? "#f4d58d" : "#94a3b8",
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: 800,
-          marginBottom: 5,
+          marginBottom: 4,
           letterSpacing: 0.8,
         }}
       >
@@ -1399,7 +1381,7 @@ function MiniMetric({
       <div
         style={{
           color: "#ffffff",
-          fontSize: 18,
+          fontSize: 16,
           fontWeight: 900,
         }}
       >
@@ -1480,7 +1462,7 @@ function InteractiveGlobe() {
       style={{
         position: "relative",
         width: "100%",
-        maxWidth: 575,
+        maxWidth: 530,
         aspectRatio: "1 / 1",
         cursor: dragging ? "grabbing" : "grab",
         userSelect: "none",
@@ -1562,7 +1544,7 @@ function InteractiveGlobe() {
           inset: "10% 10% 14% 10%",
           borderRadius: "50%",
           background: "radial-gradient(circle at 50% 50%, rgba(247,210,122,0.18), transparent 72%)",
-          filter: "blur(26px)",
+          filter: "blur(24px)",
           pointerEvents: "none",
         }}
       />
@@ -1577,7 +1559,7 @@ function InteractiveGlobe() {
           borderRadius: "50%",
           background:
             "radial-gradient(circle, rgba(247,210,122,0.22), rgba(247,210,122,0.02) 70%, transparent 85%)",
-          filter: "blur(18px)",
+          filter: "blur(16px)",
           transform: "scaleX(0.92)",
           pointerEvents: "none",
         }}
@@ -1603,9 +1585,9 @@ function InteractiveGlobe() {
             position: "absolute",
             top: "4.5%",
             left: "50%",
-            width: 10,
-            height: 10,
-            marginLeft: -5,
+            width: 9,
+            height: 9,
+            marginLeft: -4.5,
             borderRadius: "50%",
             background: "#f7d27a",
             boxShadow: "0 0 16px rgba(247,210,122,0.78)",
@@ -1846,16 +1828,16 @@ function InteractiveGlobe() {
         style={{
           position: "absolute",
           left: "50%",
-          bottom: 14,
+          bottom: 12,
           transform: "translateX(-50%)",
-          padding: "9px 14px",
+          padding: "8px 12px",
           borderRadius: 999,
           background: "rgba(247,210,122,0.08)",
           border: "1px solid rgba(247,210,122,0.16)",
           color: "#f4d58d",
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 800,
-          letterSpacing: 1.3,
+          letterSpacing: 1.2,
           whiteSpace: "nowrap",
           backdropFilter: "blur(10px)",
         }}
@@ -2061,17 +2043,17 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function formatTryPair(value?: string) {
-  if (!value) return "…";
+function formatTryPair(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") return "…";
   const num = Number(value);
-  if (Number.isNaN(num)) return value;
+  if (Number.isNaN(num)) return String(value);
   return `₺${num.toLocaleString("tr-TR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-function formatUsd(value?: number) {
+function formatUsd(value?: number | null) {
   if (typeof value !== "number" || Number.isNaN(value)) return "…";
   return `$${value.toLocaleString("en-US", {
     maximumFractionDigits: 0,
@@ -2080,13 +2062,13 @@ function formatUsd(value?: number) {
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "14px 16px",
-  borderRadius: 16,
+  padding: "11px 14px",
+  borderRadius: 14,
   border: "1px solid rgba(255,255,255,0.10)",
   background: "rgba(255,255,255,0.04)",
   color: "#ffffff",
   outline: "none",
-  fontSize: 15,
+  fontSize: 14,
   boxSizing: "border-box",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
   transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
@@ -2094,12 +2076,12 @@ const inputStyle: React.CSSProperties = {
 
 const primaryButtonStyle: React.CSSProperties = {
   width: "100%",
-  padding: "15px 16px",
-  borderRadius: 16,
+  padding: "12px 14px",
+  borderRadius: 14,
   border: "1px solid rgba(247,210,122,0.18)",
   background: "linear-gradient(135deg, #f6e1a5 0%, #d4a64a 45%, #b8842b 100%)",
   color: "#09111f",
-  fontSize: 16,
+  fontSize: 14,
   fontWeight: 900,
   cursor: "pointer",
   boxShadow: "0 16px 30px rgba(212,166,74,0.24)",
@@ -2108,12 +2090,12 @@ const primaryButtonStyle: React.CSSProperties = {
 
 const secondaryButtonStyle: React.CSSProperties = {
   width: "100%",
-  padding: "15px 16px",
-  borderRadius: 16,
+  padding: "12px 14px",
+  borderRadius: 14,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.03)",
   color: "#ffffff",
-  fontSize: 15,
+  fontSize: 14,
   fontWeight: 700,
   cursor: "pointer",
   transition: "transform 0.18s ease, background 0.18s ease, border-color 0.18s ease",
