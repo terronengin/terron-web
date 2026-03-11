@@ -55,9 +55,9 @@ type InsightTab = "arsa" | "gelisim" | "risk";
 
 const USE_DEMO_SEED_IF_EMPTY = true;
 const DEMO_CITY_COUNT = 30;
-const DEMO_PROPERTY_COUNT = 6000;
-const DEMO_MIN_PER_DISTRICT = 15;
-const DEMO_MAX_PER_DISTRICT = 20;
+const DEMO_PROPERTY_CAP = 5000;
+const DEMO_MIN_PER_DISTRICT = 3;
+const DEMO_MAX_PER_DISTRICT = 10;
 
 type CartItem = {
   key: string;
@@ -83,6 +83,17 @@ type DemoPosition = {
     longitude?: number | null;
   };
 };
+
+type DistrictFeature = {
+  city: string;
+  district: string;
+  geometry: any;
+  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number };
+  centroid: [number, number];
+  areaApprox: number;
+};
+
+const MapViewAny = MapView as any;
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -122,7 +133,7 @@ export default function DashboardPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
 
-  const HEADER_H = 64;
+  const HEADER_H = isMobile ? 110 : 64;
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 980);
@@ -378,7 +389,7 @@ export default function DashboardPage() {
       try {
         const seeded = await generateDemoPropertiesFromDistrictGeo({
           countCities: DEMO_CITY_COUNT,
-          countProps: DEMO_PROPERTY_COUNT,
+          countProps: DEMO_PROPERTY_CAP,
           minPerDistrict: DEMO_MIN_PER_DISTRICT,
           maxPerDistrict: DEMO_MAX_PER_DISTRICT,
           seed: 1337,
@@ -420,6 +431,7 @@ export default function DashboardPage() {
         ]
           .join(" ")
           .toLowerCase();
+
         return blob.includes(q);
       });
     }
@@ -1329,50 +1341,50 @@ export default function DashboardPage() {
             right: 0,
             top: 0,
             zIndex: 30,
-            background: "linear-gradient(to bottom, rgba(10,14,24,0.92), rgba(10,14,24,0.65))",
+            background: "linear-gradient(to bottom, rgba(10,14,24,0.94), rgba(10,14,24,0.72))",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             backdropFilter: "blur(12px)",
           }}
         >
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              gap: 14,
-              padding: "0 16px",
-              maxWidth: 1600,
-              margin: "0 auto",
-            }}
-          >
+          {!isMobile ? (
             <div
               style={{
+                height: "100%",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                lineHeight: 1,
-                minWidth: isMobile ? 120 : 150,
+                gap: 14,
+                padding: "0 16px",
+                maxWidth: 1600,
+                margin: "0 auto",
               }}
             >
               <div
                 style={{
-                  padding: isMobile ? "6px 14px" : "6px 20px",
-                  borderRadius: 12,
-                  background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
-                  boxShadow: "0 0 20px rgba(212,175,55,0.35)",
-                  color: "#111",
-                  fontWeight: 1000,
-                  letterSpacing: 2,
-                  fontSize: isMobile ? 15 : 18,
-                  textAlign: "center",
-                  minWidth: isMobile ? 112 : 150,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                  minWidth: 150,
                 }}
               >
-                TERRON
+                <div
+                  style={{
+                    padding: "6px 20px",
+                    borderRadius: 12,
+                    background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
+                    boxShadow: "0 0 20px rgba(212,175,55,0.35)",
+                    color: "#111",
+                    fontWeight: 1000,
+                    letterSpacing: 2,
+                    fontSize: 18,
+                    textAlign: "center",
+                    minWidth: 150,
+                  }}
+                >
+                  TERRON
+                </div>
               </div>
-            </div>
 
-            {!isMobile && (
               <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
                 <div style={{ width: "min(760px, 100%)", position: "relative" }}>
                   <span
@@ -1405,29 +1417,23 @@ export default function DashboardPage() {
                   />
                 </div>
               </div>
-            )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
-              <button onClick={() => setPanelOpen(true)} style={btnGhost}>
-                Filtreler
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
+                <button onClick={() => setPanelOpen(true)} style={btnGhost}>
+                  Filtreler
+                </button>
 
-              {!isMobile && (
                 <button onClick={() => router.push("/portfolio")} style={btnGhost}>
                   Portföy
                 </button>
-              )}
 
-              {!isMobile && (
                 <div style={badgeBox}>
                   <div style={{ fontSize: 11, opacity: 0.75 }}>Bakiye</div>
                   <div style={{ fontSize: 13, fontWeight: 900 }}>
                     {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}
                   </div>
                 </div>
-              )}
 
-              {!isMobile && (
                 <div
                   style={{
                     display: "flex",
@@ -1472,9 +1478,110 @@ export default function DashboardPage() {
                     Çıkış
                   </button>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                padding: "8px 10px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div
+                  style={{
+                    padding: "7px 12px",
+                    borderRadius: 12,
+                    background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
+                    boxShadow: "0 0 18px rgba(212,175,55,0.28)",
+                    color: "#111",
+                    fontWeight: 1000,
+                    letterSpacing: 1.6,
+                    fontSize: 15,
+                    minWidth: 105,
+                    textAlign: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  TERRON
+                </div>
+
+                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      opacity: 0.72,
+                      fontSize: 13,
+                    }}
+                  >
+                    🔎
+                  </span>
+                  <input
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    placeholder="Ara..."
+                    style={{
+                      width: "100%",
+                      height: 38,
+                      padding: "0 10px 0 32px",
+                      borderRadius: 13,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      color: "white",
+                      outline: "none",
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr auto auto",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <button onClick={() => setPanelOpen(true)} style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}>
+                  Filtreler
+                </button>
+
+                <button onClick={() => router.push("/portfolio")} style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}>
+                  Portföy
+                </button>
+
+                <div
+                  style={{
+                    height: 38,
+                    padding: "6px 10px",
+                    borderRadius: 13,
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    minWidth: 94,
+                  }}
+                >
+                  <div style={{ fontSize: 10, opacity: 0.72, lineHeight: 1 }}>Çip</div>
+                  <div style={{ fontSize: 12, fontWeight: 900, lineHeight: 1.1, marginTop: 3 }}>
+                    {walletBalance == null ? "—" : formatCompactChip(walletBalance)}
+                  </div>
+                </div>
+
+                <button onClick={logout} style={{ ...btnGhost, padding: "0 12px", height: 38 }}>
+                  Çıkış
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {!panelOpen && (
@@ -1506,7 +1613,7 @@ export default function DashboardPage() {
         )}
 
         <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
-          <MapView
+          <MapViewAny
             items={filteredItems
               .filter((p) => typeof p.latitude === "number" && typeof p.longitude === "number")
               .map((p) => ({
@@ -1518,22 +1625,39 @@ export default function DashboardPage() {
                 latitude: Number(p.latitude),
                 longitude: Number(p.longitude),
               }))}
-            onSetCity={(c) => {
+            selected={selected
+              ? {
+                  id: selected.id,
+                  title: selected.title,
+                  city: selected.city,
+                  district: selected.district ?? null,
+                  neighborhood: selected.neighborhood ?? null,
+                  latitude: Number(selected.latitude ?? 0),
+                  longitude: Number(selected.longitude ?? 0),
+                }
+              : null}
+            filters={{
+              city,
+              district,
+              neighborhood,
+              searchText,
+            }}
+            onSetCity={(c: string) => {
               setCity(c);
               setDistrict("");
               setNeighborhood("");
               setSelected(null);
             }}
-            onSetDistrict={(d) => {
+            onSetDistrict={(d: string) => {
               setDistrict(d);
               setNeighborhood("");
               setSelected(null);
             }}
-            onSetNeighborhood={(n) => {
+            onSetNeighborhood={(n: string) => {
               setNeighborhood(n);
               setSelected(null);
             }}
-            onSelectPropertyId={(id) => {
+            onSelectPropertyId={(id: string) => {
               const found = items.find((x) => x.id === id) || filteredItems.find((x) => x.id === id) || null;
               setSelected(found);
             }}
@@ -1692,7 +1816,7 @@ export default function DashboardPage() {
                   {activeInsightTab === "arsa" && (
                     <div style={{ display: "grid", gap: 10 }}>
                       <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
-                        <b>Ada / Parsel</b>: Demo aşamada otomatik üretim. Gerçek sistemde satıcı tarafından girilecek.
+                        <b>Ada / Parsel</b>: Demo aşamada otomatik üretim.
                         <br />
                         <b>Konum</b>: {selected.city}
                         {selected.district ? ` / ${selected.district}` : ""}
@@ -1710,11 +1834,11 @@ export default function DashboardPage() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>Etrafında</div>
-                          <div style={miniInfoText}>Yol, gelişim aksı, yerleşim genişleme alanı</div>
+                          <div style={miniInfoText}>{inferNearbyText(selected)}</div>
                         </div>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>Yatırım Notu</div>
-                          <div style={miniInfoText}>Parçalı alıma uygun, m² bazlı erişilebilir</div>
+                          <div style={miniInfoText}>{inferInvestmentNote(selected)}</div>
                         </div>
                       </div>
                     </div>
@@ -1732,11 +1856,11 @@ export default function DashboardPage() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>Neden gelişiyor?</div>
-                          <div style={miniInfoText}>Yakın yerleşim yoğunluğu, altyapı aksı, yatırım talebi</div>
+                          <div style={miniInfoText}>{inferGrowthReason(selected)}</div>
                         </div>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>İmar açılımı etkisi</div>
-                          <div style={miniInfoText}>Bölgesel dönüşüm ve genişleme potansiyeli</div>
+                          <div style={miniInfoText}>{inferZoningImpact(selected)}</div>
                         </div>
                       </div>
                     </div>
@@ -1754,11 +1878,11 @@ export default function DashboardPage() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>Likidite</div>
-                          <div style={miniInfoText}>Parçalı satış kolaylığı orta seviyede</div>
+                          <div style={miniInfoText}>{inferLiquidityText(selected)}</div>
                         </div>
                         <div style={miniInfoCard}>
                           <div style={miniInfoLabel}>Belirsizlik</div>
-                          <div style={miniInfoText}>İmar ve piyasa döngüsü etkisi izlenmeli</div>
+                          <div style={miniInfoText}>{inferRiskText(selected)}</div>
                         </div>
                       </div>
                     </div>
@@ -2044,6 +2168,47 @@ function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
   );
 }
 
+function inferNearbyText(p: Property) {
+  const isMetroCity = ["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(p.city);
+  if (p.zoning_status === "imarli") {
+    return isMetroCity
+      ? "Ana yol bağlantısı, yerleşim aksı, ticaret alanı ve toplu ulaşım etkisi"
+      : "Yerleşim genişleme yönü, yol bağlantısı ve orta yoğunluklu yapılaşma etkisi";
+  }
+  return isMetroCity
+    ? "Gelişen çevre yol aksı, yeni konut baskısı ve ilerleyen planlama potansiyeli"
+    : "Tarla-arsa dönüşüm hattı, büyüyen yerleşim ve ulaşım bağlantısı potansiyeli";
+}
+
+function inferInvestmentNote(p: Property) {
+  if (p.zoning_status === "imarli") return "Likiditesi daha yüksek, parçalı alım-satım için daha uygun";
+  if ((p.development_score ?? 0) > 70) return "Orta vadede imar beklentisiyle değer baskısı üretebilir";
+  return "Daha sabırlı yatırım gerektirir, getiri potansiyeli planlama gelişimine bağlıdır";
+}
+
+function inferGrowthReason(p: Property) {
+  if ((p.development_score ?? 0) >= 75) return "Yeni yerleşim baskısı, altyapı erişimi ve fiyat ivmesi güçlü";
+  if ((p.development_score ?? 0) >= 55) return "Yerleşim genişlemesi ve yol erişimi ile kademeli değer artışı";
+  return "Gelişim erken aşamada, çevresel genişleme etkisi zamana yayılır";
+}
+
+function inferZoningImpact(p: Property) {
+  if (p.zoning_status === "imarli") return "İmarlı yapılaşma hakkı nedeniyle fiyat keşfi daha hızlı olur";
+  return "İmar açılımı gerçekleşirse fiyat çarpanı belirgin yükseliş gösterebilir";
+}
+
+function inferLiquidityText(p: Property) {
+  if (p.zoning_status === "imarli" && (p.risk_score ?? 0) < 45) return "Parçalı satış kolaylığı yüksek";
+  if ((p.risk_score ?? 0) < 65) return "Parçalı satış kolaylığı orta seviyede";
+  return "Talep döngüsüne daha duyarlı, likidite daha yavaş olabilir";
+}
+
+function inferRiskText(p: Property) {
+  if (p.zoning_status === "imarsiz") return "İmar ve planlama belirsizliği daha yüksek izlenmeli";
+  if ((p.risk_score ?? 0) > 70) return "Piyasa döngüsü ve fiyat dalgalanması dikkatle takip edilmeli";
+  return "Genel piyasa oynaklığı dışında kontrollü risk profili";
+}
+
 function clamp01(x: number) {
   if (!Number.isFinite(x)) return 0;
   return Math.max(0, Math.min(1, x));
@@ -2075,6 +2240,13 @@ function formatDecimal(n: number) {
   } catch {
     return String(n);
   }
+}
+
+function formatCompactChip(n: number) {
+  const val = Number(n || 0);
+  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `${(val / 1_000).toFixed(0)}K`;
+  return formatNumber(val);
 }
 
 function formatInt(n: number | null | undefined) {
@@ -2231,14 +2403,16 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   const rawFeatures = Array.isArray(gj?.features) ? gj.features : [];
 
   const districtFeatures = rawFeatures
-    .map((f: any, i: number) => {
+    .map((f: any) => {
       const city = String(f?.properties?.NAME_1 || "").trim();
       const district = String(f?.properties?.NAME_2 || "").trim();
       if (!city || !district || !f?.geometry) return null;
 
       const bbox = bboxFromGeometryLocal(f.geometry);
       const centroid = centroidFromGeometryLocal(f.geometry);
-      if (!bbox || !centroid) return null;
+      const areaApprox = geometryAreaApprox(f.geometry);
+
+      if (!bbox || !centroid || !areaApprox) return null;
 
       return {
         city,
@@ -2246,17 +2420,12 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
         geometry: f.geometry,
         bbox,
         centroid,
-      };
+        areaApprox,
+      } as DistrictFeature;
     })
-    .filter(Boolean) as Array<{
-      city: string;
-      district: string;
-      geometry: any;
-      bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number };
-      centroid: [number, number];
-    }>;
+    .filter(Boolean) as DistrictFeature[];
 
-  const cityOrder = [
+  const cityPriority = [
     "İstanbul",
     "Ankara",
     "İzmir",
@@ -2290,71 +2459,148 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   ];
 
   const citySet = new Set(districtFeatures.map((x) => x.city));
-  const chosenCities = cityOrder.filter((c) => citySet.has(c)).slice(0, opts.countCities);
+  const chosenCities = cityPriority.filter((c) => citySet.has(c)).slice(0, opts.countCities);
 
-  const cityMult: Record<string, number> = {};
+  const metroWeight: Record<string, number> = {};
   for (const c of chosenCities) {
-    let m = 1.0;
-    if (c === "İstanbul") m = 2.35;
-    else if (c === "Ankara" || c === "İzmir") m = 1.85;
-    else if (["Kocaeli", "Bursa", "Antalya", "Tekirdağ", "Sakarya"].includes(c)) m = 1.55;
-    else if (["Muğla", "Aydın", "Manisa", "Balıkesir", "Çanakkale", "Edirne", "Kırklareli", "Yalova"].includes(c)) m = 1.35;
-    else if (["Gaziantep", "Adana", "Mersin", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli", "Trabzon"].includes(c)) m = 1.2;
-    else if (["Diyarbakır", "Şanlıurfa", "Erzurum", "Van", "Mardin", "Batman", "Elazığ"].includes(c)) m = 1.05;
-    cityMult[c] = m;
+    let m = 1;
+    if (c === "İstanbul") m = 1.7;
+    else if (c === "Ankara" || c === "İzmir") m = 1.45;
+    else if (["Bursa", "Kocaeli", "Antalya", "Tekirdağ", "Sakarya", "Muğla", "Aydın"].includes(c)) m = 1.25;
+    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c)) m = 1.15;
+    metroWeight[c] = m;
   }
+
+  const coastalCities = new Set(["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Çanakkale", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"]);
+  const industrialCities = new Set(["İstanbul", "Kocaeli", "Bursa", "Tekirdağ", "Sakarya", "Gaziantep", "Kayseri", "Konya", "Manisa", "Denizli", "Adana"]);
 
   const demoAreas: Record<string, MarketArea> = {};
   for (const c of chosenCities) {
-    const base = Math.round(12000 * (cityMult[c] ?? 1));
+    const basePrice =
+      c === "İstanbul"
+        ? 32000
+        : c === "Ankara"
+        ? 20500
+        : c === "İzmir"
+        ? 23000
+        : coastalCities.has(c)
+        ? Math.round(15000 * (metroWeight[c] ?? 1))
+        : industrialCities.has(c)
+        ? Math.round(14500 * (metroWeight[c] ?? 1))
+        : Math.round(12000 * (metroWeight[c] ?? 1));
+
     demoAreas[c] = {
       id: `area_${slug(c)}`,
       city: c,
       district: null,
       name: `${c} Genel`,
-      base_m2_price: base,
-      expected_real_return_annual: 0.03 + rng() * 0.03,
-      inflation_annual: 0.0,
-      vol_annual: 0.10 + rng() * 0.08,
-      cycle_strength: 0.45 + rng() * 0.4,
-      shock_prob_annual: 0.05 + rng() * 0.05,
-      shock_size: -0.06 - rng() * 0.08,
+      base_m2_price: Math.round(basePrice),
+      expected_real_return_annual: Number((0.03 + rng() * 0.028).toFixed(4)),
+      inflation_annual: 0,
+      vol_annual: Number((0.10 + rng() * 0.08).toFixed(4)),
+      cycle_strength: Number((0.46 + rng() * 0.36).toFixed(4)),
+      shock_prob_annual: Number((0.045 + rng() * 0.045).toFixed(4)),
+      shock_size: Number((-0.06 - rng() * 0.08).toFixed(4)),
     };
   }
 
-  const targetDistricts = districtFeatures.filter((x) => chosenCities.includes(x.city));
+  const targetDistricts = districtFeatures
+    .filter((x) => chosenCities.includes(x.city))
+    .sort((a, b) => {
+      const aScore = a.areaApprox * (metroWeight[a.city] ?? 1);
+      const bScore = b.areaApprox * (metroWeight[b.city] ?? 1);
+      return bScore - aScore;
+    });
+
   const out: Property[] = [];
   let idx = 0;
 
   for (const dist of targetDistricts) {
-    const mult = cityMult[dist.city] ?? 1;
-    const propertyCount =
-      opts.minPerDistrict + Math.floor(rng() * (opts.maxPerDistrict - opts.minPerDistrict + 1));
+    if (out.length >= opts.countProps) break;
 
-    const neighborhoodNames = buildNeighborhoodPool(dist.district, rng);
+    const cityMul = metroWeight[dist.city] ?? 1;
+    const urbanity = getDistrictUrbanityScore(dist.city, dist.district);
+    const centerity = getDistrictCenterityScore(dist.city, dist.district);
+    const districtDensity = getDistrictPropertyTarget({
+      rng,
+      areaApprox: dist.areaApprox,
+      city: dist.city,
+      district: dist.district,
+      minPerDistrict: opts.minPerDistrict,
+      maxPerDistrict: opts.maxPerDistrict,
+    });
 
-    for (let i = 0; i < propertyCount; i++) {
+    const neighborhoodPool = buildNeighborhoodPool(dist.city, dist.district, rng);
+    const usedPoints: Array<[number, number]> = [];
+    const minDistanceKm = computeMinDistanceKm(dist.areaApprox, districtDensity);
+
+    for (let i = 0; i < districtDensity; i++) {
       if (out.length >= opts.countProps) break;
 
-      const zoning: "imarli" | "imarsiz" = rng() < 0.62 ? "imarli" : "imarsiz";
+      const zoning = decideZoning(rng, dist.city, dist.district, centerity, urbanity);
+      const point =
+        randomPointInGeometryWithMinDistance(dist.geometry, dist.bbox, usedPoints, minDistanceKm, rng) ??
+        randomPointInGeometry(dist.geometry, dist.bbox, rng) ??
+        dist.centroid;
 
-      const baseImarli = 12000 * mult;
-      const baseImarsiz = 4800 * mult;
+      usedPoints.push(point);
 
-      const pricePerM2 = zoning === "imarli" ? jitter(rng, baseImarli, 0.22) : jitter(rng, baseImarsiz, 0.28);
-      const areaM2 = zoning === "imarli" ? Math.round(350 + rng() * 2800) : Math.round(900 + rng() * 9800);
+      const neighborhood = neighborhoodPool[Math.floor(rng() * neighborhoodPool.length)];
+      const areaM2 = generateParcelArea(zoning, urbanity, rng);
 
-      const dev = clampInt(28 + rng() * 62 + (zoning === "imarli" ? 10 : -6), 0, 100);
-      const risk = clampInt(18 + rng() * 70 + (zoning === "imarsiz" ? 10 : -6), 0, 100);
+      const baseCityPrice = demoAreas[dist.city]?.base_m2_price ?? 12000;
+      const districtBoost = 1 + centerity * 0.22 + urbanity * 0.15 + (coastalCities.has(dist.city) ? 0.06 : 0) + (industrialCities.has(dist.city) ? 0.04 : 0);
+      const zoningMult = zoning === "imarli" ? 1.22 + rng() * 0.22 : 0.45 + rng() * 0.18;
+      const microJitter = 0.9 + rng() * 0.24;
 
-      const last30 = (rng() - 0.5) * 16 + (zoning === "imarli" ? 2.5 : 0);
-      const expAnnual = 8 + rng() * 18 + (zoning === "imarli" ? 4 : 0);
+      const pricePerM2 = Math.round(baseCityPrice * districtBoost * zoningMult * microJitter);
 
-      const neighborhood = neighborhoodNames[Math.floor(rng() * neighborhoodNames.length)];
-      const point = randomPointInGeometry(dist.geometry, dist.bbox, rng) ?? dist.centroid;
+      let development =
+        34 +
+        centerity * 24 +
+        urbanity * 18 +
+        (zoning === "imarli" ? 12 : -4) +
+        (coastalCities.has(dist.city) ? 6 : 0) +
+        (industrialCities.has(dist.city) ? 4 : 0) +
+        (rng() - 0.5) * 16;
 
-      const ada = 10 + Math.floor(rng() * 350);
-      const parsel = 1 + Math.floor(rng() * 900);
+      let risk =
+        54 -
+        centerity * 10 -
+        urbanity * 8 +
+        (zoning === "imarsiz" ? 14 : -7) +
+        (coastalCities.has(dist.city) ? -2 : 0) +
+        (industrialCities.has(dist.city) ? 3 : 0) +
+        (rng() - 0.5) * 14;
+
+      let expectedAnnual =
+        9 +
+        centerity * 3 +
+        urbanity * 2.5 +
+        (zoning === "imarli" ? 3 : 1.5) +
+        (coastalCities.has(dist.city) ? 1.5 : 0) +
+        (rng() - 0.5) * 4.5;
+
+      let last30 =
+        (rng() - 0.5) * 10 +
+        centerity * 2.2 +
+        urbanity * 1.3 +
+        (zoning === "imarli" ? 1.8 : 0.3);
+
+      development = clampInt(development, 18, 96);
+      risk = clampInt(risk, 8, 95);
+      expectedAnnual = Number(clamp(expectedAnnual, 5.5, 24).toFixed(2));
+      last30 = Number(clamp(last30, -8, 14).toFixed(2));
+
+      const minBuyM2 = zoning === "imarli" ? 1 : Math.max(1, roundStep(Math.min(20, areaM2 * 0.004), 1));
+      const maxBuyM2 = Math.max(minBuyM2, roundStep(Math.min(areaM2 * 0.22, zoning === "imarli" ? 400 : 1200), 1));
+
+      const soldSeedPct = clamp01((development / 100) * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08);
+      const soldM2 = Math.min(areaM2 * 0.55, Math.round(areaM2 * soldSeedPct));
+      const availableM2 = Math.max(0, areaM2 - soldM2);
+
+      const ada = 10 + Math.floor(rng() * 450);
+      const parsel = 1 + Math.floor(rng() * 1300);
 
       out.push({
         id: `demo_${idx}_${slug(dist.city)}_${slug(dist.district)}_${ada}_${parsel}`,
@@ -2364,28 +2610,26 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
         district: dist.district,
         neighborhood,
         zoning_status: zoning,
-        price_per_m2: Math.round(pricePerM2),
+        price_per_m2: Math.max(1500, pricePerM2),
         total_area_m2: areaM2,
-        available_m2: areaM2,
-        sold_m2: 0,
-        min_buy_m2: 1,
-        max_buy_m2: Math.max(50, Math.round(areaM2 * 0.25)),
+        available_m2: availableM2,
+        sold_m2: soldM2,
+        min_buy_m2: minBuyM2,
+        max_buy_m2: maxBuyM2,
         risk_score: risk,
-        development_score: dev,
-        expected_annual_return: Number(expAnnual.toFixed(2)),
-        last_30d_change: Number(last30.toFixed(2)),
+        development_score: development,
+        expected_annual_return: expectedAnnual,
+        last_30d_change: last30,
         latitude: Number(point[1].toFixed(6)),
         longitude: Number(point[0].toFixed(6)),
-        quality_score: clamp01(0.45 + dev / 220 - risk / 260 + (rng() - 0.5) * 0.08),
-        rental_yield_annual: clamp01(0.035 + rng() * 0.03),
+        quality_score: clamp01(0.42 + development / 240 - risk / 280 + (rng() - 0.5) * 0.1),
+        rental_yield_annual: clamp01(0.03 + rng() * 0.035),
         total_shares: 100000,
         area: demoAreas[dist.city],
       });
 
       idx += 1;
     }
-
-    if (out.length >= opts.countProps) break;
   }
 
   out.sort((a, b) => {
@@ -2393,43 +2637,135 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
       Number(a.development_score ?? 0) * 1.25 +
       Number(a.expected_annual_return ?? 0) -
       Number(a.risk_score ?? 0) * 0.7;
-
     const sb =
       Number(b.development_score ?? 0) * 1.25 +
       Number(b.expected_annual_return ?? 0) -
       Number(b.risk_score ?? 0) * 0.7;
-
     return sb - sa;
   });
 
   return out;
 }
 
-function buildNeighborhoodPool(district: string, rng: () => number) {
-  const fixed = [
+function decideZoning(
+  rng: () => number,
+  city: string,
+  district: string,
+  centerity: number,
+  urbanity: number
+): "imarli" | "imarsiz" {
+  let p = 0.52 + centerity * 0.16 + urbanity * 0.1;
+
+  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) p += 0.06;
+  if (containsAnyNormalized(district, ["merkez", "konak", "çankaya", "kadıköy", "beşiktaş", "şişli", "bornova", "nilüfer", "muratpaşa"])) p += 0.08;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"])) p -= 0.08;
+
+  return rng() < clamp01(p) ? "imarli" : "imarsiz";
+}
+
+function generateParcelArea(zoning: "imarli" | "imarsiz", urbanity: number, rng: () => number) {
+  if (zoning === "imarli") {
+    const min = 280;
+    const max = 2600 - urbanity * 450;
+    return Math.max(220, Math.round(min + rng() * Math.max(240, max - min)));
+  }
+
+  const min = 900;
+  const max = 12000 - urbanity * 1600;
+  return Math.max(700, Math.round(min + rng() * Math.max(1500, max - min)));
+}
+
+function getDistrictPropertyTarget(args: {
+  rng: () => number;
+  areaApprox: number;
+  city: string;
+  district: string;
+  minPerDistrict: number;
+  maxPerDistrict: number;
+}) {
+  const { rng, areaApprox, city, district, minPerDistrict, maxPerDistrict } = args;
+
+  let score = 0;
+  score += normalizeApprox(areaApprox, 0.02, 1.6) * 3.4;
+
+  if (city === "İstanbul") score += 2.2;
+  else if (city === "Ankara" || city === "İzmir") score += 1.6;
+  else if (["Bursa", "Kocaeli", "Antalya", "Muğla", "Aydın", "Tekirdağ", "Sakarya"].includes(city)) score += 1.1;
+  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city)) score += 0.7;
+
+  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "nilüfer", "muratpaşa", "karşıyaka"])) {
+    score += 1.4;
+  }
+
+  score += rng() * 1.1;
+
+  const target = Math.round(minPerDistrict + score);
+  return clamp(target, minPerDistrict, maxPerDistrict);
+}
+
+function buildNeighborhoodPool(city: string, district: string, rng: () => number) {
+  const districtStem = cleanDistrictStem(district);
+
+  const common = [
     "Atatürk Mah.",
     "Cumhuriyet Mah.",
     "Bahçelievler Mah.",
     "Yıldız Mah.",
     "Kurtuluş Mah.",
+    "Çınar Mah.",
     "Pınar Mah.",
     "Yeni Mah.",
-    "Çınar Mah.",
+    "İstasyon Mah.",
+    "Güneş Mah.",
+    "Mevlana Mah.",
+    "Fatih Mah.",
+    "İnönü Mah.",
+    "Akşemsettin Mah.",
   ];
 
-  const districtStem = district.replace(/( Belediyesi| İlçesi| Merkez)/gi, "").trim();
-  const extra = [
+  const premium = [
     `${districtStem} Merkez Mah.`,
-    `${districtStem} Yeni Yerleşim Mah.`,
-    `${districtStem} Kuzey Mah.`,
-    `${districtStem} Güney Mah.`,
-    `${districtStem} Vadi Mah.`,
     `${districtStem} Park Mah.`,
+    `${districtStem} Vadi Mah.`,
+    `${districtStem} Panorama Mah.`,
+    `${districtStem} Seyir Mah.`,
+    `${districtStem} Bahçe Mah.`,
+    `${districtStem} Konutları`,
+    `${districtStem} Yeni Yerleşim Mah.`,
   ];
 
-  const merged = [...fixed, ...extra];
-  const shuffled = [...merged].sort(() => rng() - 0.5);
-  return shuffled.slice(0, 6 + Math.floor(rng() * 4));
+  const coastal = [
+    "Sahil Mah.",
+    "Marina Mah.",
+    "Yalı Mah.",
+    "Kıyı Mah.",
+  ];
+
+  const industrial = [
+    "Organize Mah.",
+    "Sanayi Yakası Mah.",
+    "Lojistik Mah.",
+  ];
+
+  let pool = [...common, ...premium];
+
+  if (["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)) {
+    pool = [...pool, ...coastal];
+  }
+
+  if (["Kocaeli", "Bursa", "Gaziantep", "Kayseri", "Konya", "Manisa", "Denizli", "Tekirdağ", "Adana"].includes(city)) {
+    pool = [...pool, ...industrial];
+  }
+
+  const uniq = Array.from(new Set(pool));
+  const shuffled = [...uniq].sort(() => rng() - 0.5);
+  return shuffled.slice(0, 8 + Math.floor(rng() * 4));
+}
+
+function cleanDistrictStem(district: string) {
+  return district
+    .replace(/( Belediyesi| İlçesi| Merkez| Merkez İlçe| Merkez İlcesi)/gi, "")
+    .trim();
 }
 
 function coordsFromGeometryLocal(geom: any): number[][] {
@@ -2481,12 +2817,43 @@ function centroidFromGeometryLocal(geom: any): [number, number] | null {
   return [sx / pts.length, sy / pts.length];
 }
 
+function geometryAreaApprox(geom: any) {
+  const bbox = bboxFromGeometryLocal(geom);
+  if (!bbox) return 0;
+  const width = Math.max(0, bbox.maxLng - bbox.minLng);
+  const height = Math.max(0, bbox.maxLat - bbox.minLat);
+  return width * height;
+}
+
+function computeMinDistanceKm(areaApprox: number, count: number) {
+  const base = Math.sqrt(Math.max(areaApprox, 0.0005)) * 111;
+  const scaled = base / Math.max(1.8, Math.sqrt(count));
+  return clamp(scaled * 0.28, 0.35, 4.2);
+}
+
+function randomPointInGeometryWithMinDistance(
+  geom: any,
+  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
+  usedPoints: Array<[number, number]>,
+  minDistanceKm: number,
+  rng: () => number
+): [number, number] | null {
+  for (let i = 0; i < 160; i++) {
+    const point = randomPointInGeometry(geom, bbox, rng);
+    if (!point) continue;
+
+    const okay = usedPoints.every((p) => haversineKm(p[1], p[0], point[1], point[0]) >= minDistanceKm);
+    if (okay) return point;
+  }
+  return null;
+}
+
 function randomPointInGeometry(
   geom: any,
   bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
   rng: () => number
 ): [number, number] | null {
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 80; i++) {
     const lng = bbox.minLng + rng() * (bbox.maxLng - bbox.minLng);
     const lat = bbox.minLat + rng() * (bbox.maxLat - bbox.minLat);
     if (pointInGeometry([lng, lat], geom)) return [lng, lat];
@@ -2497,9 +2864,7 @@ function randomPointInGeometry(
 function pointInGeometry(point: [number, number], geom: any) {
   if (!geom) return false;
   if (geom.type === "Polygon") return pointInPolygon(point, geom.coordinates);
-  if (geom.type === "MultiPolygon") {
-    return geom.coordinates.some((poly: any) => pointInPolygon(point, poly));
-  }
+  if (geom.type === "MultiPolygon") return geom.coordinates.some((poly: any) => pointInPolygon(point, poly));
   return false;
 }
 
@@ -2534,6 +2899,17 @@ function rayCast(point: [number, number], ring: any[]) {
   return inside;
 }
 
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return function () {
@@ -2545,16 +2921,37 @@ function mulberry32(seed: number) {
   };
 }
 
-function jitter(rng: () => number, base: number, pct: number) {
-  const n = (rng() - 0.5) * 2;
-  return base * (1 + n * pct);
+function normalizeApprox(x: number, min: number, max: number) {
+  if (max <= min) return 0;
+  return clamp((x - min) / (max - min), 0, 1);
 }
 
-function clampInt(x: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, Math.round(x)));
+function getDistrictCenterityScore(city: string, district: string) {
+  let score = 0.45;
+
+  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) score += 0.08;
+  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "karşıyaka", "nilüfer", "muratpaşa", "seyhan", "odunpazarı"])) score += 0.32;
+  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"])) score += 0.06;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"])) score -= 0.16;
+
+  return clamp(score, 0.12, 0.95);
 }
 
-function slug(s: string) {
+function getDistrictUrbanityScore(city: string, district: string) {
+  let score = 0.42;
+  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city)) score += 0.12;
+  if (containsAnyNormalized(district, ["organize", "sanayi", "merkez", "şehir", "kent"])) score += 0.06;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "göl", "dağ", "yayladagi"])) score -= 0.12;
+
+  return clamp(score, 0.08, 0.92);
+}
+
+function containsAnyNormalized(text: string, needles: string[]) {
+  const t = normalizeTR(text);
+  return needles.some((n) => t.includes(normalizeTR(n)));
+}
+
+function normalizeTR(s: string) {
   return s
     .toLowerCase()
     .replaceAll("ı", "i")
@@ -2562,7 +2959,19 @@ function slug(s: string) {
     .replaceAll("ü", "u")
     .replaceAll("ş", "s")
     .replaceAll("ö", "o")
-    .replaceAll("ç", "c")
+    .replaceAll("ç", "c");
+}
+
+function roundStep(value: number, step: number) {
+  return Math.round(value / step) * step;
+}
+
+function clampInt(x: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, Math.round(x)));
+}
+
+function slug(s: string) {
+  return normalizeTR(s)
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 }
