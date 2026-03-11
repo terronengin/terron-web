@@ -490,8 +490,10 @@ export default function DashboardPage() {
 
     const avgPricePerM2 = arr.reduce((s, x) => s + Number(getEffectivePricePerM2(x)), 0) / Math.max(1, count);
     const avgRisk = arr.reduce((s, x) => s + Number(x.risk_score ?? 0), 0) / Math.max(1, count);
-    const avgDevelopment = arr.reduce((s, x) => s + Number(x.development_score ?? 0), 0) / Math.max(1, count);
-    const avgReturn = arr.reduce((s, x) => s + Number(x.expected_annual_return ?? 0), 0) / Math.max(1, count);
+    const avgDevelopment =
+      arr.reduce((s, x) => s + Number(x.development_score ?? 0), 0) / Math.max(1, count);
+    const avgReturn =
+      arr.reduce((s, x) => s + Number(x.expected_annual_return ?? 0), 0) / Math.max(1, count);
 
     const totalArea = arr.reduce((s, x) => s + Number(x.total_area_m2 ?? 0), 0);
     const availableArea = arr.reduce((s, x) => s + getPropertyAvailableM2(x), 0);
@@ -554,6 +556,44 @@ export default function DashboardPage() {
     }
 
     setWalletBalance(Number(ins.balance));
+  }
+
+  async function syncWalletBalanceToDb(nextBalance: number) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) throw new Error("Kullanıcı bulunamadı.");
+
+    const rounded = Math.max(0, Math.round(Number(nextBalance || 0)));
+
+    const { data: walletRow, error: walletErr } = await supabase
+      .from("wallets")
+      .select("user_id,balance")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (walletErr) throw walletErr;
+
+    if (!walletRow) {
+      const { error: insertErr } = await supabase.from("wallets").insert({
+        user_id: user.id,
+        balance: rounded,
+      });
+
+      if (insertErr) throw insertErr;
+      return rounded;
+    }
+
+    const { error: updateErr } = await supabase
+      .from("wallets")
+      .update({
+        balance: rounded,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+
+    if (updateErr) throw updateErr;
+
+    return rounded;
   }
 
   useEffect(() => {
@@ -642,7 +682,12 @@ export default function DashboardPage() {
         }
 
         setOpening(true);
-        setWalletBalance(currentBalance - totalPaid);
+
+        const nextBalance = Math.max(0, Math.round(currentBalance - totalPaid));
+        const prevSelected = selected;
+        const prevItems = items;
+
+        setWalletBalance(nextBalance);
 
         const list = loadDemoPositions();
         list.unshift({
@@ -665,8 +710,20 @@ export default function DashboardPage() {
 
         updateLocalPropertyM2(selected.id, m2);
 
-        alert("Demo m² yatırımı açıldı ✅");
-        setOpening(false);
+        try {
+          const syncedBalance = await syncWalletBalanceToDb(nextBalance);
+          setWalletBalance(syncedBalance);
+          alert("Demo m² yatırımı açıldı ✅");
+        } catch (e: any) {
+          saveDemoPositions(loadDemoPositions().filter((x) => x.id !== list[0].id));
+          setItems(prevItems);
+          setSelected(prevSelected);
+          setWalletBalance(currentBalance);
+          alert("Demo alımında wallet senkron hatası: " + (e?.message ?? String(e)));
+        } finally {
+          setOpening(false);
+        }
+
         return;
       }
 
@@ -794,6 +851,7 @@ export default function DashboardPage() {
 
       setWalletBalance(newBalance);
       updateLocalPropertyM2(selected.id, m2);
+      await ensureAndLoadWallet();
 
       alert("m² pozisyonu açıldı ✅");
       setOpening(false);
@@ -878,7 +936,9 @@ export default function DashboardPage() {
         const balanceDb = w?.balance != null ? Number(w.balance) : currentBalance;
 
         if (balanceDb < realTotal) {
-          alert(`Yetersiz bakiye (DB). Bakiye: ${formatNumber(balanceDb)} Çip • Gerçek sepet: ${formatNumber(realTotal)} Çip`);
+          alert(
+            `Yetersiz bakiye (DB). Bakiye: ${formatNumber(balanceDb)} Çip • Gerçek sepet: ${formatNumber(realTotal)} Çip`
+          );
           setCheckingOut(false);
           return;
         }
@@ -993,8 +1053,11 @@ export default function DashboardPage() {
         }
 
         setWalletBalance(newBalanceDb);
+        await ensureAndLoadWallet();
       } else {
-        setWalletBalance(Math.max(0, currentBalance - total));
+        const nextBalance = Math.max(0, Math.round(currentBalance - total));
+        const syncedBalance = await syncWalletBalanceToDb(nextBalance);
+        setWalletBalance(syncedBalance);
       }
 
       clearCart();
@@ -1047,13 +1110,25 @@ export default function DashboardPage() {
   const developmentHistory = useMemo(() => {
     if (!selected) return [];
     const base = clamp(Number(selected.development_score ?? 50), 0, 100);
-    return [clamp(base - 20, 0, 100), clamp(base - 14, 0, 100), clamp(base - 8, 0, 100), clamp(base - 3, 0, 100), clamp(base, 0, 100)];
+    return [
+      clamp(base - 20, 0, 100),
+      clamp(base - 14, 0, 100),
+      clamp(base - 8, 0, 100),
+      clamp(base - 3, 0, 100),
+      clamp(base, 0, 100),
+    ];
   }, [selected]);
 
   const riskHistory = useMemo(() => {
     if (!selected) return [];
     const base = clamp(Number(selected.risk_score ?? 50), 0, 100);
-    return [clamp(base + 8, 0, 100), clamp(base + 5, 0, 100), clamp(base + 3, 0, 100), clamp(base + 1, 0, 100), clamp(base, 0, 100)];
+    return [
+      clamp(base + 8, 0, 100),
+      clamp(base + 5, 0, 100),
+      clamp(base + 3, 0, 100),
+      clamp(base + 1, 0, 100),
+      clamp(base, 0, 100),
+    ];
   }, [selected]);
 
   if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
@@ -1208,7 +1283,10 @@ export default function DashboardPage() {
             <button onClick={() => setRiskBand(riskBand === "mid" ? "" : "mid")} style={chip(riskBand === "mid")}>
               Orta
             </button>
-            <button onClick={() => setRiskBand(riskBand === "high" ? "" : "high")} style={chip(riskBand === "high")}>
+            <button
+              onClick={() => setRiskBand(riskBand === "high" ? "" : "high")}
+              style={chip(riskBand === "high")}
+            >
               Yüksek
             </button>
           </div>
@@ -1217,13 +1295,19 @@ export default function DashboardPage() {
         <div style={{ marginTop: 14 }}>
           <div style={labelStyle}>Trend (Son 30 gün)</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <button onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")} style={chip(trendBand === "rising")}>
+            <button
+              onClick={() => setTrendBand(trendBand === "rising" ? "" : "rising")}
+              style={chip(trendBand === "rising")}
+            >
               Yükselen
             </button>
             <button onClick={() => setTrendBand(trendBand === "flat" ? "" : "flat")} style={chip(trendBand === "flat")}>
               Sabit
             </button>
-            <button onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")} style={chip(trendBand === "falling")}>
+            <button
+              onClick={() => setTrendBand(trendBand === "falling" ? "" : "falling")}
+              style={chip(trendBand === "falling")}
+            >
               Düşen
             </button>
           </div>
@@ -1302,14 +1386,24 @@ export default function DashboardPage() {
                   padding: 12,
                   borderRadius: 14,
                   background: selected?.id === p.id ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
-                  border: selected?.id === p.id ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.08)",
+                  border:
+                    selected?.id === p.id
+                      ? "1px solid rgba(255,255,255,0.18)"
+                      : "1px solid rgba(255,255,255,0.08)",
                   color: "white",
                   cursor: "pointer",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div
+                      style={{
+                        fontWeight: 900,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {p.neighborhood || p.district || p.city}
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
@@ -1324,7 +1418,8 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>
-                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk %{Math.round(p.risk_score)} • Gelişim %{Math.round(p.development_score)}
+                  Kalan {formatNumber(Math.round(pAvailable))} m² • Risk %{Math.round(p.risk_score)} • Gelişim %
+                  {Math.round(p.development_score)}
                 </div>
               </button>
             );
@@ -1549,11 +1644,17 @@ export default function DashboardPage() {
                   alignItems: "center",
                 }}
               >
-                <button onClick={() => setPanelOpen(true)} style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}>
+                <button
+                  onClick={() => setPanelOpen(true)}
+                  style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}
+                >
                   Filtreler
                 </button>
 
-                <button onClick={() => router.push("/portfolio")} style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}>
+                <button
+                  onClick={() => router.push("/portfolio")}
+                  style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}
+                >
                   Portföy
                 </button>
 
@@ -1625,17 +1726,19 @@ export default function DashboardPage() {
                 latitude: Number(p.latitude),
                 longitude: Number(p.longitude),
               }))}
-            selected={selected
-              ? {
-                  id: selected.id,
-                  title: selected.title,
-                  city: selected.city,
-                  district: selected.district ?? null,
-                  neighborhood: selected.neighborhood ?? null,
-                  latitude: Number(selected.latitude ?? 0),
-                  longitude: Number(selected.longitude ?? 0),
-                }
-              : null}
+            selected={
+              selected
+                ? {
+                    id: selected.id,
+                    title: selected.title,
+                    city: selected.city,
+                    district: selected.district ?? null,
+                    neighborhood: selected.neighborhood ?? null,
+                    latitude: Number(selected.latitude ?? 0),
+                    longitude: Number(selected.longitude ?? 0),
+                  }
+                : null
+            }
             filters={{
               city,
               district,
@@ -2467,12 +2570,39 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
     if (c === "İstanbul") m = 1.7;
     else if (c === "Ankara" || c === "İzmir") m = 1.45;
     else if (["Bursa", "Kocaeli", "Antalya", "Tekirdağ", "Sakarya", "Muğla", "Aydın"].includes(c)) m = 1.25;
-    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c)) m = 1.15;
+    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c))
+      m = 1.15;
     metroWeight[c] = m;
   }
 
-  const coastalCities = new Set(["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Çanakkale", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"]);
-  const industrialCities = new Set(["İstanbul", "Kocaeli", "Bursa", "Tekirdağ", "Sakarya", "Gaziantep", "Kayseri", "Konya", "Manisa", "Denizli", "Adana"]);
+  const coastalCities = new Set([
+    "İstanbul",
+    "İzmir",
+    "Muğla",
+    "Aydın",
+    "Antalya",
+    "Mersin",
+    "Balıkesir",
+    "Çanakkale",
+    "Samsun",
+    "Trabzon",
+    "Ordu",
+    "Rize",
+    "Hatay",
+  ]);
+  const industrialCities = new Set([
+    "İstanbul",
+    "Kocaeli",
+    "Bursa",
+    "Tekirdağ",
+    "Sakarya",
+    "Gaziantep",
+    "Kayseri",
+    "Konya",
+    "Manisa",
+    "Denizli",
+    "Adana",
+  ]);
 
   const demoAreas: Record<string, MarketArea> = {};
   for (const c of chosenCities) {
@@ -2518,7 +2648,6 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   for (const dist of targetDistricts) {
     if (out.length >= opts.countProps) break;
 
-    const cityMul = metroWeight[dist.city] ?? 1;
     const urbanity = getDistrictUrbanityScore(dist.city, dist.district);
     const centerity = getDistrictCenterityScore(dist.city, dist.district);
     const districtDensity = getDistrictPropertyTarget({
@@ -2549,7 +2678,12 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
       const areaM2 = generateParcelArea(zoning, urbanity, rng);
 
       const baseCityPrice = demoAreas[dist.city]?.base_m2_price ?? 12000;
-      const districtBoost = 1 + centerity * 0.22 + urbanity * 0.15 + (coastalCities.has(dist.city) ? 0.06 : 0) + (industrialCities.has(dist.city) ? 0.04 : 0);
+      const districtBoost =
+        1 +
+        centerity * 0.22 +
+        urbanity * 0.15 +
+        (coastalCities.has(dist.city) ? 0.06 : 0) +
+        (industrialCities.has(dist.city) ? 0.04 : 0);
       const zoningMult = zoning === "imarli" ? 1.22 + rng() * 0.22 : 0.45 + rng() * 0.18;
       const microJitter = 0.9 + rng() * 0.24;
 
@@ -2595,7 +2729,9 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
       const minBuyM2 = zoning === "imarli" ? 1 : Math.max(1, roundStep(Math.min(20, areaM2 * 0.004), 1));
       const maxBuyM2 = Math.max(minBuyM2, roundStep(Math.min(areaM2 * 0.22, zoning === "imarli" ? 400 : 1200), 1));
 
-      const soldSeedPct = clamp01((development / 100) * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08);
+      const soldSeedPct = clamp01(
+        development / 100 * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08
+      );
       const soldM2 = Math.min(areaM2 * 0.55, Math.round(areaM2 * soldSeedPct));
       const availableM2 = Math.max(0, areaM2 - soldM2);
 
@@ -2657,8 +2793,22 @@ function decideZoning(
   let p = 0.52 + centerity * 0.16 + urbanity * 0.1;
 
   if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) p += 0.06;
-  if (containsAnyNormalized(district, ["merkez", "konak", "çankaya", "kadıköy", "beşiktaş", "şişli", "bornova", "nilüfer", "muratpaşa"])) p += 0.08;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"])) p -= 0.08;
+  if (
+    containsAnyNormalized(district, [
+      "merkez",
+      "konak",
+      "çankaya",
+      "kadıköy",
+      "beşiktaş",
+      "şişli",
+      "bornova",
+      "nilüfer",
+      "muratpaşa",
+    ])
+  )
+    p += 0.08;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"]))
+    p -= 0.08;
 
   return rng() < clamp01(p) ? "imarli" : "imarsiz";
 }
@@ -2691,9 +2841,23 @@ function getDistrictPropertyTarget(args: {
   if (city === "İstanbul") score += 2.2;
   else if (city === "Ankara" || city === "İzmir") score += 1.6;
   else if (["Bursa", "Kocaeli", "Antalya", "Muğla", "Aydın", "Tekirdağ", "Sakarya"].includes(city)) score += 1.1;
-  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city)) score += 0.7;
+  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city))
+    score += 0.7;
 
-  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "nilüfer", "muratpaşa", "karşıyaka"])) {
+  if (
+    containsAnyNormalized(district, [
+      "merkez",
+      "çankaya",
+      "kadıköy",
+      "beşiktaş",
+      "şişli",
+      "konak",
+      "bornova",
+      "nilüfer",
+      "muratpaşa",
+      "karşıyaka",
+    ])
+  ) {
     score += 1.4;
   }
 
@@ -2734,22 +2898,15 @@ function buildNeighborhoodPool(city: string, district: string, rng: () => number
     `${districtStem} Yeni Yerleşim Mah.`,
   ];
 
-  const coastal = [
-    "Sahil Mah.",
-    "Marina Mah.",
-    "Yalı Mah.",
-    "Kıyı Mah.",
-  ];
+  const coastal = ["Sahil Mah.", "Marina Mah.", "Yalı Mah.", "Kıyı Mah."];
 
-  const industrial = [
-    "Organize Mah.",
-    "Sanayi Yakası Mah.",
-    "Lojistik Mah.",
-  ];
+  const industrial = ["Organize Mah.", "Sanayi Yakası Mah.", "Lojistik Mah."];
 
   let pool = [...common, ...premium];
 
-  if (["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)) {
+  if (
+    ["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)
+  ) {
     pool = [...pool, ...coastal];
   }
 
@@ -2763,9 +2920,7 @@ function buildNeighborhoodPool(city: string, district: string, rng: () => number
 }
 
 function cleanDistrictStem(district: string) {
-  return district
-    .replace(/( Belediyesi| İlçesi| Merkez| Merkez İlçe| Merkez İlcesi)/gi, "")
-    .trim();
+  return district.replace(/( Belediyesi| İlçesi| Merkez| Merkez İlçe| Merkez İlcesi)/gi, "").trim();
 }
 
 function coordsFromGeometryLocal(geom: any): number[][] {
@@ -2930,16 +3085,35 @@ function getDistrictCenterityScore(city: string, district: string) {
   let score = 0.45;
 
   if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) score += 0.08;
-  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "karşıyaka", "nilüfer", "muratpaşa", "seyhan", "odunpazarı"])) score += 0.32;
-  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"])) score += 0.06;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"])) score -= 0.16;
+  if (
+    containsAnyNormalized(district, [
+      "merkez",
+      "çankaya",
+      "kadıköy",
+      "beşiktaş",
+      "şişli",
+      "konak",
+      "bornova",
+      "karşıyaka",
+      "nilüfer",
+      "muratpaşa",
+      "seyhan",
+      "odunpazarı",
+    ])
+  )
+    score += 0.32;
+  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"]))
+    score += 0.06;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"]))
+    score -= 0.16;
 
   return clamp(score, 0.12, 0.95);
 }
 
 function getDistrictUrbanityScore(city: string, district: string) {
   let score = 0.42;
-  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city)) score += 0.12;
+  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city))
+    score += 0.12;
   if (containsAnyNormalized(district, ["organize", "sanayi", "merkez", "şehir", "kent"])) score += 0.06;
   if (containsAnyNormalized(district, ["yayla", "köy", "ova", "göl", "dağ", "yayladagi"])) score -= 0.12;
 
