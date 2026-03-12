@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import MapView from "../components/map/MapView";
+import MapView from "../components/MapView";
 import { supabase } from "../../lib/supabaseClient";
 import { simulatePropertyPriceTRY } from "@/lib/sim/realEstatePrice";
 
