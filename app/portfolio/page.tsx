@@ -4,6 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
+const BUY_FEE_RATE = 0.005;
+const SELL_FEE_RATE = 0.01;
+
 type PositionProperty = {
   id: string;
   title: string;
@@ -55,9 +58,14 @@ type DemoPosition = {
 type EnrichedPositionRow = PositionRow & {
   _m2: number;
   _entryPriceM2: number;
+  _grossEntryTotal: number;
   _totalPaid: number;
+  _entryFeeIncluded: boolean;
+  _holdingHours: number;
   _currentPriceM2: number;
-  _currentValue: number;
+  _grossCurrentValue: number;
+  _sellFeeAmount: number;
+  _netCurrentValue: number;
   _pnl: number;
   _pnlPct: number;
 };
@@ -93,14 +101,6 @@ export default function PortfolioPage() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  function todayISO() {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
   function hash01(str: string) {
     let h = 2166136261;
     for (let i = 0; i < str.length; i++) {
@@ -111,19 +111,95 @@ export default function PortfolioPage() {
     return u / 4294967296;
   }
 
-  function simulateCurrentPricePerM2(propertyId: string, annualReturnPct: number, entryPriceM2: number) {
-    const t = todayISO();
-    const noise = (hash01(`${propertyId}:${t}`) - 0.5) * 0.04;
-    const driftDaily = Math.pow(1 + annualReturnPct / 100, 1 / 365) - 1;
+  function clamp(n: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, n));
+  }
 
-    const epoch = new Date("2026-01-01T00:00:00");
-    const now = new Date();
-    const days = Math.max(0, Math.floor((now.getTime() - epoch.getTime()) / 86400000));
+  function hoursSince(dateStr: string) {
+    const created = new Date(dateStr).getTime();
+    const now = Date.now();
+    const diffMs = Math.max(0, now - created);
+    return diffMs / 3600000;
+  }
 
-    const drift = Math.pow(1 + driftDaily, days);
-    const price = Math.max(1, Number(entryPriceM2 || 1)) * drift * (1 + noise);
+  function getRegionBias(property: PositionProperty | null | undefined, propertyId: string) {
+    const city = (property?.city ?? "").toLocaleLowerCase("tr-TR");
+    const district = (property?.district ?? "").toLocaleLowerCase("tr-TR");
+    const seed = hash01(`${propertyId}:${city}:${district}:region-bias`);
 
-    return Math.max(1, price);
+    let cityBias = 0;
+    if (city.includes("istanbul")) cityBias = 0.018;
+    else if (city.includes("ankara")) cityBias = 0.01;
+    else if (city.includes("izmir")) cityBias = 0.012;
+    else if (city.includes("antalya")) cityBias = 0.013;
+    else if (city.includes("bursa")) cityBias = 0.008;
+    else if (city.includes("kocaeli")) cityBias = 0.009;
+    else if (city.includes("muğla") || city.includes("mugla")) cityBias = 0.011;
+    else cityBias = (seed - 0.5) * 0.018;
+
+    return clamp(cityBias, -0.025, 0.025);
+  }
+
+  function simulateCurrentPricePerM2(
+    row: PositionRow,
+    entryPriceM2: number
+  ) {
+    const property = row.property ?? null;
+    const createdAt = row.created_at;
+    const holdHours = hoursSince(createdAt);
+    const holdDays = holdHours / 24;
+
+    const annualReturn = Number(property?.expected_annual_return ?? 14);
+    const riskScore = clamp(Number(property?.risk_score ?? 50), 0, 100);
+    const devScore = clamp(Number(property?.development_score ?? 50), 0, 100);
+    const last30dChange = clamp(Number(property?.last_30d_change ?? 0), -25, 25);
+
+    const regionBias = getRegionBias(property, row.property_id);
+    const demandSeed = hash01(`${row.property_id}:demand`);
+    const cycleSeed = hash01(`${row.property_id}:cycle`);
+    const noiseSeed = hash01(`${row.property_id}:${Math.floor(holdHours / 6)}:noise`);
+
+    const annualDriftBase = annualReturn / 100;
+    const developmentBoost = ((devScore - 50) / 50) * 0.035;
+    const riskPenalty = ((riskScore - 50) / 50) * 0.03;
+    const recentMomentum = (last30dChange / 100) * 0.18;
+    const demandEffect = (demandSeed - 0.5) * 0.03;
+
+    const netAnnualTrend =
+      annualDriftBase +
+      developmentBoost +
+      recentMomentum +
+      demandEffect +
+      regionBias -
+      riskPenalty;
+
+    const dailyDrift = netAnnualTrend / 365;
+
+    const earlyHoursSoftener = clamp(holdHours / 72, 0, 1);
+    const firstDayLock = holdHours < 1 ? 0 : 1;
+
+    const cycleWave =
+      Math.sin((holdDays / 18) * Math.PI * 2 + cycleSeed * Math.PI * 2) * 0.0025;
+
+    const microNoise =
+      ((noiseSeed - 0.5) * 0.0045) *
+      clamp(holdHours / 12, 0, 1);
+
+    const cumulativeDrift = dailyDrift * holdDays;
+    const rawMultiplier =
+      1 +
+      firstDayLock *
+        (cumulativeDrift * earlyHoursSoftener + cycleWave + microNoise);
+
+    const floorBand = holdHours < 24 ? 0.9925 : holdHours < 72 ? 0.985 : 0.94;
+    const ceilBand = holdHours < 24 ? 1.0075 : holdHours < 72 ? 1.02 : 1.35;
+
+    const multiplier = clamp(rawMultiplier, floorBand, ceilBand);
+
+    return {
+      holdHours,
+      currentPriceM2: Math.max(1, entryPriceM2 * multiplier),
+    };
   }
 
   function loadDemoPositions(): DemoPosition[] {
@@ -244,10 +320,10 @@ export default function PortfolioPage() {
           city: d.snapshot?.city || "—",
           district: d.snapshot?.district ?? null,
           neighborhood: d.snapshot?.neighborhood ?? null,
-          expected_annual_return: 18,
-          risk_score: 40,
-          development_score: 60,
-          last_30d_change: 2,
+          expected_annual_return: 14,
+          risk_score: 48,
+          development_score: 58,
+          last_30d_change: 0.8,
           total_area_m2: null,
           available_m2: null,
           sold_m2: null,
@@ -255,64 +331,97 @@ export default function PortfolioPage() {
         },
       }));
 
-      const merged = [...demoRows, ...normalizedDbRows].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      const merged = [...demoRows, ...normalizedDbRows]
+        .filter((row) => {
+          const rawEntry =
+            Number(row.entry_price_m2 ?? 0) ||
+            Number(row.entry_price ?? 0) ||
+            Number(row.property?.price_per_m2 ?? 0) ||
+            0;
+
+          const rawM2 =
+            row.m2 != null
+              ? Number(row.m2)
+              : row.units != null
+              ? Number(row.units)
+              : rawEntry > 0
+              ? Number(row.amount ?? 0) / rawEntry
+              : 0;
+
+          return Number.isFinite(rawM2) && rawM2 > 0.000001;
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setRows(merged);
       setLoading(false);
     };
 
     load();
-  }, [userId]);
+  }, [userId]);  const enriched = useMemo<EnrichedPositionRow[]>(() => {
+    return rows
+      .map((r) => {
+        const entryM2 =
+          Number(r.entry_price_m2 ?? 0) ||
+          Number(r.entry_price ?? 0) ||
+          Number(r.property?.price_per_m2 ?? 0) ||
+          1;
 
-  const enriched = useMemo<EnrichedPositionRow[]>(() => {
-    return rows.map((r) => {
-      const entryM2 =
-        Number(r.entry_price_m2 ?? 0) ||
-        Number(r.entry_price ?? 0) ||
-        Number(r.property?.price_per_m2 ?? 0) ||
-        1;
+        const m2 =
+          r.m2 != null
+            ? Number(r.m2)
+            : r.units != null
+            ? Number(r.units)
+            : Number(r.amount ?? 0) / Math.max(1, entryM2);
 
-      const m2 =
-        r.m2 != null
-          ? Number(r.m2)
-          : r.units != null
-          ? Number(r.units)
-          : Number(r.amount ?? 0) / Math.max(1, entryM2);
+        if (!Number.isFinite(m2) || m2 <= 0) return null;
 
-      const totalPaid =
-        r.total_paid != null
-          ? Number(r.total_paid)
-          : r.amount != null
-          ? Number(r.amount)
-          : m2 * entryM2;
+        const grossEntryTotal = m2 * entryM2;
 
-      const annual = Number(r.property?.expected_annual_return ?? 18);
-      const currentPriceM2 = simulateCurrentPricePerM2(r.property_id, annual, entryM2);
-      const currentValue = m2 * currentPriceM2;
+        const rawStoredTotal =
+          r.total_paid != null
+            ? Number(r.total_paid)
+            : r.amount != null
+            ? Number(r.amount)
+            : grossEntryTotal;
 
-      const pnl = currentValue - totalPaid;
-      const pnlPct = totalPaid > 0 ? (pnl / totalPaid) * 100 : 0;
+        const entryFeeIncluded = rawStoredTotal > grossEntryTotal * 1.001;
 
-      return {
-        ...r,
-        _m2: m2,
-        _entryPriceM2: entryM2,
-        _totalPaid: totalPaid,
-        _currentPriceM2: currentPriceM2,
-        _currentValue: currentValue,
-        _pnl: pnl,
-        _pnlPct: pnlPct,
-      };
-    });
+        const totalPaid = entryFeeIncluded
+          ? rawStoredTotal
+          : grossEntryTotal * (1 + BUY_FEE_RATE);
+
+        const sim = simulateCurrentPricePerM2(r, entryM2);
+        const grossCurrentValue = m2 * sim.currentPriceM2;
+        const sellFeeAmount = grossCurrentValue * SELL_FEE_RATE;
+        const netCurrentValue = Math.max(0, grossCurrentValue - sellFeeAmount);
+
+        const pnl = netCurrentValue - totalPaid;
+        const pnlPct = totalPaid > 0 ? (pnl / totalPaid) * 100 : 0;
+
+        return {
+          ...r,
+          _m2: m2,
+          _entryPriceM2: entryM2,
+          _grossEntryTotal: grossEntryTotal,
+          _totalPaid: totalPaid,
+          _entryFeeIncluded: entryFeeIncluded,
+          _holdingHours: sim.holdHours,
+          _currentPriceM2: sim.currentPriceM2,
+          _grossCurrentValue: grossCurrentValue,
+          _sellFeeAmount: sellFeeAmount,
+          _netCurrentValue: netCurrentValue,
+          _pnl: pnl,
+          _pnlPct: pnlPct,
+        };
+      })
+      .filter((x): x is EnrichedPositionRow => Boolean(x));
   }, [rows]);
 
   const summary = useMemo(() => {
     const count = enriched.length;
     const totalM2 = enriched.reduce((acc, r) => acc + (Number(r._m2) || 0), 0);
     const totalInvested = enriched.reduce((acc, r) => acc + (Number(r._totalPaid) || 0), 0);
-    const totalValue = enriched.reduce((acc, r) => acc + (Number(r._currentValue) || 0), 0);
+    const totalValue = enriched.reduce((acc, r) => acc + (Number(r._netCurrentValue) || 0), 0);
     const pnl = totalValue - totalInvested;
     const pnlPct = totalInvested > 0 ? (pnl / totalInvested) * 100 : 0;
 
@@ -326,8 +435,11 @@ export default function PortfolioPage() {
       return;
     }
 
-    const sellValue = Math.round(Number(row._currentValue || 0));
-    if (!Number.isFinite(sellValue) || sellValue <= 0) {
+    const grossSellValue = Math.round(Number(row._grossCurrentValue || 0));
+    const feeAmount = Math.round(Number(row._sellFeeAmount || 0));
+    const netSellValue = Math.round(Number(row._netCurrentValue || 0));
+
+    if (!Number.isFinite(netSellValue) || netSellValue <= 0) {
       alert("Satış tutarı hesaplanamadı.");
       return;
     }
@@ -339,9 +451,11 @@ export default function PortfolioPage() {
     }
 
     const ok = window.confirm(
-      `${row.property?.title ?? "Bu pozisyon"} satılsın mı?\n\nSatılacak: ${formatNumber(
-        m2
-      )} m²\nTutar: ${formatNumber(sellValue)} Çip`
+      `${row.property?.title ?? "Bu pozisyon"} satılsın mı?\n\n` +
+        `Satılacak: ${formatNumber(m2)} m²\n` +
+        `Brüt Tutar: ${formatNumber(grossSellValue)} Çip\n` +
+        `Satış Komisyonu (%1): ${formatNumber(feeAmount)} Çip\n` +
+        `Net Ödenecek: ${formatNumber(netSellValue)} Çip`
     );
     if (!ok) return;
 
@@ -351,7 +465,7 @@ export default function PortfolioPage() {
     const prevWallet = walletBalance;
 
     setRows((prev) => prev.filter((x) => x.id !== row.id));
-    setWalletBalance((prev) => Math.round(Number(prev ?? 0) + sellValue));
+    setWalletBalance((prev) => Math.round(Number(prev ?? 0) + netSellValue));
 
     try {
       if (row.is_demo) {
@@ -368,7 +482,7 @@ export default function PortfolioPage() {
         if (walletErr) throw walletErr;
 
         const dbBalance = Math.round(Number(walletRow?.balance ?? 0));
-        const nextBalance = dbBalance + sellValue;
+        const nextBalance = dbBalance + netSellValue;
 
         const { error: walletUpdateErr } = await supabase
           .from("wallets")
@@ -391,7 +505,7 @@ export default function PortfolioPage() {
       if (walletErr) throw walletErr;
 
       const dbBalance = Math.round(Number(walletRow?.balance ?? 0));
-      const nextBalance = Math.round(dbBalance + sellValue);
+      const nextBalance = Math.round(dbBalance + netSellValue);
 
       const { error: walletUpdateErr } = await supabase
         .from("wallets")
@@ -413,10 +527,15 @@ export default function PortfolioPage() {
       const curSold = propRow?.sold_m2 != null ? Number(propRow.sold_m2) : null;
 
       const derivedAvailable =
-        curAvailable != null ? curAvailable : Math.max(0, totalArea - Math.max(0, Number(curSold ?? 0)));
+        curAvailable != null
+          ? curAvailable
+          : Math.max(0, totalArea - Math.max(0, Number(curSold ?? 0)));
 
       const nextAvailable = derivedAvailable + m2;
-      const nextSold = Math.max(0, Number(curSold ?? Math.max(0, totalArea - derivedAvailable)) - m2);
+      const nextSold = Math.max(
+        0,
+        Number(curSold ?? Math.max(0, totalArea - derivedAvailable)) - m2
+      );
 
       const { error: propUpdateErr } = await supabase
         .from("properties")
@@ -430,6 +549,31 @@ export default function PortfolioPage() {
       if (propUpdateErr) {
         await supabase.from("wallets").update({ balance: dbBalance }).eq("user_id", userId);
         throw propUpdateErr;
+      }
+
+      const { error: revenueErr } = await supabase.from("platform_revenue").insert({
+        user_id: userId,
+        property_id: row.property_id,
+        type: "sell_fee",
+        gross_amount: grossSellValue,
+        fee_rate: SELL_FEE_RATE,
+        fee_amount: feeAmount,
+        created_at: new Date().toISOString(),
+      });
+
+      if (revenueErr) {
+        await supabase.from("wallets").update({ balance: dbBalance }).eq("user_id", userId);
+
+        await supabase
+          .from("properties")
+          .update({
+            available_m2: derivedAvailable,
+            sold_m2: curSold ?? Math.max(0, totalArea - derivedAvailable),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", row.property_id);
+
+        throw revenueErr;
       }
 
       const { error: deleteErr } = await supabase
@@ -449,6 +593,15 @@ export default function PortfolioPage() {
             updated_at: new Date().toISOString(),
           })
           .eq("id", row.property_id);
+
+        await supabase
+          .from("platform_revenue")
+          .delete()
+          .eq("user_id", userId)
+          .eq("property_id", row.property_id)
+          .eq("type", "sell_fee")
+          .eq("gross_amount", grossSellValue)
+          .eq("fee_amount", feeAmount);
 
         throw deleteErr;
       }
@@ -479,59 +632,78 @@ export default function PortfolioPage() {
         <button onClick={() => router.replace("/login")}>Giriş sayfasına git</button>
       </div>
     );
-  }
-
-  return (
+  }  return (
     <div style={{ minHeight: "100vh", background: "#0b1220", color: "white" }}>
       <div style={topbar}>
-        <button onClick={() => router.push("/dashboard")} style={btnGhost}>
-          ← Dashboard
-        </button>
-
-        <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>Portföy (m²)</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={() => router.push("/dashboard")} style={btnGhost}>
+            ← Dashboard
+          </button>
+          <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>Portföy (m²)</div>
+        </div>
 
         <div style={{ flex: 1 }} />
 
-        <div style={pill}>Pozisyon: {summary.count}</div>
-        <div style={pill}>Toplam m²: {formatNumber(summary.totalM2)}</div>
-        <div style={pill}>Bakiye: {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}</div>
-        <div style={pill}>Değer: {formatNumber(Math.round(summary.totalValue))} Çip</div>
+        <div style={topbarStatsWrap}>
+          <div style={pill}>Pozisyon: {summary.count}</div>
+          <div style={pill}>Toplam m²: {formatNumber(summary.totalM2)}</div>
+          <div style={pill}>
+            Bakiye: {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}
+          </div>
+          <div style={pill}>Net Değer: {formatNumber(Math.round(summary.totalValue))} Çip</div>
+        </div>
 
-        <div style={{ fontSize: 12, opacity: 0.8 }}>{email}</div>
+        <div style={{ fontSize: 12, opacity: 0.8, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+          {email}
+        </div>
 
         <button onClick={logout} style={btnDanger}>
           Çıkış
         </button>
       </div>
 
-      <div style={{ padding: 16, maxWidth: 1320, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+      <div style={{ padding: 16, maxWidth: 1440, margin: "0 auto" }}>
+        <div style={summaryGrid}>
           <div style={card}>
             <div style={label}>Toplam Yatırım</div>
             <div style={value}>{formatNumber(Math.round(summary.totalInvested))} Çip</div>
+            <div style={subText}>Alış komisyonu dahil maliyet</div>
           </div>
+
           <div style={card}>
-            <div style={label}>Güncel Değer</div>
+            <div style={label}>Net Güncel Değer</div>
             <div style={value}>{formatNumber(Math.round(summary.totalValue))} Çip</div>
+            <div style={subText}>Satış komisyonu düşülmüş değer</div>
           </div>
+
           <div style={card}>
             <div style={label}>Kâr / Zarar</div>
             <div style={{ ...value, color: summary.pnl >= 0 ? "#86efac" : "#fca5a5" }}>
               {formatSigned(summary.pnl)} Çip
             </div>
+            <div style={subText}>Net gerçekleşebilir fark</div>
           </div>
+
           <div style={card}>
             <div style={label}>% PnL</div>
             <div style={{ ...value, color: summary.pnlPct >= 0 ? "#86efac" : "#fca5a5" }}>
               {summary.pnlPct.toFixed(2)}%
             </div>
+            <div style={subText}>Komisyonlar dahil</div>
           </div>
         </div>
 
         <div style={{ height: 14 }} />
 
         {errorMsg && (
-          <div style={{ ...card, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>
+          <div
+            style={{
+              ...card,
+              border: "1px solid rgba(239,68,68,0.35)",
+              background: "rgba(239,68,68,0.10)",
+              padding: 14,
+            }}
+          >
             <div style={{ fontWeight: 800 }}>Hata</div>
             <div style={{ marginTop: 6, fontSize: 13, opacity: 0.9 }}>{errorMsg}</div>
           </div>
@@ -541,15 +713,28 @@ export default function PortfolioPage() {
           <div style={{ ...card, marginTop: 12, padding: 14 }}>Yükleniyor…</div>
         ) : (
           <div style={{ ...card, marginTop: 12, overflow: "hidden" }}>
-            <div style={{ padding: 14, borderBottom: "1px solid rgba(255,255,255,0.08)", fontWeight: 900 }}>
-              Pozisyonlarım
+            <div
+              style={{
+                padding: 14,
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                fontWeight: 900,
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>Pozisyonlarım</div>
+              <div style={{ fontSize: 12, opacity: 0.72 }}>
+                İlk alımda kâr sıfıra yakın başlar; zamanla bölgesel trend, risk ve gelişim etkisi devreye girer.
+              </div>
             </div>
 
             {enriched.length === 0 ? (
               <div style={{ padding: 14, opacity: 0.8 }}>Henüz pozisyon yok.</div>
             ) : (
               <div style={{ width: "100%", overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <table style={{ width: "100%", minWidth: 1280, borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
                       <th style={th}>Tarih</th>
@@ -559,7 +744,9 @@ export default function PortfolioPage() {
                       <th style={th}>Entry ₺/m²</th>
                       <th style={th}>Bugün ₺/m²</th>
                       <th style={th}>Yatırım</th>
-                      <th style={th}>Değer</th>
+                      <th style={th}>Brüt Değer</th>
+                      <th style={th}>Satış Kom.</th>
+                      <th style={th}>Net Değer</th>
                       <th style={th}>K/Z</th>
                       <th style={th}>%PnL</th>
                       <th style={th}>İşlem</th>
@@ -569,7 +756,16 @@ export default function PortfolioPage() {
                     {enriched.map((r) => (
                       <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                         <td style={td}>{new Date(r.created_at).toLocaleString("tr-TR")}</td>
-                        <td style={td}>{r.property?.title ?? r.property_id.slice(0, 8)}</td>
+                        <td style={td}>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ fontWeight: 800 }}>
+                              {r.property?.title ?? r.property_id.slice(0, 8)}
+                            </div>
+                            <div style={{ fontSize: 11, opacity: 0.65 }}>
+                              {r.is_demo ? "Demo Pozisyon" : "Gerçek Pozisyon"}
+                            </div>
+                          </div>
+                        </td>
                         <td style={td}>
                           {r.property?.city ?? "-"}
                           {r.property?.district ? ` / ${r.property.district}` : ""}
@@ -579,7 +775,9 @@ export default function PortfolioPage() {
                         <td style={td}>₺{formatDecimal(r._entryPriceM2)}</td>
                         <td style={td}>₺{formatDecimal(r._currentPriceM2)}</td>
                         <td style={td}>{formatNumber(Math.round(r._totalPaid))} Çip</td>
-                        <td style={td}>{formatNumber(Math.round(r._currentValue))} Çip</td>
+                        <td style={td}>{formatNumber(Math.round(r._grossCurrentValue))} Çip</td>
+                        <td style={td}>-{formatNumber(Math.round(r._sellFeeAmount))} Çip</td>
+                        <td style={td}>{formatNumber(Math.round(r._netCurrentValue))} Çip</td>
                         <td style={{ ...td, color: r._pnl >= 0 ? "#86efac" : "#fca5a5" }}>
                           {formatSigned(r._pnl)} Çip
                         </td>
@@ -591,15 +789,9 @@ export default function PortfolioPage() {
                             onClick={() => handleSell(r)}
                             disabled={sellingId === r.id}
                             style={{
-                              padding: "10px 12px",
-                              borderRadius: 12,
-                              background: "rgba(239,68,68,0.10)",
-                              border: "1px solid rgba(239,68,68,0.30)",
-                              color: "white",
-                              cursor: sellingId === r.id ? "not-allowed" : "pointer",
-                              fontWeight: 900,
-                              minWidth: 110,
+                              ...sellBtn,
                               opacity: sellingId === r.id ? 0.7 : 1,
+                              cursor: sellingId === r.id ? "not-allowed" : "pointer",
                             }}
                           >
                             {sellingId === r.id ? "Satılıyor..." : r.is_demo ? "Demo Sat" : "Sat"}
@@ -612,8 +804,18 @@ export default function PortfolioPage() {
               </div>
             )}
 
-            <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 12, opacity: 0.7 }}>
-              * “Bugün ₺/m²” fiyatı deterministik simülasyondur: entry ₺/m² + yıllık getiri drift + küçük noise.
+            <div
+              style={{
+                padding: 12,
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                fontSize: 12,
+                opacity: 0.72,
+                lineHeight: 1.6,
+              }}
+            >
+              * Net değer hesaplamasında satış komisyonu (%1) düşülür. <br />
+              * İlk alım anında ani kâr görünmesini engellemek için erken dönem hareketler bastırılmıştır. <br />
+              * Bazı bölgeler zamanla artabilir, bazıları düşebilir, bazıları yatay kalabilir.
             </div>
           </div>
         )}
@@ -636,7 +838,10 @@ function formatDecimal(n: number) {
   const x = Number(n);
   if (!Number.isFinite(x)) return "0";
   try {
-    return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(x);
+    return new Intl.NumberFormat("tr-TR", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(x);
   } catch {
     return String(x.toFixed(2));
   }
@@ -650,17 +855,31 @@ function formatSigned(n: number) {
 }
 
 const topbar: React.CSSProperties = {
-  height: 56,
+  minHeight: 64,
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "0 16px",
+  padding: "10px 16px",
   borderBottom: "1px solid rgba(255,255,255,0.08)",
   background: "rgba(0,0,0,0.2)",
   position: "sticky",
   top: 0,
   zIndex: 10,
   backdropFilter: "blur(10px)",
+  flexWrap: "wrap",
+};
+
+const topbarStatsWrap: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const summaryGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 12,
 };
 
 const card: React.CSSProperties = {
@@ -677,9 +896,15 @@ const label: React.CSSProperties = {
 };
 
 const value: React.CSSProperties = {
-  padding: "6px 14px 14px 14px",
+  padding: "6px 14px 4px 14px",
   fontSize: 20,
   fontWeight: 950,
+};
+
+const subText: React.CSSProperties = {
+  padding: "0 14px 14px 14px",
+  fontSize: 11,
+  opacity: 0.62,
 };
 
 const th: React.CSSProperties = {
@@ -695,6 +920,7 @@ const td: React.CSSProperties = {
   fontSize: 13,
   opacity: 0.95,
   whiteSpace: "nowrap",
+  verticalAlign: "middle",
 };
 
 const pill: React.CSSProperties = {
@@ -721,4 +947,16 @@ const btnDanger: React.CSSProperties = {
   border: "1px solid rgba(239,68,68,0.25)",
   color: "white",
   cursor: "pointer",
+};
+
+const sellBtn: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 12,
+  background: "rgba(239,68,68,0.12)",
+  border: "1px solid rgba(239,68,68,0.30)",
+  color: "white",
+  fontWeight: 900,
+  minWidth: 120,
+  width: "100%",
+  maxWidth: 140,
 };

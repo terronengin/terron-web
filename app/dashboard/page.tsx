@@ -4,7 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView from "../components/MapView";
 import { supabase } from "../../lib/supabaseClient";
-import { simulatePropertyPriceTRY } from "@/lib/sim/realEstatePrice";
+import {
+  simulatePropertyPriceTRY,
+  calculateBuyQuoteTRY,
+  getPostBuyPriceMultiplier,
+} from "@/lib/sim/realEstatePrice";
 
 type MarketArea = {
   id: string;
@@ -63,7 +67,11 @@ type CartItem = {
   key: string;
   property: Property;
   m2: number;
-  pricePerM2: number;
+  listPricePerM2: number;
+  discountedPricePerM2: number;
+  bulkDiscountRate: number;
+  grossAssetValue: number;
+  buyFee: number;
   totalPaid: number;
 };
 
@@ -91,6 +99,16 @@ type DistrictFeature = {
   bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number };
   centroid: [number, number];
   areaApprox: number;
+};
+
+type ActivityItem = {
+  id: string;
+  name: string;
+  city: string;
+  district: string | null;
+  neighborhood: string | null;
+  m2: number;
+  createdAt: string;
 };
 
 const MapViewAny = MapView as any;
@@ -133,6 +151,8 @@ export default function DashboardPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkingOut, setCheckingOut] = useState(false);
 
+  const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
+
   const HEADER_H = isMobile ? 110 : 64;
 
   useEffect(() => {
@@ -144,6 +164,11 @@ export default function DashboardPage() {
 
   function isDemoPropertyId(id: string) {
     return typeof id === "string" && id.startsWith("demo_");
+  }
+
+  function clamp01(x: number) {
+    if (!Number.isFinite(x)) return 0;
+    return Math.max(0, Math.min(1, x));
   }
 
   function loadDemoPositions(): DemoPosition[] {
@@ -160,6 +185,37 @@ export default function DashboardPage() {
   function saveDemoPositions(list: DemoPosition[]) {
     localStorage.setItem("terron_demo_positions", JSON.stringify(list));
   }
+
+  function loadActivityFeed(): ActivityItem[] {
+    try {
+      const raw = localStorage.getItem("terron_activity_feed");
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveActivityFeed(list: ActivityItem[]) {
+    localStorage.setItem("terron_activity_feed", JSON.stringify(list.slice(0, 40)));
+    setActivityFeed(list.slice(0, 40));
+  }
+
+  function pushActivity(entry: Omit<ActivityItem, "id" | "createdAt">) {
+    const list = loadActivityFeed();
+    const next: ActivityItem = {
+      id: `act_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+      createdAt: new Date().toISOString(),
+      ...entry,
+    };
+    list.unshift(next);
+    saveActivityFeed(list);
+  }
+
+  useEffect(() => {
+    setActivityFeed(loadActivityFeed());
+  }, []);
 
   function cartTotal() {
     return cart.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
@@ -180,48 +236,138 @@ export default function DashboardPage() {
     return Math.max(0, total - getPropertyAvailableM2(p));
   }
 
-  function getEffectivePricePerM2(p: Property | null) {
+  function getDemandPressure(p: Property | null) {
     if (!p) return 0;
-    const sim = getRealEstateSim(p);
-    return sim?.pricePerM2 || Number(p.price_per_m2 ?? 0) || Number(p.area?.base_m2_price ?? 0) || 1;
+    const sold = getPropertySoldM2(p);
+    const total = Math.max(1, Number(p.total_area_m2 ?? 1));
+    const soldRatio = sold / total;
+
+    const demandFromSold = soldRatio * 0.65;
+    const demandFromDev = clamp01(Number(p.development_score ?? 50) / 100) * 0.22;
+    const demandFromTrend = clamp01((Number(p.last_30d_change ?? 0) + 12) / 24) * 0.13;
+
+    return clamp01(demandFromSold + demandFromDev + demandFromTrend);
+  }
+
+  function getDemandAdjustedPricePerM2(p: Property | null) {
+    if (!p) return 0;
+
+    const baseSim =
+      getRealEstateSim(p)?.pricePerM2 ||
+      Number(p.price_per_m2 ?? 0) ||
+      Number(p.area?.base_m2_price ?? 0) ||
+      1;
+
+    const pressure = getDemandPressure(p);
+    const demandPremium = 1 + pressure * 0.16;
+    const lowDemandPenalty = pressure < 0.22 ? 1 - (0.22 - pressure) * 0.1 : 1;
+
+    return Math.max(1, baseSim * demandPremium * lowDemandPenalty);
+  }
+
+  function getPositionVisiblePricePerM2(p: Property | null) {
+    return getDemandAdjustedPricePerM2(p);
+  }
+
+  function getBuyQuoteForProperty(p: Property | null, m2: number) {
+    if (!p) {
+      return {
+        listPricePerM2: 0,
+        discountedPricePerM2: 0,
+        bulkDiscountRate: 0,
+        grossAssetValue: 0,
+        buyFee: 0,
+        totalCost: 0,
+      };
+    }
+
+    const marketPricePerM2 = getPositionVisiblePricePerM2(p);
+
+    return calculateBuyQuoteTRY(
+      {
+        id: p.id,
+        area_m2: Number(p.total_area_m2 ?? 1),
+        quality_score:
+          p.quality_score != null
+            ? clamp01(Number(p.quality_score))
+            : clamp01(
+                0.55 +
+                  (Number(p.development_score ?? 50) / 100) * 0.2 -
+                  (Number(p.risk_score ?? 50) / 100) * 0.1
+              ),
+        development_score: clamp01(Number(p.development_score ?? 50) / 100),
+        risk_score: clamp01(Number(p.risk_score ?? 50) / 100),
+        rental_yield_annual: clamp01(Number(p.rental_yield_annual ?? 0.05)),
+        demand_score: getDemandPressure(p),
+        buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
+        buy_pressure_m2: Number(p.sold_m2 ?? 0),
+        sell_pressure_count: 0,
+        sell_pressure_m2: 0,
+        area: {
+          id: p.area?.id,
+          base_m2_price: Number(p.area?.base_m2_price ?? p.price_per_m2 ?? 1),
+          expected_real_return_annual: Number(p.area?.expected_real_return_annual ?? 0.03),
+          inflation_annual: Number(p.area?.inflation_annual ?? 0),
+          vol_annual: Number(p.area?.vol_annual ?? 0.12),
+          cycle_strength: Number(p.area?.cycle_strength ?? 0.6),
+          shock_prob_annual: Number(p.area?.shock_prob_annual ?? 0.06),
+          shock_size: Number(p.area?.shock_size ?? -0.08),
+        },
+      } as any,
+      marketPricePerM2,
+      Math.max(1, Number(m2 || 1))
+    );
   }
 
   function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {
     setItems((prev) =>
       prev.map((p) => {
         if (p.id !== propertyId) return p;
+
         const available = getPropertyAvailableM2(p);
         const sold = getPropertySoldM2(p);
+        const currentPrice = Number(p.price_per_m2 ?? p.area?.base_m2_price ?? 1);
+        const buyLift = getPostBuyPriceMultiplier(purchasedM2);
+
         return {
           ...p,
           available_m2: Math.max(0, available - purchasedM2),
           sold_m2: sold + purchasedM2,
+          price_per_m2: Math.max(1, currentPrice * buyLift),
         };
       })
     );
 
     setSelected((prev) => {
       if (!prev || prev.id !== propertyId) return prev;
+
       const available = getPropertyAvailableM2(prev);
       const sold = getPropertySoldM2(prev);
+      const currentPrice = Number(prev.price_per_m2 ?? prev.area?.base_m2_price ?? 1);
+      const buyLift = getPostBuyPriceMultiplier(purchasedM2);
+
       return {
         ...prev,
         available_m2: Math.max(0, available - purchasedM2),
         sold_m2: sold + purchasedM2,
+        price_per_m2: Math.max(1, currentPrice * buyLift),
       };
     });
   }
 
-  function syncBuyFromM2(nextM2: number, pricePerM2: number) {
+  function syncBuyFromM2(nextM2: number, p: Property | null) {
     const safeM2 = Math.max(0, nextM2 || 0);
     setBuyM2(safeM2);
-    setBuyBudget(Math.round(safeM2 * Math.max(1, pricePerM2)));
+    const quote = getBuyQuoteForProperty(p, safeM2 || 1);
+    setBuyBudget(Math.round(quote.totalCost));
   }
 
-  function syncBuyFromBudget(nextBudget: number, pricePerM2: number) {
+  function syncBuyFromBudget(nextBudget: number, p: Property | null) {
     const safeBudget = Math.max(0, nextBudget || 0);
     setBuyBudget(safeBudget);
-    const calcM2 = safeBudget / Math.max(1, pricePerM2);
+
+    const listPrice = Math.max(1, getPositionVisiblePricePerM2(p));
+    const calcM2 = safeBudget / listPrice;
     setBuyM2(Number(calcM2.toFixed(2)));
   }
 
@@ -256,16 +402,19 @@ export default function DashboardPage() {
       return;
     }
 
-    const pricePerM2 = getEffectivePricePerM2(selected);
-    const totalPaid = m2 * Math.max(1, pricePerM2);
+    const quote = getBuyQuoteForProperty(selected, m2);
 
     setCart((prev) => [
       {
         key: `${selected.id}_${Date.now()}`,
         property: selected,
         m2,
-        pricePerM2,
-        totalPaid,
+        listPricePerM2: quote.listPricePerM2,
+        discountedPricePerM2: quote.discountedPricePerM2,
+        bulkDiscountRate: quote.bulkDiscountRate,
+        grossAssetValue: quote.grossAssetValue,
+        buyFee: quote.buyFee,
+        totalPaid: quote.totalCost,
       },
       ...prev,
     ]);
@@ -488,7 +637,8 @@ export default function DashboardPage() {
       };
     }
 
-    const avgPricePerM2 = arr.reduce((s, x) => s + Number(getEffectivePricePerM2(x)), 0) / Math.max(1, count);
+    const avgPricePerM2 =
+      arr.reduce((s, x) => s + Number(getPositionVisiblePricePerM2(x)), 0) / Math.max(1, count);
     const avgRisk = arr.reduce((s, x) => s + Number(x.risk_score ?? 0), 0) / Math.max(1, count);
     const avgDevelopment =
       arr.reduce((s, x) => s + Number(x.development_score ?? 0), 0) / Math.max(1, count);
@@ -605,7 +755,6 @@ export default function DashboardPage() {
     if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
 
     const seedScope = userId ?? "global";
-
     const risk01 = clamp01((p.risk_score ?? 50) / 100);
     const dev01 = clamp01((p.development_score ?? 50) / 100);
 
@@ -621,6 +770,11 @@ export default function DashboardPage() {
       development_score: dev01,
       risk_score: risk01,
       rental_yield_annual: rentalYield,
+      demand_score: getDemandPressure(p),
+      buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
+      buy_pressure_m2: Number(p.sold_m2 ?? 0),
+      sell_pressure_count: 0,
+      sell_pressure_m2: 0,
       area: {
         id: p.area.id,
         base_m2_price: Number(p.area.base_m2_price),
@@ -656,8 +810,6 @@ export default function DashboardPage() {
       const available = getPropertyAvailableM2(selected);
       const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
       const maxBuy = Number(selected.max_buy_m2 ?? available);
-      const entryPriceM2 = getEffectivePricePerM2(selected);
-      const totalPaid = m2 * Math.max(1, entryPriceM2);
 
       if (m2 < minBuy) {
         alert(`Minimum alım ${formatNumber(minBuy)} m²`);
@@ -673,6 +825,10 @@ export default function DashboardPage() {
         alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsin.`);
         return;
       }
+
+      const quote = getBuyQuoteForProperty(selected, m2);
+      const entryPriceM2 = quote.discountedPricePerM2;
+      const totalPaid = quote.totalCost;
 
       if (isDemoPropertyId(selected.id)) {
         const currentBalance = Number(walletBalance ?? 0);
@@ -690,8 +846,9 @@ export default function DashboardPage() {
         setWalletBalance(nextBalance);
 
         const list = loadDemoPositions();
+        const newDemoId = `demo_pos_${Date.now()}`;
         list.unshift({
-          id: `demo_pos_${Date.now()}`,
+          id: newDemoId,
           property_id: selected.id,
           m2,
           total_paid: totalPaid,
@@ -709,13 +866,20 @@ export default function DashboardPage() {
         saveDemoPositions(list);
 
         updateLocalPropertyM2(selected.id, m2);
+        pushActivity({
+          name: displayName || "Kullanıcı",
+          city: selected.city,
+          district: selected.district,
+          neighborhood: selected.neighborhood ?? null,
+          m2,
+        });
 
         try {
           const syncedBalance = await syncWalletBalanceToDb(nextBalance);
           setWalletBalance(syncedBalance);
           alert("Demo m² yatırımı açıldı ✅");
         } catch (e: any) {
-          saveDemoPositions(loadDemoPositions().filter((x) => x.id !== list[0].id));
+          saveDemoPositions(loadDemoPositions().filter((x) => x.id !== newDemoId));
           setItems(prevItems);
           setSelected(prevSelected);
           setWalletBalance(currentBalance);
@@ -851,6 +1015,14 @@ export default function DashboardPage() {
 
       setWalletBalance(newBalance);
       updateLocalPropertyM2(selected.id, m2);
+      pushActivity({
+        name: displayName || "Kullanıcı",
+        city: selected.city,
+        district: selected.district,
+        neighborhood: selected.neighborhood ?? null,
+        m2,
+      });
+
       await ensureAndLoadWallet();
 
       alert("m² pozisyonu açıldı ✅");
@@ -891,7 +1063,7 @@ export default function DashboardPage() {
             property_id: it.property.id,
             m2: it.m2,
             total_paid: it.totalPaid,
-            entry_price_m2: it.pricePerM2,
+            entry_price_m2: it.discountedPricePerM2,
             created_at: new Date().toISOString(),
             snapshot: {
               title: it.property.title,
@@ -904,6 +1076,13 @@ export default function DashboardPage() {
           });
 
           updateLocalPropertyM2(it.property.id, it.m2);
+          pushActivity({
+            name: displayName || "Kullanıcı",
+            city: it.property.city,
+            district: it.property.district,
+            neighborhood: it.property.neighborhood ?? null,
+            m2: it.m2,
+          });
         }
 
         saveDemoPositions(list);
@@ -1010,9 +1189,9 @@ export default function DashboardPage() {
             property_id: it.property.id,
             m2: it.m2,
             total_paid: it.totalPaid,
-            entry_price_m2: it.pricePerM2,
+            entry_price_m2: it.discountedPricePerM2,
             amount: it.totalPaid,
-            entry_price: it.pricePerM2,
+            entry_price: it.discountedPricePerM2,
             units: it.m2,
           };
 
@@ -1049,7 +1228,15 @@ export default function DashboardPage() {
           }
 
           if (ins?.id) insertedIds.push(String(ins.id));
+
           updateLocalPropertyM2(it.property.id, it.m2);
+          pushActivity({
+            name: displayName || "Kullanıcı",
+            city: it.property.city,
+            district: it.property.district,
+            neighborhood: it.property.neighborhood ?? null,
+            m2: it.m2,
+          });
         }
 
         setWalletBalance(newBalanceDb);
@@ -1071,20 +1258,22 @@ export default function DashboardPage() {
   }
 
   const selectedSim = selected ? getRealEstateSim(selected) : null;
-  const selectedPricePerM2 = selected ? getEffectivePricePerM2(selected) : 0;
+  const selectedPricePerM2 = selected ? getPositionVisiblePricePerM2(selected) : 0;
   const selectedAvailableM2 = getPropertyAvailableM2(selected);
   const selectedSoldM2 = getPropertySoldM2(selected);
   const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
   const selectedMaxBuyM2 = Number(selected?.max_buy_m2 ?? selectedAvailableM2);
-  const selectedMinBuyCost = Math.max(1, selectedMinBuyM2) * Math.max(1, selectedPricePerM2);
-  const selectedTotalCost = Math.max(0, Number(buyM2 || 0)) * Math.max(1, selectedPricePerM2);
+  const selectedQuote = selected ? getBuyQuoteForProperty(selected, buyM2 || selectedMinBuyM2) : null;
+  const selectedMinBuyCost = selected ? getBuyQuoteForProperty(selected, selectedMinBuyM2).totalCost : 0;
+  const selectedTotalCost = Math.max(0, Number(selectedQuote?.totalCost ?? 0));
+  const selectedDemandPressure = selected ? getDemandPressure(selected) : 0;
 
   useEffect(() => {
     if (!selected) return;
     const safeMin = Math.max(1, Number(selected.min_buy_m2 ?? 1));
-    const price = getEffectivePricePerM2(selected);
+    const quote = getBuyQuoteForProperty(selected, safeMin);
     setBuyM2(safeMin);
-    setBuyBudget(Math.round(safeMin * price));
+    setBuyBudget(Math.round(quote.totalCost));
     setActiveInsightTab("arsa");
   }, [selected?.id]);
 
@@ -1143,8 +1332,7 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
+  return (    <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -1371,7 +1559,7 @@ export default function DashboardPage() {
         <div style={{ marginTop: 18, fontSize: 12, opacity: 0.75 }}>Öne Çıkan Arsalar</div>
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
           {regionList.map((p) => {
-            const pPrice = getEffectivePricePerM2(p);
+            const pPrice = getPositionVisiblePricePerM2(p);
             const pAvailable = getPropertyAvailableM2(p);
 
             return (
@@ -1713,6 +1901,62 @@ export default function DashboardPage() {
           </button>
         )}
 
+        {!selected && activityFeed.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              right: isMobile ? 10 : 16,
+              top: HEADER_H + 12,
+              width: isMobile ? "calc(100vw - 20px)" : 330,
+              maxHeight: isMobile ? 170 : 260,
+              overflow: "hidden",
+              borderRadius: 18,
+              zIndex: 13,
+              background: "rgba(10,14,24,0.74)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              backdropFilter: "blur(14px)",
+              boxShadow: "0 18px 55px rgba(0,0,0,0.28)",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 14px",
+                borderBottom: "1px solid rgba(255,255,255,0.10)",
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: 0.4,
+                opacity: 0.92,
+              }}
+            >
+              Canlı Yatırım Akışı
+            </div>
+
+            <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              {activityFeed.slice(0, isMobile ? 4 : 6).map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 900 }}>{a.name}</div>
+                  <div style={{ fontSize: 12, opacity: 0.78, marginTop: 4 }}>
+                    {a.city}
+                    {a.district ? ` / ${a.district}` : ""}
+                    {a.neighborhood ? ` / ${a.neighborhood}` : ""}
+                  </div>
+                  <div style={{ fontSize: 12, marginTop: 6 }}>
+                    <span style={{ color: "#F5D76E", fontWeight: 900 }}>{formatDecimal(a.m2)} m²</span> aldı
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
           <MapViewAny
             items={filteredItems
@@ -1885,13 +2129,13 @@ export default function DashboardPage() {
                   </div>
 
                   <div style={metricBox}>
-                    <div style={metricLabel}>₺/m² Fiyat</div>
-                    <div style={metricValue}>₺{formatTRY(selectedPricePerM2)}</div>
+                    <div style={metricLabel}>Liste ₺/m²</div>
+                    <div style={metricValue}>₺{formatTRY(selectedQuote?.listPricePerM2 ?? selectedPricePerM2)}</div>
                   </div>
 
                   <div style={metricBox}>
-                    <div style={metricLabel}>Min. Alış Tutarı</div>
-                    <div style={metricValue}>₺{formatTRY(selectedMinBuyCost)}</div>
+                    <div style={metricLabel}>Talep Skoru</div>
+                    <div style={metricValue}>%{Math.round(selectedDemandPressure * 100)}</div>
                   </div>
                 </div>
 
@@ -2051,7 +2295,7 @@ export default function DashboardPage() {
                           value={buyM2}
                           min={0}
                           step={0.01}
-                          onChange={(e) => syncBuyFromM2(Number(e.target.value), selectedPricePerM2)}
+                          onChange={(e) => syncBuyFromM2(Number(e.target.value), selected)}
                           style={inputStyle}
                           placeholder="Kaç m²?"
                         />
@@ -2064,7 +2308,7 @@ export default function DashboardPage() {
                           value={buyBudget}
                           min={0}
                           step={1}
-                          onChange={(e) => syncBuyFromBudget(Number(e.target.value), selectedPricePerM2)}
+                          onChange={(e) => syncBuyFromBudget(Number(e.target.value), selected)}
                           style={inputStyle}
                           placeholder="Kaç TL?"
                         />
@@ -2079,7 +2323,25 @@ export default function DashboardPage() {
                         border: "1px solid rgba(255,255,255,0.10)",
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ fontSize: 12, opacity: 0.78 }}>Hesap Özeti</div>
+
+                      <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+                        Liste fiyatı: <b>₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}</b> / m²
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+                        Toplu alım indirimi: <b>%{((selectedQuote?.bulkDiscountRate ?? 0) * 100).toFixed(1)}</b>
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+                        İndirimli fiyat: <b>₺{formatTRY(selectedQuote?.discountedPricePerM2 ?? 0)}</b> / m²
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+                        Net arsa değeri: <b>{formatNumber(Math.round(selectedQuote?.grossAssetValue ?? 0))} Çip</b>
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+                        Alış komisyonu (%0.5): <b>{formatNumber(Math.round(selectedQuote?.buyFee ?? 0))} Çip</b>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
                         <div>
                           <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
                           <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
@@ -2095,11 +2357,14 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={{ fontSize: 12, opacity: 0.72, marginTop: 8 }}>
-                        {formatDecimal(buyM2)} m² × ₺{formatTRY(selectedPricePerM2)} / m²
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
                         Tek sefer maksimum:{" "}
                         {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                        Minimum alım maliyeti: {formatNumber(Math.round(selectedMinBuyCost))} Çip
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
+                        Not: Anlık alım sonrası kâr göstergesi sıfıra yakın başlar; fiyat zaman ve talebe göre şekillenir.
                       </div>
                     </div>
 
@@ -2190,7 +2455,7 @@ export default function DashboardPage() {
                               {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
                             </div>
                             <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                              {formatDecimal(it.m2)} m²
+                              {formatDecimal(it.m2)} m² • indirim %{(it.bulkDiscountRate * 100).toFixed(1)}
                             </div>
                           </div>
 
@@ -2232,9 +2497,7 @@ export default function DashboardPage() {
       </section>
     </div>
   );
-}
-
-function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
+}function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
   const { title, values, suffix = "" } = props;
   return (
     <div>
@@ -2310,11 +2573,6 @@ function inferRiskText(p: Property) {
   if (p.zoning_status === "imarsiz") return "İmar ve planlama belirsizliği daha yüksek izlenmeli";
   if ((p.risk_score ?? 0) > 70) return "Piyasa döngüsü ve fiyat dalgalanması dikkatle takip edilmeli";
   return "Genel piyasa oynaklığı dışında kontrollü risk profili";
-}
-
-function clamp01(x: number) {
-  if (!Number.isFinite(x)) return 0;
-  return Math.max(0, Math.min(1, x));
 }
 
 function clamp(x: number, a: number, b: number) {
@@ -2498,9 +2756,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   const rng = mulberry32(opts.seed);
 
   const res = await fetch("/geo/gadm41_TUR_2.json", { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error("İlçe geojson okunamadı: /geo/gadm41_TUR_2.json");
-  }
+  if (!res.ok) throw new Error("İlçe geojson okunamadı: /geo/gadm41_TUR_2.json");
 
   const gj = await res.json();
   const rawFeatures = Array.isArray(gj?.features) ? gj.features : [];
@@ -2517,14 +2773,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
 
       if (!bbox || !centroid || !areaApprox) return null;
 
-      return {
-        city,
-        district,
-        geometry: f.geometry,
-        bbox,
-        centroid,
-        areaApprox,
-      } as DistrictFeature;
+      return { city, district, geometry: f.geometry, bbox, centroid, areaApprox } as DistrictFeature;
     })
     .filter(Boolean) as DistrictFeature[];
 
@@ -2570,8 +2819,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
     if (c === "İstanbul") m = 1.7;
     else if (c === "Ankara" || c === "İzmir") m = 1.45;
     else if (["Bursa", "Kocaeli", "Antalya", "Tekirdağ", "Sakarya", "Muğla", "Aydın"].includes(c)) m = 1.25;
-    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c))
-      m = 1.15;
+    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c)) m = 1.15;
     metroWeight[c] = m;
   }
 
@@ -2636,11 +2884,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
 
   const targetDistricts = districtFeatures
     .filter((x) => chosenCities.includes(x.city))
-    .sort((a, b) => {
-      const aScore = a.areaApprox * (metroWeight[a.city] ?? 1);
-      const bScore = b.areaApprox * (metroWeight[b.city] ?? 1);
-      return bScore - aScore;
-    });
+    .sort((a, b) => b.areaApprox * (metroWeight[b.city] ?? 1) - a.areaApprox * (metroWeight[a.city] ?? 1));
 
   const out: Property[] = [];
   let idx = 0;
@@ -2715,11 +2959,7 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
         (coastalCities.has(dist.city) ? 1.5 : 0) +
         (rng() - 0.5) * 4.5;
 
-      let last30 =
-        (rng() - 0.5) * 10 +
-        centerity * 2.2 +
-        urbanity * 1.3 +
-        (zoning === "imarli" ? 1.8 : 0.3);
+      let last30 = (rng() - 0.5) * 10 + centerity * 2.2 + urbanity * 1.3 + (zoning === "imarli" ? 1.8 : 0.3);
 
       development = clampInt(development, 18, 96);
       risk = clampInt(risk, 8, 95);
@@ -2729,8 +2969,9 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
       const minBuyM2 = zoning === "imarli" ? 1 : Math.max(1, roundStep(Math.min(20, areaM2 * 0.004), 1));
       const maxBuyM2 = Math.max(minBuyM2, roundStep(Math.min(areaM2 * 0.22, zoning === "imarli" ? 400 : 1200), 1));
 
-      const soldSeedPct = clamp01(
-        development / 100 * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08
+      const soldSeedPct = Math.max(
+        0,
+        Math.min(1, development / 100 * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08)
       );
       const soldM2 = Math.min(areaM2 * 0.55, Math.round(areaM2 * soldSeedPct));
       const availableM2 = Math.max(0, areaM2 - soldM2);
@@ -2758,8 +2999,8 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
         last_30d_change: last30,
         latitude: Number(point[1].toFixed(6)),
         longitude: Number(point[0].toFixed(6)),
-        quality_score: clamp01(0.42 + development / 240 - risk / 280 + (rng() - 0.5) * 0.1),
-        rental_yield_annual: clamp01(0.03 + rng() * 0.035),
+        quality_score: Math.max(0, Math.min(1, 0.42 + development / 240 - risk / 280 + (rng() - 0.5) * 0.1)),
+        rental_yield_annual: Math.max(0, Math.min(1, 0.03 + rng() * 0.035)),
         total_shares: 100000,
         area: demoAreas[dist.city],
       });
@@ -2769,14 +3010,8 @@ async function generateDemoPropertiesFromDistrictGeo(opts: {
   }
 
   out.sort((a, b) => {
-    const sa =
-      Number(a.development_score ?? 0) * 1.25 +
-      Number(a.expected_annual_return ?? 0) -
-      Number(a.risk_score ?? 0) * 0.7;
-    const sb =
-      Number(b.development_score ?? 0) * 1.25 +
-      Number(b.expected_annual_return ?? 0) -
-      Number(b.risk_score ?? 0) * 0.7;
+    const sa = Number(a.development_score ?? 0) * 1.25 + Number(a.expected_annual_return ?? 0) - Number(a.risk_score ?? 0) * 0.7;
+    const sb = Number(b.development_score ?? 0) * 1.25 + Number(b.expected_annual_return ?? 0) - Number(b.risk_score ?? 0) * 0.7;
     return sb - sa;
   });
 
@@ -2791,26 +3026,10 @@ function decideZoning(
   urbanity: number
 ): "imarli" | "imarsiz" {
   let p = 0.52 + centerity * 0.16 + urbanity * 0.1;
-
   if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) p += 0.06;
-  if (
-    containsAnyNormalized(district, [
-      "merkez",
-      "konak",
-      "çankaya",
-      "kadıköy",
-      "beşiktaş",
-      "şişli",
-      "bornova",
-      "nilüfer",
-      "muratpaşa",
-    ])
-  )
-    p += 0.08;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"]))
-    p -= 0.08;
-
-  return rng() < clamp01(p) ? "imarli" : "imarsiz";
+  if (containsAnyNormalized(district, ["merkez", "konak", "çankaya", "kadıköy", "beşiktaş", "şişli", "bornova", "nilüfer", "muratpaşa"])) p += 0.08;
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"])) p -= 0.08;
+  return rng() < Math.max(0, Math.min(1, p)) ? "imarli" : "imarsiz";
 }
 
 function generateParcelArea(zoning: "imarli" | "imarsiz", urbanity: number, rng: () => number) {
@@ -2819,7 +3038,6 @@ function generateParcelArea(zoning: "imarli" | "imarsiz", urbanity: number, rng:
     const max = 2600 - urbanity * 450;
     return Math.max(220, Math.round(min + rng() * Math.max(240, max - min)));
   }
-
   const min = 900;
   const max = 12000 - urbanity * 1600;
   return Math.max(700, Math.round(min + rng() * Math.max(1500, max - min)));
@@ -2834,42 +3052,20 @@ function getDistrictPropertyTarget(args: {
   maxPerDistrict: number;
 }) {
   const { rng, areaApprox, city, district, minPerDistrict, maxPerDistrict } = args;
-
   let score = 0;
   score += normalizeApprox(areaApprox, 0.02, 1.6) * 3.4;
-
   if (city === "İstanbul") score += 2.2;
   else if (city === "Ankara" || city === "İzmir") score += 1.6;
   else if (["Bursa", "Kocaeli", "Antalya", "Muğla", "Aydın", "Tekirdağ", "Sakarya"].includes(city)) score += 1.1;
-  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city))
-    score += 0.7;
-
-  if (
-    containsAnyNormalized(district, [
-      "merkez",
-      "çankaya",
-      "kadıköy",
-      "beşiktaş",
-      "şişli",
-      "konak",
-      "bornova",
-      "nilüfer",
-      "muratpaşa",
-      "karşıyaka",
-    ])
-  ) {
-    score += 1.4;
-  }
-
+  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city)) score += 0.7;
+  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "nilüfer", "muratpaşa", "karşıyaka"])) score += 1.4;
   score += rng() * 1.1;
-
   const target = Math.round(minPerDistrict + score);
   return clamp(target, minPerDistrict, maxPerDistrict);
 }
 
 function buildNeighborhoodPool(city: string, district: string, rng: () => number) {
   const districtStem = cleanDistrictStem(district);
-
   const common = [
     "Atatürk Mah.",
     "Cumhuriyet Mah.",
@@ -2886,7 +3082,6 @@ function buildNeighborhoodPool(city: string, district: string, rng: () => number
     "İnönü Mah.",
     "Akşemsettin Mah.",
   ];
-
   const premium = [
     `${districtStem} Merkez Mah.`,
     `${districtStem} Park Mah.`,
@@ -2897,19 +3092,13 @@ function buildNeighborhoodPool(city: string, district: string, rng: () => number
     `${districtStem} Konutları`,
     `${districtStem} Yeni Yerleşim Mah.`,
   ];
-
   const coastal = ["Sahil Mah.", "Marina Mah.", "Yalı Mah.", "Kıyı Mah."];
-
   const industrial = ["Organize Mah.", "Sanayi Yakası Mah.", "Lojistik Mah."];
 
   let pool = [...common, ...premium];
-
-  if (
-    ["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)
-  ) {
+  if (["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)) {
     pool = [...pool, ...coastal];
   }
-
   if (["Kocaeli", "Bursa", "Gaziantep", "Kayseri", "Konya", "Manisa", "Denizli", "Tekirdağ", "Adana"].includes(city)) {
     pool = [...pool, ...industrial];
   }
@@ -2926,7 +3115,6 @@ function cleanDistrictStem(district: string) {
 function coordsFromGeometryLocal(geom: any): number[][] {
   if (!geom) return [];
   const out: number[][] = [];
-
   const walk = (arr: any) => {
     if (!Array.isArray(arr)) return;
     if (arr.length >= 2 && typeof arr[0] === "number" && typeof arr[1] === "number") {
@@ -2935,7 +3123,6 @@ function coordsFromGeometryLocal(geom: any): number[][] {
     }
     for (const x of arr) walk(x);
   };
-
   walk(geom.coordinates);
   return out;
 }
@@ -2943,28 +3130,24 @@ function coordsFromGeometryLocal(geom: any): number[][] {
 function bboxFromGeometryLocal(geom: any) {
   const pts = coordsFromGeometryLocal(geom);
   if (!pts.length) return null;
-
-  let minLng = pts[0][0];
-  let minLat = pts[0][1];
-  let maxLng = pts[0][0];
-  let maxLat = pts[0][1];
-
+  let minLng = pts[0][0],
+    minLat = pts[0][1],
+    maxLng = pts[0][0],
+    maxLat = pts[0][1];
   for (const [lng, lat] of pts) {
     minLng = Math.min(minLng, lng);
     minLat = Math.min(minLat, lat);
     maxLng = Math.max(maxLng, lng);
     maxLat = Math.max(maxLat, lat);
   }
-
   return { minLng, minLat, maxLng, maxLat };
 }
 
 function centroidFromGeometryLocal(geom: any): [number, number] | null {
   const pts = coordsFromGeometryLocal(geom);
   if (!pts.length) return null;
-
-  let sx = 0;
-  let sy = 0;
+  let sx = 0,
+    sy = 0;
   for (const [lng, lat] of pts) {
     sx += lng;
     sy += lat;
@@ -2975,9 +3158,7 @@ function centroidFromGeometryLocal(geom: any): [number, number] | null {
 function geometryAreaApprox(geom: any) {
   const bbox = bboxFromGeometryLocal(geom);
   if (!bbox) return 0;
-  const width = Math.max(0, bbox.maxLng - bbox.minLng);
-  const height = Math.max(0, bbox.maxLat - bbox.minLat);
-  return width * height;
+  return Math.max(0, bbox.maxLng - bbox.minLng) * Math.max(0, bbox.maxLat - bbox.minLat);
 }
 
 function computeMinDistanceKm(areaApprox: number, count: number) {
@@ -2996,7 +3177,6 @@ function randomPointInGeometryWithMinDistance(
   for (let i = 0; i < 160; i++) {
     const point = randomPointInGeometry(geom, bbox, rng);
     if (!point) continue;
-
     const okay = usedPoints.every((p) => haversineKm(p[1], p[0], point[1], point[0]) >= minDistanceKm);
     if (okay) return point;
   }
@@ -3025,11 +3205,9 @@ function pointInGeometry(point: [number, number], geom: any) {
 
 function pointInPolygon(point: [number, number], polygonCoords: any[]) {
   if (!Array.isArray(polygonCoords) || polygonCoords.length === 0) return false;
-
   const outerRing = polygonCoords[0];
   let inside = rayCast(point, outerRing);
   if (!inside) return false;
-
   for (let i = 1; i < polygonCoords.length; i++) {
     if (rayCast(point, polygonCoords[i])) return false;
   }
@@ -3038,27 +3216,24 @@ function pointInPolygon(point: [number, number], polygonCoords: any[]) {
 
 function rayCast(point: [number, number], ring: any[]) {
   let inside = false;
-  const x = point[0];
-  const y = point[1];
-
+  const x = point[0],
+    y = point[1];
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0];
-    const yi = ring[i][1];
-    const xj = ring[j][0];
-    const yj = ring[j][1];
-
+    const xi = ring[i][0],
+      yi = ring[i][1],
+      xj = ring[j][0],
+      yj = ring[j][1];
     const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
     if (intersect) inside = !inside;
   }
-
   return inside;
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+  const dLat = toRad(lat2 - lat1),
+    dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -3083,40 +3258,26 @@ function normalizeApprox(x: number, min: number, max: number) {
 
 function getDistrictCenterityScore(city: string, district: string) {
   let score = 0.45;
-
   if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) score += 0.08;
-  if (
-    containsAnyNormalized(district, [
-      "merkez",
-      "çankaya",
-      "kadıköy",
-      "beşiktaş",
-      "şişli",
-      "konak",
-      "bornova",
-      "karşıyaka",
-      "nilüfer",
-      "muratpaşa",
-      "seyhan",
-      "odunpazarı",
-    ])
-  )
+  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "karşıyaka", "nilüfer", "muratpaşa", "seyhan", "odunpazarı"])) {
     score += 0.32;
-  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"]))
+  }
+  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"])) {
     score += 0.06;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"]))
+  }
+  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"])) {
     score -= 0.16;
-
+  }
   return clamp(score, 0.12, 0.95);
 }
 
 function getDistrictUrbanityScore(city: string, district: string) {
   let score = 0.42;
-  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city))
+  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city)) {
     score += 0.12;
+  }
   if (containsAnyNormalized(district, ["organize", "sanayi", "merkez", "şehir", "kent"])) score += 0.06;
   if (containsAnyNormalized(district, ["yayla", "köy", "ova", "göl", "dağ", "yayladagi"])) score -= 0.12;
-
   return clamp(score, 0.08, 0.92);
 }
 

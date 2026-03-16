@@ -168,7 +168,22 @@ function getRegionName(cityRaw: string) {
     "bolu",
     "bartin",
   ];
-  const dogu = ["erzurum", "erzincan", "kars", "igdir", "agri", "ardahan", "mus", "bingol", "tunceli", "malatya", "elazig", "van", "bitlis", "hakkari"];
+  const dogu = [
+    "erzurum",
+    "erzincan",
+    "kars",
+    "igdir",
+    "agri",
+    "ardahan",
+    "mus",
+    "bingol",
+    "tunceli",
+    "malatya",
+    "elazig",
+    "van",
+    "bitlis",
+    "hakkari",
+  ];
   const guneydogu = ["gaziantep", "sanliurfa", "diyarbakir", "mardin", "batman", "siirt", "sirnak", "adiyaman", "kilis"];
 
   if (marmara.includes(city)) return "Marmara";
@@ -219,7 +234,7 @@ function polygonFeature(id: string, name: string, ring: [number, number][]) {
   };
 }
 
-function circlePolygon(center: [number, number], radiusKm = 0.8, steps = 28): [number, number][] {
+function circlePolygon(center: [number, number], radiusKm = 0.22, steps = 28): [number, number][] {
   const [lng, lat] = center;
   const latDeg = radiusKm / 110.57;
   const lngDeg = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180) || 1);
@@ -233,7 +248,7 @@ function circlePolygon(center: [number, number], radiusKm = 0.8, steps = 28): [n
   return pts;
 }
 
-function capsulePolygon(a: [number, number], b: [number, number], radiusKm = 0.45, steps = 10): [number, number][] {
+function capsulePolygon(a: [number, number], b: [number, number], radiusKm = 0.18, steps = 10): [number, number][] {
   const [lng1, lat1] = a;
   const [lng2, lat2] = b;
 
@@ -309,7 +324,7 @@ function convexHull(points: [number, number][]) {
   return [...lower, ...upper];
 }
 
-function expandPolygonFromCentroid(ring: [number, number][], expandKm = 0.35): [number, number][] {
+function expandPolygonFromCentroid(ring: [number, number][], expandKm = 0.12): [number, number][] {
   if (ring.length < 3) return ring;
 
   let cx = 0;
@@ -339,17 +354,17 @@ function expandPolygonFromCentroid(ring: [number, number][], expandKm = 0.35): [
 
 function polygonFromPoints(points: [number, number][]) {
   if (points.length === 0) return null;
-  if (points.length === 1) return circlePolygon(points[0], 0.65, 28);
+  if (points.length === 1) return circlePolygon(points[0], 0.22, 28);
 
   if (points.length === 2) {
     const d = haversineKm(points[0], points[1]);
-    return capsulePolygon(points[0], points[1], Math.max(0.32, Math.min(0.8, d * 0.28)), 12);
+    return capsulePolygon(points[0], points[1], Math.max(0.12, Math.min(0.26, d * 0.12)), 12);
   }
 
   const hull = convexHull(points);
-  if (hull.length < 3) return circlePolygon(points[0], 0.65, 28);
+  if (hull.length < 3) return circlePolygon(points[0], 0.22, 28);
 
-  const expanded = expandPolygonFromCentroid(hull, 0.28);
+  const expanded = expandPolygonFromCentroid(hull, 0.12);
   return [...expanded, expanded[0]];
 }
 
@@ -369,9 +384,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
   }
 
   return best;
-}
-
-export default function MapView(props: {
+}export default function MapView(props: {
   items: MapItem[];
   selected?: {
     id: string;
@@ -427,12 +440,10 @@ export default function MapView(props: {
 
   const L_COUNT_GLOW = "count-glow";
   const L_COUNT_HEAD = "count-head";
-  const L_COUNT_TAIL = "count-tail";
   const L_COUNT_TEXT = "count-text";
 
   const L_CLUSTER_GLOW = "cluster-glow";
   const L_CLUSTER_HEAD = "cluster-head";
-  const L_CLUSTER_TAIL = "cluster-tail";
   const L_CLUSTER_TEXT = "cluster-text";
 
   const L_POINT_HIT = "point-hit";
@@ -750,9 +761,7 @@ export default function MapView(props: {
     }));
 
     return { type: "FeatureCollection", features };
-  }, [allItems, pickedCity, pickedDistrict]);
-
-  const activeProvinceGeo = useMemo<FeatureCollection>(() => {
+  }, [allItems, pickedCity, pickedDistrict]);  const activeProvinceGeo = useMemo<FeatureCollection>(() => {
     if (!pickedRegion) return provGeo;
     return {
       type: "FeatureCollection",
@@ -853,17 +862,17 @@ export default function MapView(props: {
       "fill-color": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        "rgba(245,215,110,0.15)",
+        "rgba(245,215,110,0.12)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.09)",
-        "rgba(245,215,110,0.03)",
+        "rgba(245,215,110,0.08)",
+        "rgba(245,215,110,0.025)",
       ],
       "fill-opacity": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        0.25,
+        0.22,
         ["boolean", ["feature-state", "hover"], false],
-        0.16,
+        0.14,
         0.08,
       ],
     } as any;
@@ -874,20 +883,20 @@ export default function MapView(props: {
       "line-color": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        "rgba(245,215,110,0.90)",
+        "rgba(245,215,110,0.82)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.72)",
-        "rgba(201,162,39,0.30)",
+        "rgba(245,215,110,0.62)",
+        "rgba(201,162,39,0.22)",
       ],
       "line-width": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        8,
-        ["boolean", ["feature-state", "hover"], false],
         6,
-        3.2,
+        ["boolean", ["feature-state", "hover"], false],
+        4.5,
+        2.4,
       ],
-      "line-blur": 2.2,
+      "line-blur": 1.6,
       "line-opacity": 1,
     } as any;
   }
@@ -897,18 +906,18 @@ export default function MapView(props: {
       "line-color": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        "rgba(255,240,180,0.98)",
+        "rgba(255,240,180,0.92)",
         ["boolean", ["feature-state", "hover"], false],
-        "rgba(245,215,110,0.92)",
-        "rgba(245,215,110,0.52)",
+        "rgba(245,215,110,0.85)",
+        "rgba(245,215,110,0.44)",
       ],
       "line-width": [
         "case",
         ["==", ["get", "id"], selectedPolyId ?? ""],
-        2.1,
+        1.8,
         ["boolean", ["feature-state", "hover"], false],
-        1.7,
-        1.0,
+        1.45,
+        0.9,
       ],
       "line-opacity": 1,
     } as any;
@@ -1127,17 +1136,15 @@ export default function MapView(props: {
           sameTR(it.district ?? "", pickedDistrict) &&
           sameTR(it.neighborhood ?? "", realNeighborhood)
       );
-      zoomToItems(neighborhoodItems, 13.8);
+      zoomToItems(neighborhoodItems, 16.2);
     }
-  }
-
-  function onMapClick(e: any) {
+  }  function onMapClick(e: any) {
     const map = mapRef.current;
     if (!map) return;
 
     if (level !== "parcel") {
       const countHits = map.queryRenderedFeatures(e.point, {
-        layers: [L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TAIL, L_COUNT_TEXT],
+        layers: [L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TEXT],
       });
       if (countHits && countHits.length > 0) {
         handleCountNavigation(countHits[0]);
@@ -1202,7 +1209,7 @@ export default function MapView(props: {
 
           if (districtItems.length > 0) {
             setLevel("parcel");
-            zoomToItems(districtItems, 12.9);
+            zoomToItems(districtItems, 15.4);
           }
           return;
         }
@@ -1211,7 +1218,17 @@ export default function MapView(props: {
 
     if (level === "parcel") {
       const hits = map.queryRenderedFeatures(e.point, {
-        layers: [L_CLUSTER_GLOW, L_CLUSTER_HEAD, L_CLUSTER_TAIL, L_POINT_HIT, L_POINT, L_SELECTED_POINT, L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT],
+        layers: [
+          L_CLUSTER_GLOW,
+          L_CLUSTER_HEAD,
+          L_CLUSTER_TEXT,
+          L_POINT_HIT,
+          L_POINT,
+          L_SELECTED_POINT,
+          L_FOCUS_FILL,
+          L_FOCUS_GLOW,
+          L_FOCUS_OUT,
+        ],
       });
 
       if (hits && hits.length > 0) {
@@ -1226,7 +1243,7 @@ export default function MapView(props: {
           source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
             if (err) return;
             const [lng, lat] = top.geometry.coordinates;
-            map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 16), duration: 420 });
+            map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 17), duration: 420 });
           });
           return;
         }
@@ -1276,7 +1293,7 @@ export default function MapView(props: {
 
     if (level !== "parcel") {
       const countHits = map.queryRenderedFeatures(e.point, {
-        layers: [L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TAIL, L_COUNT_TEXT],
+        layers: [L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TEXT],
       });
       if (countHits && countHits.length > 0) {
         map.getCanvas().style.cursor = "pointer";
@@ -1321,7 +1338,17 @@ export default function MapView(props: {
 
     if (level === "parcel") {
       const hits = map.queryRenderedFeatures(e.point, {
-        layers: [L_CLUSTER_GLOW, L_CLUSTER_HEAD, L_CLUSTER_TAIL, L_POINT_HIT, L_POINT, L_SELECTED_POINT, L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT],
+        layers: [
+          L_CLUSTER_GLOW,
+          L_CLUSTER_HEAD,
+          L_CLUSTER_TEXT,
+          L_POINT_HIT,
+          L_POINT,
+          L_SELECTED_POINT,
+          L_FOCUS_FILL,
+          L_FOCUS_GLOW,
+          L_FOCUS_OUT,
+        ],
       });
 
       if (!hits || hits.length === 0) {
@@ -1404,12 +1431,12 @@ export default function MapView(props: {
   const interactiveLayers = useMemo(() => {
     const arr: string[] = [];
     if (activePoly) arr.push(activePoly.fill, activePoly.glow, activePoly.out);
-    arr.push(L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TAIL, L_COUNT_TEXT);
+    arr.push(L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TEXT);
     if (level === "parcel") {
       arr.push(
         L_CLUSTER_GLOW,
         L_CLUSTER_HEAD,
-        L_CLUSTER_TAIL,
+        L_CLUSTER_TEXT,
         L_POINT_HIT,
         L_POINT,
         L_SELECTED_POINT,
@@ -1434,11 +1461,10 @@ export default function MapView(props: {
     type: "circle",
     source: SRC_COUNT,
     paint: {
-      "circle-radius": ["step", ["get", "count"], 24, 10, 26, 25, 29, 60, 32, 120, 35],
-      "circle-color": "rgba(245,215,110,0.32)",
-      "circle-blur": 1.0,
+      "circle-radius": ["step", ["get", "count"], 20, 10, 22, 25, 25, 60, 28, 120, 31],
+      "circle-color": "rgba(245,215,110,0.18)",
+      "circle-blur": 1.2,
       "circle-opacity": 1,
-      "circle-translate": [0, -8],
     },
   };
 
@@ -1447,26 +1473,11 @@ export default function MapView(props: {
     type: "circle",
     source: SRC_COUNT,
     paint: {
-      "circle-radius": ["step", ["get", "count"], 16, 10, 17, 25, 19, 60, 21, 120, 23],
-      "circle-color": "rgba(201,162,39,0.96)",
-      "circle-stroke-width": 2.1,
-      "circle-stroke-color": "rgba(255,245,220,0.42)",
+      "circle-radius": ["step", ["get", "count"], 10, 10, 11.5, 25, 13, 60, 15, 120, 17],
+      "circle-color": "rgba(201,162,39,0.94)",
+      "circle-stroke-width": 1.6,
+      "circle-stroke-color": "rgba(255,245,220,0.26)",
       "circle-opacity": 0.98,
-      "circle-translate": [0, -8],
-    },
-  };
-
-  const countTailLayer: any = {
-    id: L_COUNT_TAIL,
-    type: "circle",
-    source: SRC_COUNT,
-    paint: {
-      "circle-radius": 7,
-      "circle-color": "rgba(201,162,39,0.96)",
-      "circle-stroke-width": 1.5,
-      "circle-stroke-color": "rgba(255,245,220,0.35)",
-      "circle-opacity": 0.98,
-      "circle-translate": [0, 9],
     },
   };
 
@@ -1478,16 +1489,16 @@ export default function MapView(props: {
       "text-field": ["concat", ["get", "name"], "\n", ["to-string", ["get", "count"]]],
       "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
       "text-size": 11,
-      "text-line-height": 1.1,
-      "text-anchor": "center",
-      "text-offset": [0, -0.55],
+      "text-line-height": 1.08,
+      "text-anchor": "top",
+      "text-offset": [0, 1.15],
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
     paint: {
       "text-color": "#ffffff",
       "text-halo-color": "rgba(8,12,22,0.95)",
-      "text-halo-width": 1.3,
+      "text-halo-width": 1.2,
     },
   };
 
@@ -1497,11 +1508,10 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["has", "point_count"],
     paint: {
-      "circle-radius": ["step", ["get", "point_count"], 22, 8, 25, 20, 29, 50, 34, 120, 39],
-      "circle-color": "rgba(245,215,110,0.30)",
-      "circle-blur": 1.0,
+      "circle-radius": ["step", ["get", "point_count"], 18, 8, 20, 20, 23, 50, 27, 120, 31],
+      "circle-color": "rgba(245,215,110,0.16)",
+      "circle-blur": 1.2,
       "circle-opacity": 1,
-      "circle-translate": [0, -7],
     },
   };
 
@@ -1511,27 +1521,11 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["has", "point_count"],
     paint: {
-      "circle-radius": ["step", ["get", "point_count"], 14, 8, 17, 20, 20, 50, 23, 120, 27],
-      "circle-color": "rgba(201,162,39,0.97)",
-      "circle-stroke-color": "rgba(255,245,220,0.42)",
-      "circle-stroke-width": 2.2,
+      "circle-radius": ["step", ["get", "point_count"], 10, 8, 11.5, 20, 13.5, 50, 16, 120, 19],
+      "circle-color": "rgba(16,20,28,0.98)",
+      "circle-stroke-color": "rgba(212,175,55,0.95)",
+      "circle-stroke-width": 1.9,
       "circle-opacity": 0.98,
-      "circle-translate": [0, -7],
-    },
-  };
-
-  const clusterTailLayer: any = {
-    id: L_CLUSTER_TAIL,
-    type: "circle",
-    source: SRC_POINTS,
-    filter: ["has", "point_count"],
-    paint: {
-      "circle-radius": 6.5,
-      "circle-color": "rgba(201,162,39,0.97)",
-      "circle-stroke-color": "rgba(255,245,220,0.34)",
-      "circle-stroke-width": 1.5,
-      "circle-opacity": 0.98,
-      "circle-translate": [0, 8],
     },
   };
 
@@ -1543,26 +1537,23 @@ export default function MapView(props: {
     layout: {
       "text-field": ["get", "point_count_abbreviated"],
       "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-      "text-size": 12,
+      "text-size": 11,
       "text-anchor": "center",
-      "text-offset": [0, -0.45],
       "text-allow-overlap": true,
       "text-ignore-placement": true,
     },
     paint: {
-      "text-color": "#ffffff",
+      "text-color": "#F8E7B0",
       "text-halo-color": "rgba(8,12,22,0.92)",
-      "text-halo-width": 1.15,
+      "text-halo-width": 1.0,
     },
-  };
-
-  const pointHitLayer: any = {
+  };  const pointHitLayer: any = {
     id: L_POINT_HIT,
     type: "circle",
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": 18,
+      "circle-radius": 16,
       "circle-color": "rgba(0,0,0,0)",
       "circle-opacity": 0.01,
     },
@@ -1574,9 +1565,9 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 13, 9],
-      "circle-color": "rgba(245,215,110,0.24)",
-      "circle-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.72],
+      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 12, 8],
+      "circle-color": "rgba(245,215,110,0.22)",
+      "circle-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.7],
       "circle-blur": 1,
     },
   };
@@ -1587,17 +1578,16 @@ export default function MapView(props: {
     source: SRC_POINTS,
     filter: ["!", ["has", "point_count"]],
     paint: {
-      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 7.8, 5.2],
+      "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 6.5, 4.5],
       "circle-color": "rgba(10,14,24,0.96)",
       "circle-stroke-color": [
         "case",
         ["boolean", ["feature-state", "hover"], false],
         "rgba(245,215,110,1)",
-        "rgba(201,162,39,0.94)",
+        "rgba(201,162,39,0.92)",
       ],
-      "circle-stroke-width": 2.1,
+      "circle-stroke-width": 2,
       "circle-opacity": 1,
-      "circle-blur": ["case", ["boolean", ["feature-state", "hover"], false], 0.2, 0.02],
     },
   };
 
@@ -1622,7 +1612,7 @@ export default function MapView(props: {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
-          <div style={{ fontWeight: 1000, letterSpacing: 0.2 }}>{badgeText}</div>
+          <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{badgeText}</div>
           <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>{summaryText}</div>
         </div>
 
@@ -1639,7 +1629,6 @@ export default function MapView(props: {
               cursor: "pointer",
               fontWeight: 900,
             }}
-            title="Geri"
           >
             ← Geri
           </button>
@@ -1652,7 +1641,7 @@ export default function MapView(props: {
         }}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
-        initialViewState={{ longitude: 35.0, latitude: 39.0, zoom: 5.2 }}
+        initialViewState={{ longitude: 35, latitude: 39, zoom: 5.2 }}
         minZoom={3}
         maxZoom={17}
         onClick={onMapClick}
@@ -1685,7 +1674,7 @@ export default function MapView(props: {
               id={L_FOCUS_FILL}
               type="fill"
               paint={{
-                "fill-color": "rgba(245,215,110,0.07)",
+                "fill-color": "rgba(245,215,110,0.06)",
                 "fill-opacity": 0.18,
               }}
             />
@@ -1693,8 +1682,8 @@ export default function MapView(props: {
               id={L_FOCUS_GLOW}
               type="line"
               paint={{
-                "line-color": "rgba(245,215,110,0.78)",
-                "line-width": 7,
+                "line-color": "rgba(245,215,110,0.75)",
+                "line-width": 6,
                 "line-blur": 2,
                 "line-opacity": 1,
               }}
@@ -1703,8 +1692,8 @@ export default function MapView(props: {
               id={L_FOCUS_OUT}
               type="line"
               paint={{
-                "line-color": "rgba(255,240,180,0.95)",
-                "line-width": 1.9,
+                "line-color": "rgba(255,240,180,0.9)",
+                "line-width": 1.6,
                 "line-opacity": 1,
               }}
             />
@@ -1715,7 +1704,6 @@ export default function MapView(props: {
           <Source id={SRC_COUNT} type="geojson" data={countGeo}>
             <Layer {...countGlowLayer} />
             <Layer {...countHeadLayer} />
-            <Layer {...countTailLayer} />
             <Layer {...countTextLayer} />
           </Source>
         )}
@@ -1726,13 +1714,12 @@ export default function MapView(props: {
             type="geojson"
             data={pointsGeo}
             cluster={true}
-            clusterRadius={42}
+            clusterRadius={40}
             clusterMaxZoom={14}
             promoteId={"id" as any}
           >
             <Layer {...clusterGlowLayer} />
             <Layer {...clusterHeadLayer} />
-            <Layer {...clusterTailLayer} />
             <Layer {...clusterTextLayer} />
             <Layer {...pointHitLayer} />
             <Layer {...pointGlowLayer} />
@@ -1746,9 +1733,9 @@ export default function MapView(props: {
               id={L_SELECTED_GLOW}
               type="circle"
               paint={{
-                "circle-radius": 17,
-                "circle-color": "rgba(245,215,110,0.32)",
-                "circle-blur": 1.1,
+                "circle-radius": 15,
+                "circle-color": "rgba(245,215,110,0.3)",
+                "circle-blur": 1,
                 "circle-opacity": 1,
               }}
             />
@@ -1756,10 +1743,10 @@ export default function MapView(props: {
               id={L_SELECTED_POINT}
               type="circle"
               paint={{
-                "circle-radius": 8.8,
+                "circle-radius": 7.5,
                 "circle-color": "rgba(10,14,24,1)",
                 "circle-stroke-color": "rgba(255,240,180,1)",
-                "circle-stroke-width": 2.6,
+                "circle-stroke-width": 2.2,
                 "circle-opacity": 1,
               }}
             />

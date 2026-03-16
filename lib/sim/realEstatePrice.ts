@@ -5,6 +5,7 @@ export type SimProperty = {
   development_score: number; // 0..1
   risk_score: number; // 0..1
   rental_yield_annual: number; // 0..1
+
   area: {
     id?: string;
     base_m2_price: number;
@@ -15,11 +16,48 @@ export type SimProperty = {
     shock_prob_annual?: number;
     shock_size?: number;
   };
+
+  /**
+   * Demo / piyasa baskı alanları
+   * Bunlar db'de yoksa da sistem çalışır
+   */
+  demand_score?: number; // 0..1
+  buy_pressure_count?: number; // toplam alım adedi
+  buy_pressure_m2?: number; // toplam alınan m2
+  sell_pressure_count?: number; // toplam satış adedi
+  sell_pressure_m2?: number; // toplam satılan m2
 };
 
-function clamp01(x: number): number {
-  if (!Number.isFinite(x)) return 0;
-  return Math.max(0, Math.min(1, x));
+export type BulkDiscountTier = {
+  minM2: number;
+  maxM2: number | null;
+  discountRate: number; // 0.005 = %0.5
+};
+
+export const BUY_FEE_RATE = 0.005; // binde 5 = %0.5
+export const SELL_FEE_RATE = 0.01; // %1
+
+export const BULK_DISCOUNT_TIERS: BulkDiscountTier[] = [
+  { minM2: 1, maxM2: 9, discountRate: 0 },
+  { minM2: 10, maxM2: 49, discountRate: 0.002 },
+  { minM2: 50, maxM2: 99, discountRate: 0.005 },
+  { minM2: 100, maxM2: 199, discountRate: 0.009 },
+  { minM2: 200, maxM2: 499, discountRate: 0.014 },
+  { minM2: 500, maxM2: null, discountRate: 0.02 },
+];
+
+function clamp(x: number, min: number, max: number) {
+  if (!Number.isFinite(x)) return min;
+  return Math.max(min, Math.min(max, x));
+}
+
+function clamp01(x: number) {
+  return clamp(x, 0, 1);
+}
+
+function safeNum(x: unknown, fallback = 0) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function hashToUnitFloat(seed: string): number {
@@ -34,12 +72,196 @@ function hashToUnitFloat(seed: string): number {
   return u / 4294967296;
 }
 
-function normalish(seed: string): number {
-  const u1 = Math.max(hashToUnitFloat(`${seed}|u1`), 1e-9);
-  const u2 = Math.max(hashToUnitFloat(`${seed}|u2`), 1e-9);
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+function signedUnit(seed: string) {
+  return hashToUnitFloat(seed) * 2 - 1;
 }
 
+/**
+ * Kademeli toplu alım indirimi
+ */
+export function getBulkDiscountRate(m2: number): number {
+  const qty = Math.max(1, Math.floor(safeNum(m2, 1)));
+
+  const tier =
+    BULK_DISCOUNT_TIERS.find((t) => {
+      const aboveMin = qty >= t.minM2;
+      const belowMax = t.maxM2 == null ? true : qty <= t.maxM2;
+      return aboveMin && belowMax;
+    }) ?? BULK_DISCOUNT_TIERS[0];
+
+  return tier.discountRate;
+}
+
+export function getDemandStepRateForBuy(m2: number): number {
+  const qty = Math.max(1, safeNum(m2, 1));
+
+  if (qty >= 200) return 0.004; // binde 4
+  if (qty >= 50) return 0.003; // binde 3
+  if (qty >= 10) return 0.002; // binde 2
+  return 0.001; // binde 1
+}
+
+export function getSellPressureStepRate(m2: number): number {
+  const qty = Math.max(1, safeNum(m2, 1));
+
+  if (qty >= 200) return 0.003;
+  if (qty >= 50) return 0.002;
+  if (qty >= 10) return 0.0015;
+  return 0.001;
+}
+
+/**
+ * Kullanıcının alım anında göreceği indirimli birim fiyat
+ */
+export function getBuyUnitPriceTRY(property: SimProperty, marketPricePerM2: number, buyM2: number) {
+  const bulkDiscountRate = getBulkDiscountRate(buyM2);
+  const discountedPricePerM2 = marketPricePerM2 * (1 - bulkDiscountRate);
+
+  return {
+    listPricePerM2: marketPricePerM2,
+    bulkDiscountRate,
+    discountedPricePerM2,
+  };
+}
+
+/**
+ * Alış ödeme özeti
+ */
+export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: number, buyM2: number) {
+  const qty = Math.max(1, safeNum(buyM2, 1));
+  const { listPricePerM2, bulkDiscountRate, discountedPricePerM2 } =
+    getBuyUnitPriceTRY(property, marketPricePerM2, qty);
+
+  const grossAssetValue = discountedPricePerM2 * qty;
+  const buyFee = grossAssetValue * BUY_FEE_RATE;
+  const totalCost = grossAssetValue + buyFee;
+
+  return {
+    listPricePerM2,
+    bulkDiscountRate,
+    discountedPricePerM2,
+    grossAssetValue,
+    buyFeeRate: BUY_FEE_RATE,
+    buyFee,
+    totalCost,
+  };
+}
+
+/**
+ * Satış ödeme özeti
+ */
+export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) {
+  const qty = Math.max(1, safeNum(sellM2, 1));
+  const grossSaleValue = marketPricePerM2 * qty;
+  const sellFee = grossSaleValue * SELL_FEE_RATE;
+  const netProceeds = grossSaleValue - sellFee;
+
+  return {
+    marketPricePerM2,
+    grossSaleValue,
+    sellFeeRate: SELL_FEE_RATE,
+    sellFee,
+    netProceeds,
+  };
+}
+
+/**
+ * Alım sonrası property fiyatını baskılamak için kullanılabilir.
+ * Dashboard satın alma işleminden sonra burada dönen katsayıyı
+ * property/market state'e uygulayacağız.
+ */
+export function getPostBuyPriceMultiplier(buyM2: number) {
+  return 1 + getDemandStepRateForBuy(buyM2);
+}
+
+/**
+ * Satış baskısı
+ */
+export function getPostSellPriceMultiplier(sellM2: number) {
+  return Math.max(0.94, 1 - getSellPressureStepRate(sellM2));
+}
+
+/**
+ * Günlük değerleme:
+ * - binde 1 ile binde 8 arası hareket
+ * - gelişim yüksekse artış eğilimi
+ * - risk yüksekse oynaklık ve düşüş eğilimi
+ * - talep yüksekse artış eğilimi
+ */
+export function getDailyValuationRate(property: SimProperty, simDayOffset: number, seedScope: string) {
+  const day = Math.max(0, Math.floor(simDayOffset));
+
+  const quality = clamp01(safeNum(property.quality_score, 0.5));
+  const development = clamp01(safeNum(property.development_score, 0.5));
+  const risk = clamp01(safeNum(property.risk_score, 0.5));
+  const rentalYield = clamp01(safeNum(property.rental_yield_annual, 0.02));
+  const demandScore = clamp01(safeNum(property.demand_score, 0));
+
+  const buyPressureCount = Math.max(0, safeNum(property.buy_pressure_count, 0));
+  const buyPressureM2 = Math.max(0, safeNum(property.buy_pressure_m2, 0));
+  const sellPressureCount = Math.max(0, safeNum(property.sell_pressure_count, 0));
+  const sellPressureM2 = Math.max(0, safeNum(property.sell_pressure_m2, 0));
+
+  const demandFromFlow = clamp01(
+    buyPressureCount * 0.015 +
+      buyPressureM2 * 0.00008 -
+      sellPressureCount * 0.012 -
+      sellPressureM2 * 0.00006
+  );
+
+  const effectiveDemand = clamp01(demandScore * 0.55 + demandFromFlow * 0.45);
+
+  const trendBias =
+    development * 0.45 +
+    quality * 0.16 +
+    rentalYield * 0.08 +
+    effectiveDemand * 0.24 -
+    risk * 0.38;
+
+  const normalizedBias = clamp(trendBias, -1, 1);
+
+  const randomWave = signedUnit(`${seedScope}|${property.id}|day:${day}|wave`);
+  const cycleWave =
+    Math.sin((2 * Math.PI * day) / 30 + hashToUnitFloat(`${seedScope}|${property.id}|phase`) * Math.PI * 2) *
+    0.35;
+
+  const combinedWave = randomWave * (0.65 + risk * 0.35) + cycleWave;
+
+  /**
+   * Mutlak hareket bandı:
+   * min binde 1 = 0.001
+   * max binde 8 = 0.008
+   */
+  const minMove = 0.001;
+  const maxMove = 0.008;
+
+  /**
+   * Pozitif bias varsa artış ihtimali,
+   * negatif bias varsa düşüş ihtimali artar.
+   */
+  const directionalCore = normalizedBias * 0.65 + combinedWave * 0.35;
+
+  const absMove =
+    minMove +
+    (maxMove - minMove) *
+      clamp01(
+        0.22 +
+          risk * 0.28 +
+          Math.abs(combinedWave) * 0.25 +
+          effectiveDemand * 0.15 +
+          development * 0.1
+      );
+
+  const rawRate = directionalCore >= 0 ? absMove : -absMove;
+
+  return clamp(rawRate, -0.008, 0.008);
+}
+
+/**
+ * Simülasyon fiyatı:
+ * Bu fonksiyon fiyatı deterministik üretir.
+ * İlk günlerde ani aşırı kâr yerine kontrollü hareket verir.
+ */
 export function simulatePropertyPriceTRY(
   property: SimProperty,
   simDayOffset: number,
@@ -48,63 +270,49 @@ export function simulatePropertyPriceTRY(
   const days = Math.max(0, Math.floor(simDayOffset));
   const area = property.area;
 
-  const quality = clamp01(Number(property.quality_score ?? 0));
-  const development = clamp01(Number(property.development_score ?? 0));
-  const risk = clamp01(Number(property.risk_score ?? 0));
-  const rentalYield = clamp01(Number(property.rental_yield_annual ?? 0));
+  const quality = clamp01(safeNum(property.quality_score, 0.5));
+  const development = clamp01(safeNum(property.development_score, 0.5));
+  const risk = clamp01(safeNum(property.risk_score, 0.5));
 
-  const expectedReal = Number(area.expected_real_return_annual ?? 0.04);
-  const inflation = Number(area.inflation_annual ?? 0.0);
-  const baseVol = Math.max(0.01, Number(area.vol_annual ?? 0.12));
-  const cycleStrength = clamp01(Number(area.cycle_strength ?? 0.5));
-  const shockProbAnnual = clamp01(Number(area.shock_prob_annual ?? 0.05));
-  const shockSize = Number(area.shock_size ?? -0.08);
+  const baseAreaM2Price = Math.max(1, safeNum(area.base_m2_price, 1000));
 
-  const muAnnual =
-    expectedReal +
-    inflation +
-    development * 0.10 +
-    quality * 0.04 +
-    rentalYield * 0.25 -
-    risk * 0.06;
+  /**
+   * Property baz başlangıç m² fiyatı
+   */
+  const initialPricePerM2 =
+    baseAreaM2Price *
+    (0.88 + quality * 0.16 + development * 0.18 - risk * 0.10);
 
-  const muDaily = Math.log(1 + Math.max(-0.95, muAnnual)) / 365;
+  let currentPricePerM2 = Math.max(1, initialPricePerM2);
 
-  const sigmaAnnual =
-    baseVol * (0.75 + risk * 0.9 - development * 0.15 + (1 - quality) * 0.1);
-
-  const sigmaDaily = sigmaAnnual / Math.sqrt(365);
-
-  const baseM2 =
-    Number(area.base_m2_price ?? 0) *
-    (0.82 + quality * 0.22 + development * 0.18 - risk * 0.12);
-
-  const P0 = Math.max(1, Number(property.area_m2 ?? 1) * Math.max(1, baseM2));
-
-  let logP = Math.log(P0);
-
-  for (let t = 1; t <= days; t++) {
-    const seedBase = `${seedScope}|${property.id}|day:${t}`;
-
-    const z = normalish(`${seedBase}|noise`);
-    const eps = sigmaDaily * z;
-
-    const cycle =
-      Math.sin((2 * Math.PI * t) / 180 + hashToUnitFloat(`${seedBase}|phase`) * Math.PI * 2) *
-      (cycleStrength * 0.0018);
-
-    const dailyShockChance = shockProbAnnual / 365;
-    const shockRoll = hashToUnitFloat(`${seedBase}|shock-roll`);
-    const shock =
-      shockRoll < dailyShockChance
-        ? Math.log(Math.max(0.55, 1 + shockSize * (0.7 + hashToUnitFloat(`${seedBase}|shock-mag`) * 0.6)))
-        : 0;
-
-    logP += muDaily + eps + cycle + shock;
+  for (let day = 1; day <= days; day++) {
+    const dailyRate = getDailyValuationRate(property, day, seedScope);
+    currentPricePerM2 *= 1 + dailyRate;
+    currentPricePerM2 = Math.max(1, currentPricePerM2);
   }
 
-  const price = Math.max(1, Math.exp(logP));
-  const pricePerM2 = price / Math.max(Number(property.area_m2 ?? 1), 1);
+  /**
+   * Demand / satış baskısı katsayısı
+   */
+  const buyPressureCount = Math.max(0, safeNum(property.buy_pressure_count, 0));
+  const buyPressureM2 = Math.max(0, safeNum(property.buy_pressure_m2, 0));
+  const sellPressureCount = Math.max(0, safeNum(property.sell_pressure_count, 0));
+  const sellPressureM2 = Math.max(0, safeNum(property.sell_pressure_m2, 0));
 
-  return { price, pricePerM2 };
+  const demandMultiplier =
+    1 +
+    buyPressureCount * 0.0015 +
+    buyPressureM2 * 0.000015 -
+    sellPressureCount * 0.0012 -
+    sellPressureM2 * 0.00001;
+
+  currentPricePerM2 *= clamp(demandMultiplier, 0.85, 1.35);
+
+  const totalPrice = currentPricePerM2 * Math.max(1, safeNum(property.area_m2, 1));
+
+  return {
+    price: Math.max(1, totalPrice),
+    pricePerM2: Math.max(1, currentPricePerM2),
+    initialPricePerM2: Math.max(1, initialPricePerM2),
+  };
 }
