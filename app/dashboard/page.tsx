@@ -476,7 +476,6 @@ export default function DashboardPage() {
   }, []);
 
   async function load() {
-    const BATCH_SIZE = 1000;
     let q = supabase
       .from("properties")
       .select(
@@ -497,7 +496,6 @@ export default function DashboardPage() {
         )
       `
       )
-      .eq("status", "active")
       .order("created_at", { ascending: false });
 
     if (city) q = q.eq("city", city);
@@ -527,28 +525,14 @@ export default function DashboardPage() {
     if (areaBand === "2001-10000") q = q.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
     if (areaBand === "10001+") q = q.gte("total_area_m2", 10001);
 
-    const allData: Property[] = [];
-    let from = 0;
-    let hasMore = true;
+    const { data, error } = await q;
 
-    while (hasMore) {
-      const { data, error } = await q.range(from, from + BATCH_SIZE - 1);
-
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      const batch = (data ?? []) as Property[];
-      const batchSize = batch.length;
-      allData.push(...batch);
-      console.log(`[load] batch size: ${batchSize}, cumulative loaded: ${allData.length}`);
-      if (batchSize < BATCH_SIZE) hasMore = false;
-      else from += BATCH_SIZE;
+    if (error) {
+      console.error(error);
+      return;
     }
 
-    console.log(`[load] final total loaded: ${allData.length}`);
-    const list = allData;
+    const list = (data ?? []) as Property[];
 
     if (USE_DEMO_SEED_IF_EMPTY && list.length < 100) {
       try {

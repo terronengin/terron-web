@@ -13,6 +13,7 @@ type MapItem = {
   neighborhood: string | null;
   latitude: number;
   longitude: number;
+  country?: string | null;
 };
 
 type Level = "region" | "city" | "district" | "neighborhood" | "parcel";
@@ -196,9 +197,121 @@ function getRegionName(cityRaw: string) {
   return "Diğer";
 }
 
+const TURKEY_REGIONS = ["Marmara", "Ege", "Akdeniz", "İç Anadolu", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu"];
+
+function normLoc(s: unknown) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getGlobalRegionName(countryOrCity: string): string {
+  const loc = normLoc(countryOrCity);
+  if (!loc) return "Diğer";
+
+  const gulf = [
+    "uae",
+    "united arab emirates",
+    "dubai",
+    "abu dhabi",
+    "qatar",
+    "doha",
+    "saudi",
+    "saudi arabia",
+    "riyadh",
+    "jeddah",
+    "oman",
+    "bahrain",
+    "kuwait",
+    "sharjah",
+    "ajman",
+  ];
+  const northAmerica = [
+    "usa",
+    "united states",
+    "us",
+    "america",
+    "canada",
+    "mexico",
+    "new york",
+    "los angeles",
+    "miami",
+    "toronto",
+    "vancouver",
+  ];
+  const russiaCis = [
+    "russia",
+    "russian federation",
+    "moscow",
+    "belarus",
+    "kazakhstan",
+    "ukraine",
+    "uzbekistan",
+    "armenia",
+    "azerbaijan",
+    "georgia",
+    "kyrgyzstan",
+    "tajikistan",
+    "turkmenistan",
+  ];
+  const westernEurope = [
+    "united kingdom",
+    "uk",
+    "england",
+    "london",
+    "germany",
+    "france",
+    "spain",
+    "italy",
+    "netherlands",
+    "switzerland",
+    "austria",
+    "belgium",
+    "portugal",
+    "ireland",
+    "greece",
+  ];
+
+  if (gulf.some((x) => loc.includes(x))) return "Gulf / UAE / Qatar / Saudi";
+  if (northAmerica.some((x) => loc.includes(x))) return "USA / North America";
+  if (russiaCis.some((x) => loc.includes(x))) return "Russia / CIS";
+  if (westernEurope.some((x) => loc.includes(x))) return "Western Europe";
+  return "Diğer";
+}
+
+function getItemRegionName(item: MapItem): string {
+  const country = safeStr((item as MapItem).country).trim();
+  const isTurkey =
+    !country ||
+    normTR(country) === "turkiye" ||
+    normTR(country) === "türkiye" ||
+    normTR(country) === "turkey";
+  if (isTurkey) return getRegionName(item.city);
+  return getGlobalRegionName(country || item.city);
+}
+
 function regionSort(a: string, b: string) {
-  const order = ["Marmara", "Ege", "Akdeniz", "İç Anadolu", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu", "Diğer"];
-  return order.indexOf(a) - order.indexOf(b);
+  const order = [
+    "Marmara",
+    "Ege",
+    "Akdeniz",
+    "İç Anadolu",
+    "Karadeniz",
+    "Doğu Anadolu",
+    "Güneydoğu Anadolu",
+    "Gulf / UAE / Qatar / Saudi",
+    "USA / North America",
+    "Russia / CIS",
+    "Western Europe",
+    "Diğer",
+  ];
+  const i = order.indexOf(a);
+  const j = order.indexOf(b);
+  if (i !== -1 && j !== -1) return i - j;
+  if (i !== -1) return -1;
+  if (j !== -1) return 1;
+  return a.localeCompare(b);
 }
 
 function haversineKm(a: [number, number], b: [number, number]) {
@@ -567,7 +680,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
 
   const itemsFiltered = useMemo(() => {
     let arr = allItems;
-    if (pickedRegion) arr = arr.filter((x) => getRegionName(x.city) === pickedRegion);
+    if (pickedRegion) arr = arr.filter((x) => getItemRegionName(x) === pickedRegion);
     if (pickedCity) arr = arr.filter((x) => sameTR(x.city, pickedCity));
     if (pickedDistrict) arr = arr.filter((x) => sameTR(x.district ?? "", pickedDistrict));
     if (pickedNeighborhood) arr = arr.filter((x) => sameTR(x.neighborhood ?? "", pickedNeighborhood));
@@ -632,10 +745,10 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
   }, [props.selected?.id, props.selected?.latitude, props.selected?.longitude]);
 
   const regionCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
-    const regions = Array.from(new Set(allItems.map((x) => getRegionName(x.city)))).sort(regionSort);
+    const regions = Array.from(new Set(allItems.map((x) => getItemRegionName(x)))).sort(regionSort);
 
     const rawFeatures = regions.map((region) => {
-      const list = allItems.filter((x) => getRegionName(x.city) === region);
+      const list = allItems.filter((x) => getItemRegionName(x) === region);
       const center = centroidFromItems(list);
       if (!center || list.length === 0) return null;
 
@@ -669,12 +782,57 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
   const provinceCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const it of allItems) {
-      if (pickedRegion && getRegionName(it.city) !== pickedRegion) continue;
+      if (pickedRegion && getItemRegionName(it) !== pickedRegion) continue;
       const k = normTR(it.city);
       if (!k) continue;
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     return m;
+  }, [allItems, pickedRegion]);
+
+  const globalCityCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
+    if (!pickedRegion || TURKEY_REGIONS.includes(pickedRegion)) {
+      return { type: "FeatureCollection", features: [] };
+    }
+    const regionItems = allItems.filter((x) => getItemRegionName(x) === pickedRegion);
+    const m = new Map<
+      string,
+      { nameRaw: string; count: number; sumLng: number; sumLat: number; n: number }
+    >();
+    for (const it of regionItems) {
+      const key = normTR(it.city || (it as MapItem).country || "");
+      if (!key) continue;
+      if (!Number.isFinite(it.latitude) || !Number.isFinite(it.longitude)) continue;
+      const cur = m.get(key) ?? {
+        nameRaw: (it.city || (it as MapItem).country || "").trim() || "Other",
+        count: 0,
+        sumLng: 0,
+        sumLat: 0,
+        n: 0,
+      };
+      if (cur.n === 0) cur.nameRaw = (it.city || (it as MapItem).country || "").trim() || "Other";
+      cur.count += 1;
+      cur.sumLng += Number(it.longitude);
+      cur.sumLat += Number(it.latitude);
+      cur.n += 1;
+      m.set(key, cur);
+    }
+    const features: Feature<Point, CountPointProps>[] = Array.from(m.entries()).map(([k, v]) => ({
+      type: "Feature",
+      id: `cnt_global_city_${normTR(pickedRegion)}_${k}`,
+      properties: {
+        id: `cnt_global_city_${normTR(pickedRegion)}_${k}`,
+        name: v.nameRaw,
+        city: v.nameRaw,
+        count: v.count,
+        level: "city",
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [v.sumLng / v.n, v.sumLat / v.n],
+      },
+    }));
+    return { type: "FeatureCollection", features };
   }, [allItems, pickedRegion]);
 
   const districtCenters = useMemo<FeatureCollection<Point, CountPointProps>>(() => {
@@ -823,28 +981,32 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
     if (level === "region") return regionCenters;
 
     if (level === "city") {
-      const features: Feature<Point, CountPointProps>[] = (activeProvinceGeo.features || [])
-        .map((f: any) => {
-          const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_1);
-          const center = centroidFromGeometry(f.geometry);
-          if (!name || !center) return null;
+      if (pickedRegion && !TURKEY_REGIONS.includes(pickedRegion)) {
+        return globalCityCenters;
+      }
+      const rawCityFeatures = (activeProvinceGeo.features || []).map((f: any) => {
+        const name = safeStr(f?.properties?.name) || safeStr(f?.properties?.NAME_1);
+        const center = centroidFromGeometry(f.geometry);
+        if (!name || !center) return null;
 
-          return {
-            type: "Feature",
+        const feat: Feature<Point, CountPointProps> = {
+          type: "Feature",
+          id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
+          properties: {
             id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
-            properties: {
-              id: `cnt_city_${safeStr(f?.properties?.id) || normTR(name)}`,
-              name,
-              city: name,
-              count: provinceCounts.get(normTR(name)) ?? 0,
-              level: "city",
-            },
-            geometry: {
-              type: "Point",
-              coordinates: center,
-            },
-          };
-        })
+            name,
+            city: name,
+            count: provinceCounts.get(normTR(name)) ?? 0,
+            level: "city",
+          },
+          geometry: {
+            type: "Point",
+            coordinates: center,
+          },
+        };
+        return feat;
+      });
+      const features = rawCityFeatures
         .filter((x): x is Feature<Point, CountPointProps> => x !== null)
         .filter((x) => Number(x.properties?.count || 0) > 0);
 
@@ -855,7 +1017,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
     if (level === "neighborhood") return neighborhoodCenters;
 
     return { type: "FeatureCollection", features: [] };
-  }, [level, regionCenters, activeProvinceGeo, provinceCounts, districtCenters, neighborhoodCenters]);
+  }, [level, regionCenters, activeProvinceGeo, provinceCounts, globalCityCenters, districtCenters, neighborhoodCenters]);
 
   function fillPaintDefault() {
     return {
@@ -1079,13 +1241,16 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
       props.onSetNeighborhood?.("");
       setLevel("city");
 
-      const regionItems = allItems.filter((it) => getRegionName(it.city) === nameRaw);
+      const regionItems = allItems.filter((it) => getItemRegionName(it) === nameRaw);
       zoomToItems(regionItems, 6.2);
       return;
     }
 
     if (level === "city") {
-      const realCity = allItems.find((it) => normTR(it.city) === normTR(nameRaw))?.city || nameRaw;
+      const realCity =
+        allItems.find(
+          (it) => getItemRegionName(it) === pickedRegion && normTR(it.city) === normTR(nameRaw)
+        )?.city || nameRaw;
 
       setPickedCity(realCity);
       props.onSetCity?.(realCity);
