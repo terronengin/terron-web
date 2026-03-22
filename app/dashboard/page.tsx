@@ -119,6 +119,7 @@ export default function DashboardPage() {
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [propertiesLoading, setPropertiesLoading] = useState(true);
 
   const [items, setItems] = useState<Property[]>([]);
   const [selected, setSelected] = useState<Property | null>(null);
@@ -475,11 +476,15 @@ export default function DashboardPage() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  async function load() {
-    let q = supabase
-      .from("properties")
-      .select(
-        `
+  async function load(): Promise<void> {
+    const PAGE = 1000;
+    setPropertiesLoading(true);
+
+    const buildQuery = () => {
+      let q = supabase
+        .from("properties")
+        .select(
+          `
         *,
         area:market_areas (
           id,
@@ -495,46 +500,60 @@ export default function DashboardPage() {
           shock_size
         )
       `
-      )
-      .order("created_at", { ascending: false });
+        )
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
 
-    if (city) q = q.eq("city", city);
-    if (district) q = q.eq("district", district);
-    if (neighborhood) q = q.eq("neighborhood", neighborhood);
+      if (city) q = q.eq("city", city);
+      if (district) q = q.eq("district", district);
+      if (neighborhood) q = q.eq("neighborhood", neighborhood);
 
-    if (riskBand) {
-      if (riskBand === "low") q = q.lte("risk_score", 30);
-      if (riskBand === "mid") q = q.gt("risk_score", 30).lte("risk_score", 70);
-      if (riskBand === "high") q = q.gt("risk_score", 70);
+      if (riskBand) {
+        if (riskBand === "low") q = q.lte("risk_score", 30);
+        if (riskBand === "mid") q = q.gt("risk_score", 30).lte("risk_score", 70);
+        if (riskBand === "high") q = q.gt("risk_score", 70);
+      }
+
+      if (trendBand === "rising") q = q.gte("last_30d_change", 10);
+      if (trendBand === "flat") q = q.gte("last_30d_change", -3).lte("last_30d_change", 10);
+      if (trendBand === "falling") q = q.lte("last_30d_change", -3);
+
+      if (priceBand === "0-10000") q = q.gte("price_per_m2", 0).lte("price_per_m2", 10000);
+      if (priceBand === "10001-25000") q = q.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
+      if (priceBand === "25001-50000") q = q.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
+      if (priceBand === "50001-100000") q = q.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
+      if (priceBand === "100001+") q = q.gte("price_per_m2", 100001);
+
+      if (zoning) q = q.eq("zoning_status", zoning);
+
+      if (areaBand === "0-500") q = q.gte("total_area_m2", 0).lte("total_area_m2", 500);
+      if (areaBand === "501-2000") q = q.gte("total_area_m2", 501).lte("total_area_m2", 2000);
+      if (areaBand === "2001-10000") q = q.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
+      if (areaBand === "10001+") q = q.gte("total_area_m2", 10001);
+
+      return q;
+    };
+
+    const all: Property[] = [];
+    let from = 0;
+    let batchCount = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+
+      if (error) {
+        console.error("[dashboard] properties load error:", error);
+        break;
+      }
+
+      const chunk = (data ?? []) as Property[];
+      all.push(...chunk);
+      batchCount += 1;
+      if (chunk.length < PAGE) break;
+      from += PAGE;
     }
 
-    if (trendBand === "rising") q = q.gte("last_30d_change", 10);
-    if (trendBand === "flat") q = q.gte("last_30d_change", -3).lte("last_30d_change", 10);
-    if (trendBand === "falling") q = q.lte("last_30d_change", -3);
-
-    if (priceBand === "0-10000") q = q.gte("price_per_m2", 0).lte("price_per_m2", 10000);
-    if (priceBand === "10001-25000") q = q.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
-    if (priceBand === "25001-50000") q = q.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
-    if (priceBand === "50001-100000") q = q.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
-    if (priceBand === "100001+") q = q.gte("price_per_m2", 100001);
-
-    if (zoning) q = q.eq("zoning_status", zoning);
-
-    if (areaBand === "0-500") q = q.gte("total_area_m2", 0).lte("total_area_m2", 500);
-    if (areaBand === "501-2000") q = q.gte("total_area_m2", 501).lte("total_area_m2", 2000);
-    if (areaBand === "2001-10000") q = q.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
-    if (areaBand === "10001+") q = q.gte("total_area_m2", 10001);
-
-    const { data, error } = await q;
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    const list = (data ?? []) as Property[];
-
-    if (USE_DEMO_SEED_IF_EMPTY && list.length < 100) {
+    if (USE_DEMO_SEED_IF_EMPTY && all.length < 100) {
       try {
         const seeded = await generateDemoPropertiesFromDistrictGeo({
           countCities: DEMO_CITY_COUNT,
@@ -545,19 +564,60 @@ export default function DashboardPage() {
         });
 
         setItems(seeded);
+        console.log("[dashboard] batch count:", batchCount, "| final loaded count:", seeded.length, "(demo seed)");
         return;
       } catch (e) {
         console.error("[DEMO] seed error:", e);
       }
     }
 
-    setItems(list);
+    setItems(all);
+    console.log("[dashboard] batch count:", batchCount, "| final loaded count:", all.length);
   }
 
   useEffect(() => {
-    if (!email) return;
-    load();
+    if (!email) {
+      setPropertiesLoading(false);
+      return;
+    }
+    let mounted = true;
+    setPropertiesLoading(true);
+    load().finally(() => {
+      if (mounted) setPropertiesLoading(false);
+    });
+    return () => {
+      mounted = false;
+    };
   }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+    const isTurkey = (p: Property) => {
+      const c = norm(p.country);
+      return !c || c === "turkiye" || c === "türkiye" || c === "turkey";
+    };
+    const turkeyCount = items.filter(isTurkey).length;
+    const globalCount = items.length - turkeyCount;
+    const getRegion = (p: Property) => {
+      if (isTurkey(p)) return "Turkey";
+      const loc = norm(p.country || p.city);
+      if (!loc) return "Global";
+      if (["uae", "qatar", "saudi", "dubai", "abu dhabi", "oman", "bahrain", "kuwait"].some((x) => loc.includes(x))) return "Körfez";
+      if (["usa", "united states", "us", "america", "canada", "mexico"].some((x) => loc.includes(x))) return "ABD";
+      if (["russia", "kazakhstan", "azerbaijan", "belarus", "ukraine", "moscow"].some((x) => loc.includes(x))) return "Rusya & CIS";
+      if (["germany", "uk", "united kingdom", "france", "spain", "italy", "london"].some((x) => loc.includes(x))) return "Avrupa";
+      return "Global";
+    };
+    const regionCounts = items.reduce<Record<string, number>>((acc, p) => {
+      const r = getRegion(p);
+      acc[r] = (acc[r] ?? 0) + 1;
+      return acc;
+    }, {});
+    console.log("Turkey property count:", turkeyCount);
+    console.log("Global property count:", globalCount);
+    console.log("Region counts summary:", regionCounts);
+  }, [items]);
 
   useEffect(() => {
     setSelected(null);
@@ -1321,6 +1381,7 @@ export default function DashboardPage() {
   }, [selected]);
 
   if (loading) return <div style={{ padding: 24 }}>Yükleniyor...</div>;
+  if (propertiesLoading) return <div style={{ padding: 24 }}>Veriler yükleniyor...</div>;
 
   if (!email) {
     return (
@@ -1969,6 +2030,7 @@ export default function DashboardPage() {
                 neighborhood: p.neighborhood ?? null,
                 latitude: Number(p.latitude),
                 longitude: Number(p.longitude),
+                country: p.country ?? undefined,
               }))}
             selected={
               selected

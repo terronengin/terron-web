@@ -208,7 +208,7 @@ function normLoc(s: unknown) {
 
 function getGlobalRegionName(countryOrCity: string): string {
   const loc = normLoc(countryOrCity);
-  if (!loc) return "Diğer";
+  if (!loc) return "Global";
 
   const gulf = [
     "uae",
@@ -227,7 +227,7 @@ function getGlobalRegionName(countryOrCity: string): string {
     "sharjah",
     "ajman",
   ];
-  const northAmerica = [
+  const usa = [
     "usa",
     "united states",
     "us",
@@ -255,7 +255,7 @@ function getGlobalRegionName(countryOrCity: string): string {
     "tajikistan",
     "turkmenistan",
   ];
-  const westernEurope = [
+  const avrupa = [
     "united kingdom",
     "uk",
     "england",
@@ -273,11 +273,11 @@ function getGlobalRegionName(countryOrCity: string): string {
     "greece",
   ];
 
-  if (gulf.some((x) => loc.includes(x))) return "Gulf / UAE / Qatar / Saudi";
-  if (northAmerica.some((x) => loc.includes(x))) return "USA / North America";
-  if (russiaCis.some((x) => loc.includes(x))) return "Russia / CIS";
-  if (westernEurope.some((x) => loc.includes(x))) return "Western Europe";
-  return "Diğer";
+  if (gulf.some((x) => loc.includes(x))) return "Körfez";
+  if (usa.some((x) => loc.includes(x))) return "ABD";
+  if (russiaCis.some((x) => loc.includes(x))) return "Rusya & CIS";
+  if (avrupa.some((x) => loc.includes(x))) return "Avrupa";
+  return "Global";
 }
 
 function getItemRegionName(item: MapItem): string {
@@ -300,11 +300,12 @@ function regionSort(a: string, b: string) {
     "Karadeniz",
     "Doğu Anadolu",
     "Güneydoğu Anadolu",
-    "Gulf / UAE / Qatar / Saudi",
-    "USA / North America",
-    "Russia / CIS",
-    "Western Europe",
     "Diğer",
+    "Körfez",
+    "ABD",
+    "Rusya & CIS",
+    "Avrupa",
+    "Global",
   ];
   const i = order.indexOf(a);
   const j = order.indexOf(b);
@@ -672,7 +673,8 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
       setPickedRegion(getRegionName(nextCity));
     } else {
       setLevel("region");
-      setPickedRegion("");
+      // Do not clear a non-Turkey global region selection when filters are empty
+      setPickedRegion((prev) => (TURKEY_REGIONS.includes(prev) ? "" : prev));
     }
   }, [props.filters?.city, props.filters?.district, props.filters?.neighborhood]);
 
@@ -688,20 +690,48 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
   }, [allItems, pickedRegion, pickedCity, pickedDistrict, pickedNeighborhood]);
 
   const parcelItems = useMemo(() => {
-    return allItems.filter(
+    const withCoords = (list: MapItem[]) =>
+      list.filter((it) => Number.isFinite(it.latitude) && Number.isFinite(it.longitude));
+
+    const byCityDistrictNeighborhood = withCoords(
+      allItems.filter(
+        (it) =>
+          sameTR(it.city, pickedCity) &&
+          sameTR(it.district ?? "", pickedDistrict) &&
+          sameTR(it.neighborhood ?? "", pickedNeighborhood)
+      )
+    );
+    if (byCityDistrictNeighborhood.length > 0) return byCityDistrictNeighborhood;
+
+    const byCityDistrict = withCoords(
+      allItems.filter(
+        (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", pickedDistrict)
+      )
+    );
+    if (byCityDistrict.length > 0) return byCityDistrict;
+
+    const byCity = withCoords(allItems.filter((it) => sameTR(it.city, pickedCity)));
+    return byCity;
+  }, [allItems, pickedCity, pickedDistrict, pickedNeighborhood]);
+
+  useEffect(() => {
+    if (level !== "parcel") return;
+    const beforeFallback = allItems.filter(
       (it) =>
         sameTR(it.city, pickedCity) &&
         sameTR(it.district ?? "", pickedDistrict) &&
         sameTR(it.neighborhood ?? "", pickedNeighborhood) &&
         Number.isFinite(it.latitude) &&
         Number.isFinite(it.longitude)
-    );
-  }, [allItems, pickedCity, pickedDistrict, pickedNeighborhood]);
+    ).length;
+    console.log("[MapView parcel] pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood:", pickedNeighborhood, "| parcelItems before fallback:", beforeFallback, "| parcelItems after fallback:", parcelItems.length);
+  }, [level, pickedCity, pickedDistrict, pickedNeighborhood, parcelItems.length, allItems.length]);
 
   const pointsGeo = useMemo<FeatureCollection<Point>>(() => {
+    const source = level === "parcel" ? parcelItems : itemsFiltered;
     return {
       type: "FeatureCollection",
-      features: itemsFiltered
+      features: source
         .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
         .map((p) => ({
           type: "Feature" as const,
@@ -719,7 +749,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
           },
         })),
     };
-  }, [itemsFiltered]);
+  }, [level, parcelItems, itemsFiltered]);
 
   const selectedGeo = useMemo<FeatureCollection<Point>>(() => {
     if (!props.selected || !Number.isFinite(props.selected.latitude) || !Number.isFinite(props.selected.longitude)) {
@@ -1209,7 +1239,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
       props.onSetNeighborhood?.("");
       setLevel("city");
 
-      const list = allItems.filter((it) => getRegionName(it.city) === pickedRegion);
+      const list = allItems.filter((it) => getItemRegionName(it) === pickedRegion);
       zoomToItems(list, 6.2);
       return;
     }
@@ -1232,6 +1262,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
     if (!nameRaw) return;
 
     if (level === "region") {
+      console.log("[MapView count click] level=region clicked name:", nameRaw, "| pickedRegion before:", pickedRegion);
       setPickedRegion(nameRaw);
       setPickedCity("");
       setPickedDistrict("");
@@ -1243,6 +1274,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
 
       const regionItems = allItems.filter((it) => getItemRegionName(it) === nameRaw);
       zoomToItems(regionItems, 6.2);
+      console.log("[MapView count click] level=region pickedRegion after:", nameRaw, "| pickedCity after:", "", "| pickedDistrict after:", "", "| pickedNeighborhood after:", "");
       return;
     }
 
@@ -1252,6 +1284,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
           (it) => getItemRegionName(it) === pickedRegion && normTR(it.city) === normTR(nameRaw)
         )?.city || nameRaw;
 
+      console.log("[MapView count click] level=city clicked name:", nameRaw, "| pickedRegion before:", pickedRegion, "| pickedCity before:", pickedCity, "| resolvedCity:", realCity);
       setPickedCity(realCity);
       props.onSetCity?.(realCity);
       setPickedDistrict("");
@@ -1281,6 +1314,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
         (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
       );
       zoomToItems(districtItems, 10.9);
+      console.log("[MapView count click] level=district clicked name:", nameRaw, "| pickedCity:", pickedCity, "| pickedDistrict after:", String(realDistrict));
       return;
     }
 
@@ -1291,6 +1325,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
           .filter((it) => sameTR(it.district ?? "", pickedDistrict))
           .find((it) => normTR(it.neighborhood ?? "") === normTR(nameRaw))?.neighborhood || nameRaw;
 
+      console.log("[MapView count click] level=neighborhood clicked name:", nameRaw, "| pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood before:", pickedNeighborhood, "| resolvedNeighborhood:", realNeighborhood);
       setPickedNeighborhood(String(realNeighborhood));
       props.onSetNeighborhood?.(String(realNeighborhood));
       setLevel("parcel");
@@ -1357,12 +1392,18 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
             props.onSetDistrict?.(String(realDistrict));
             setPickedNeighborhood("");
             props.onSetNeighborhood?.("");
-            setLevel("neighborhood");
 
             const districtItems = allItems.filter(
               (it) => sameTR(it.city, pickedCity) && sameTR(it.district ?? "", realDistrict)
             );
-            zoomToItems(districtItems, 10.9);
+            const hasNeighborhoods = districtItems.some((it) => (it.neighborhood ?? "").trim() !== "");
+            if (districtItems.length > 0 && !hasNeighborhoods) {
+              setLevel("parcel");
+              zoomToItems(districtItems, 15.4);
+            } else {
+              setLevel("neighborhood");
+              zoomToItems(districtItems, 10.9);
+            }
           }
           return;
         }
@@ -1382,72 +1423,68 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
     }
 
     if (level === "parcel") {
-      const hits = map.queryRenderedFeatures(e.point, {
-        layers: [
-          L_CLUSTER_GLOW,
-          L_CLUSTER_HEAD,
-          L_CLUSTER_TEXT,
-          L_POINT_HIT,
-          L_POINT,
-          L_SELECTED_POINT,
-          L_FOCUS_FILL,
-          L_FOCUS_GLOW,
-          L_FOCUS_OUT,
-        ],
+      const lng = Number(e.lngLat.lng);
+      const lat = Number(e.lngLat.lat);
+
+      // 1. Prioritize actual property point hits (check point layers first)
+      const pointHits = map.queryRenderedFeatures(e.point, {
+        layers: [L_SELECTED_POINT, L_POINT, L_POINT_HIT],
       });
-
-      if (hits && hits.length > 0) {
-        const top: any = hits[0];
-        const isCluster = !!(top.properties && top.properties.cluster);
-
-        if (isCluster) {
-          const clusterId = top.properties.cluster_id;
-          const source: any = map.getSource(SRC_POINTS);
-          if (!source) return;
-
-          source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
-            if (err) return;
-            const [lng, lat] = top.geometry.coordinates;
-            map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 17), duration: 420 });
-          });
+      if (pointHits && pointHits.length > 0) {
+        const top: any = pointHits[0];
+        const layerId = String(top.layer?.id || "");
+        const id = String(top.properties?.id || "");
+        if (id) {
+          console.log("[MapView parcel click] pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood:", pickedNeighborhood, "| parcelItems count:", parcelItems.length, "| clicked layer:", layerId, "| property id:", id, "| onSelectPropertyId: called", "| onOpenInfo: called");
+          props.onSelectPropertyId?.(id);
+          props.onOpenInfo?.();
           return;
-        }
-
-        const directPointHit = hits.find((h: any) => {
-          const layerId = String(h.layer?.id || "");
-          return layerId === L_POINT_HIT || layerId === L_POINT || layerId === L_SELECTED_POINT;
-        });
-
-        if (directPointHit) {
-          const id = String(directPointHit.properties?.id || "");
-          if (id) {
-            props.onSelectPropertyId?.(id);
-            props.onOpenInfo?.();
-            return;
-          }
-        }
-
-        const focusHit = hits.find((h: any) => {
-          const layerId = String(h.layer?.id || "");
-          return layerId === L_FOCUS_FILL || layerId === L_FOCUS_GLOW || layerId === L_FOCUS_OUT;
-        });
-
-        if (focusHit) {
-          const lng = Number(e.lngLat.lng);
-          const lat = Number(e.lngLat.lat);
-          const nearest = nearestItemToLngLat(parcelItems, lng, lat);
-          if (nearest) {
-            props.onSelectPropertyId?.(nearest.id);
-            props.onOpenInfo?.();
-            return;
-          }
         }
       }
 
-      const nearest = nearestItemToLngLat(parcelItems, Number(e.lngLat.lng), Number(e.lngLat.lat));
+      // 2. Cluster click -> zoom only
+      const clusterHits = map.queryRenderedFeatures(e.point, {
+        layers: [L_CLUSTER_GLOW, L_CLUSTER_HEAD, L_CLUSTER_TEXT],
+      });
+      if (clusterHits && clusterHits.length > 0) {
+        const top: any = clusterHits[0];
+        const isCluster = !!(top.properties && top.properties.cluster);
+        if (isCluster) {
+          const clusterId = top.properties.cluster_id;
+          const source: any = map.getSource(SRC_POINTS);
+          if (source) {
+            source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
+              if (err) return;
+              const [clng, clat] = top.geometry.coordinates;
+              map.easeTo({ center: [clng, clat], zoom: Math.min(zoom, 17), duration: 420 });
+            });
+          }
+          return;
+        }
+      }
+
+      // 3. Focus polygon click -> select nearest property
+      const focusHits = map.queryRenderedFeatures(e.point, {
+        layers: [L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT],
+      });
+      if (focusHits && focusHits.length > 0) {
+        const nearest = nearestItemToLngLat(parcelItems, lng, lat);
+        if (nearest) {
+          console.log("[MapView parcel click] pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood:", pickedNeighborhood, "| parcelItems count:", parcelItems.length, "| clicked layer: focus polygon", "| property id:", nearest.id, "| onSelectPropertyId: called", "| onOpenInfo: called");
+          props.onSelectPropertyId?.(nearest.id);
+          props.onOpenInfo?.();
+          return;
+        }
+      }
+
+      // 4. Fallback: no point/focus hit -> select nearest property to click
+      const nearest = nearestItemToLngLat(parcelItems, lng, lat);
       if (nearest) {
+        console.log("[MapView parcel click] pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood:", pickedNeighborhood, "| parcelItems count:", parcelItems.length, "| clicked layer: (fallback nearest)", "| property id:", nearest.id, "| onSelectPropertyId: called", "| onOpenInfo: called");
         props.onSelectPropertyId?.(nearest.id);
         props.onOpenInfo?.();
+      } else {
+        console.log("[MapView parcel click] pickedCity:", pickedCity, "| pickedDistrict:", pickedDistrict, "| pickedNeighborhood:", pickedNeighborhood, "| parcelItems count:", parcelItems.length, "| clicked layer: (none)", "| property id: (none)", "| onSelectPropertyId: not called", "| onOpenInfo: not called");
       }
     }
   }
@@ -1579,7 +1616,7 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
   const summaryText = useMemo(() => {
     if (level === "region") return `${allItems.length} arsa • bölgesel görünüm`;
     if (level === "city") {
-      const count = allItems.filter((x) => (!pickedRegion ? true : getRegionName(x.city) === pickedRegion)).length;
+      const count = allItems.filter((x) => (!pickedRegion ? true : getItemRegionName(x) === pickedRegion)).length;
       return `${count} arsa • il görünümü`;
     }
     if (level === "district") {
@@ -1590,8 +1627,8 @@ function nearestItemToLngLat(list: MapItem[], lng: number, lat: number): MapItem
       const count = allItems.filter((x) => sameTR(x.city, pickedCity) && sameTR(x.district ?? "", pickedDistrict)).length;
       return `${count} arsa • mahalle görünümü`;
     }
-    return `${itemsFiltered.length} arsa • parsel görünümü`;
-  }, [level, allItems, pickedRegion, pickedCity, pickedDistrict, itemsFiltered.length]);
+    return `${parcelItems.length} arsa • parsel görünümü`;
+  }, [level, allItems, pickedRegion, pickedCity, pickedDistrict, parcelItems.length]);
 
   const interactiveLayers = useMemo(() => {
     const arr: string[] = [];
