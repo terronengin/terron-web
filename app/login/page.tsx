@@ -23,7 +23,7 @@ type MarketResponse = {
   error?: string;
 };
 
-const TOTAL_USERS = 1422;
+const TOTAL_USERS = 841;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -599,7 +599,7 @@ export default function LoginPage() {
                     lineHeight: 1,
                   }}
                 >
-                  {`${TOTAL_USERS.toLocaleString("tr-TR")}+`}
+                  {TOTAL_USERS.toLocaleString("tr-TR")}
                 </span>
               </div>
             </div>
