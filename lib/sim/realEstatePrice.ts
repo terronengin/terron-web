@@ -36,6 +36,14 @@ export type BulkDiscountTier = {
 export const BUY_FEE_RATE = 0.005; // binde 5 = %0.5
 export const SELL_FEE_RATE = 0.01; // %1
 
+/** total_paid = arsa brütü × (1 + BUY_FEE_RATE) iken brüt arsa tutarı */
+export function grossAssetFromTotalPaid(totalPaid: number): number {
+  const n = Number(totalPaid);
+  const tp = Math.max(0, Number.isFinite(n) ? n : 0);
+  if (tp <= 0) return 0;
+  return tp / (1 + BUY_FEE_RATE);
+}
+
 export const BULK_DISCOUNT_TIERS: BulkDiscountTier[] = [
   { minM2: 1, maxM2: 9, discountRate: 0 },
   { minM2: 10, maxM2: 49, discountRate: 0.002 },

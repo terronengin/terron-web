@@ -3,9 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { buyFeeFromTotalPaid } from "@/lib/admin/analytics";
 import { formatM2 } from "@/lib/formatM2";
-import { calculateSellQuoteTRY } from "@/lib/sim/realEstatePrice";
+import { calculateSellQuoteTRY, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
 
 type RealPositionRow = {
   id: string;
@@ -32,15 +31,14 @@ type UnifiedRow = {
   title: string;
   city: string;
   m2: number | null;
-  total: number | null;
-  /** Tahmini net satış (liste × m² − %1) */
+  entryGross: number | null;
+  totalPaid: number | null;
+  currentGross: number | null;
   sellNetTry: number | null;
-  /** Ödenen tutardaki alım komisyonu (model: total_paid üzerinden) */
-  buyFeeTry: number | null;
-  /** Tahmini satış komisyonu toplamı (brüt × %1) */
   sellFeeTry: number | null;
   flowLabel: string;
-  unrealizedPl: number | null;
+  brutKz: number | null;
+  netVsPaid: number | null;
 };
 
 function formatTRY(n: number) {
@@ -141,18 +139,23 @@ export default function PortfolioPage() {
       const city = prop?.city?.trim() || "—";
       const m2 = Number(r.m2 ?? 0);
       const paid = Number(r.total_paid ?? 0);
+      const entryGross = paid > 0 ? Math.round(grossAssetFromTotalPaid(paid)) : null;
       const px = prop?.price_per_m2 != null ? Number(prop.price_per_m2) : NaN;
-      let unrealizedPl: number | null = null;
+      let brutKz: number | null = null;
       let sellNetTry: number | null = null;
-      let buyFeeTry: number | null = null;
       let sellFeeTry: number | null = null;
+      let currentGross: number | null = null;
+      let netVsPaid: number | null = null;
       if (Number.isFinite(px) && px > 0 && m2 > 0) {
         const q = calculateSellQuoteTRY(px, m2);
         sellNetTry = Math.round(q.netProceeds);
         sellFeeTry = Math.round(q.sellFee);
+        currentGross = Math.round(q.grossSaleValue);
         if (paid > 0) {
-          unrealizedPl = Math.round(q.netProceeds - paid);
-          buyFeeTry = Math.round(buyFeeFromTotalPaid(paid));
+          netVsPaid = Math.round(q.netProceeds - paid);
+        }
+        if (entryGross != null && entryGross > 0) {
+          brutKz = Math.round(q.grossSaleValue - entryGross);
         }
       }
       return {
@@ -163,12 +166,14 @@ export default function PortfolioPage() {
         title,
         city,
         m2: r.m2,
-        total: r.total_paid,
+        entryGross,
+        totalPaid: r.total_paid,
+        currentGross,
         sellNetTry,
-        buyFeeTry,
         sellFeeTry,
         flowLabel: "Pozisyon",
-        unrealizedPl,
+        brutKz,
+        netVsPaid,
       } satisfies UnifiedRow;
     });
   }, [realRows, propById]);
@@ -188,10 +193,16 @@ export default function PortfolioPage() {
     }
     const quote = calculateSellQuoteTRY(px, m2);
     const paid = Number(r.total_paid ?? 0);
+    const entry = paid > 0 ? Math.round(grossAssetFromTotalPaid(paid)) : null;
     const ok = window.confirm(
-      `Satış: brüt ₺${formatTRY(Math.round(quote.grossSaleValue))}, ` +
-        `satış komisyonu %1 sonrası tahmini net ₺${formatTRY(Math.round(quote.netProceeds))}. ` +
-        `Maliyetiniz ₺${formatTRY(Math.round(paid))}. Devam?`
+      `Satış özeti\n` +
+        `• Güncel liste değeri (brüt): ₺${formatTRY(Math.round(quote.grossSaleValue))}\n` +
+        `• Satış komisyonu (%1): ₺${formatTRY(Math.round(quote.sellFee))}\n` +
+        `• Hesaba geçecek net: ₺${formatTRY(Math.round(quote.netProceeds))}\n\n` +
+        (entry != null
+          ? `Giriş: arsa ₺${formatTRY(entry)} · toplam ödenen ₺${formatTRY(Math.round(paid))}\n\n`
+          : `Toplam ödenen: ₺${formatTRY(Math.round(paid))}\n\n`) +
+        `Onaylıyor musunuz?`
     );
     if (!ok) return;
     setSellingKey(row.key);
@@ -225,8 +236,7 @@ export default function PortfolioPage() {
       }
 
       alert(
-        `Satış tamam. Net tahmini: ₺${formatTRY(json.netProceeds ?? net)} (komisyon %1 düşülmüş). ` +
-          `İlandaki satılabilir m² ve satılan m² güncellendi.`
+        `Satış tamamlandı. Hesaba geçen net: ₺${formatTRY(json.netProceeds ?? net)} (brüt üzerinden %1 satış komisyonu düşülmüştür).`
       );
       setRefresh((x) => x + 1);
     } finally {
@@ -249,8 +259,10 @@ export default function PortfolioPage() {
         </div>
         <h1 style={{ margin: "12px 0 8px", fontSize: 26, fontWeight: 950, lineHeight: 1.2 }}>Portföy</h1>
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55, opacity: 0.88 }}>
-          Onaylı ilanlarınızdan oluşan pozisyonlar. Komisyonlar pozisyon m² ile çarpılır (ör. liste 20.000 ₺/m² iken alımda
-          ~100 ₺/m² %0,5, satış brütünde ~200 ₺/m² %1). K/Z, tahmini net satış ve komisyon sütunları buna göre hesaplanır.
+          <strong>Arsa tutarı</strong>, liste fiyatı × m² (komisyon hariç). Alırken cüzdandan düşen{" "}
+          <strong>toplam ödeme</strong> arsa + %0,5 alım komisyonudur. Satışta brüt tutar üzerinden %1 kesilir; hesaba geçen
+          net = brüt − satış komisyonu. <strong>Brüt K/Z</strong> güncel liste değeri ile giriş arsa tutarını karşılaştırır;{" "}
+          <strong>Nakit K/Z</strong> tahmini net satış ile toplam ödeneni (komisyonlar dahil) karşılaştırır.
         </p>
 
         <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
@@ -301,24 +313,29 @@ export default function PortfolioPage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(140px,1.2fr) minmax(100px,0.75fr) 52px 72px 88px 72px 72px",
+                  gridTemplateColumns:
+                    "minmax(120px,1.1fr) minmax(76px,0.6fr) 44px minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) 56px",
                   gap: 8,
                   paddingBottom: 10,
                   borderBottom: "1px solid rgba(255,255,255,0.1)",
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: 800,
                   letterSpacing: 0.4,
                   opacity: 0.65,
-                  minWidth: 640,
+                  minWidth: 980,
                 }}
               >
                 <div>İlan</div>
                 <div>Tarih</div>
                 <div>m²</div>
-                <div>Maliyet</div>
-                <div>K/Z</div>
-                <div>Alım ü.</div>
-                <div>İşlem</div>
+                <div style={{ textAlign: "right" }}>Arsa</div>
+                <div style={{ textAlign: "right" }}>Ödenen</div>
+                <div style={{ textAlign: "right" }}>Güncel brüt</div>
+                <div style={{ textAlign: "right" }}>Brüt K/Z</div>
+                <div style={{ textAlign: "right" }}>Tahm. net</div>
+                <div style={{ textAlign: "right" }}>Satış kom.</div>
+                <div style={{ textAlign: "right" }}>Nakit K/Z</div>
+                <div />
               </div>
               {unified.map((row) => {
                 const busy = sellingKey === row.key;
@@ -328,13 +345,13 @@ export default function PortfolioPage() {
                     style={{
                       display: "grid",
                       gridTemplateColumns:
-                        "minmax(120px,1.1fr) minmax(80px,0.65fr) 44px 70px 64px 76px 60px 60px 64px",
+                        "minmax(120px,1.1fr) minmax(76px,0.6fr) 44px minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) minmax(72px,0.65fr) 56px",
                       gap: 8,
                       padding: "12px 0",
                       borderBottom: "1px solid rgba(255,255,255,0.06)",
-                      fontSize: 13,
+                      fontSize: 12,
                       alignItems: "start",
-                      minWidth: 760,
+                      minWidth: 980,
                     }}
                   >
                     <div>
@@ -342,27 +359,53 @@ export default function PortfolioPage() {
                       <div style={{ fontSize: 11, opacity: 0.72, marginTop: 4 }}>{row.city}</div>
                       <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}>{row.flowLabel}</div>
                     </div>
-                    <div style={{ fontSize: 12, opacity: 0.85 }}>{formatDate(row.created_at)}</div>
+                    <div style={{ fontSize: 11, opacity: 0.85 }}>{formatDate(row.created_at)}</div>
                     <div>{row.m2 != null && row.m2 > 0 ? formatM2(row.m2) : "—"}</div>
-                    <div>{row.total != null && row.total > 0 ? formatTRY(row.total) : "—"}</div>
+                    <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {row.entryGross != null ? formatTRY(row.entryGross) : "—"}
+                    </div>
+                    <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {row.totalPaid != null && row.totalPaid > 0 ? formatTRY(Math.round(row.totalPaid)) : "—"}
+                    </div>
+                    <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {row.currentGross != null ? formatTRY(row.currentGross) : "—"}
+                    </div>
                     <div
                       style={{
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
                         color:
-                          row.unrealizedPl == null
+                          row.brutKz == null
                             ? "rgba(255,255,255,0.5)"
-                            : row.unrealizedPl >= 0
+                            : row.brutKz >= 0
                               ? "#86efac"
                               : "#fca5a5",
                         fontWeight: 800,
                       }}
                     >
-                      {row.unrealizedPl != null
-                        ? `${row.unrealizedPl >= 0 ? "+" : ""}${formatTRY(row.unrealizedPl)}`
-                        : "—"}
+                      {row.brutKz != null ? `${row.brutKz >= 0 ? "+" : ""}${formatTRY(row.brutKz)}` : "—"}
                     </div>
-                    <div style={{ fontSize: 12 }}>{row.sellNetTry != null ? formatTRY(row.sellNetTry) : "—"}</div>
-                    <div style={{ fontSize: 12, opacity: 0.92 }}>{row.buyFeeTry != null ? formatTRY(row.buyFeeTry) : "—"}</div>
-                    <div style={{ fontSize: 12, opacity: 0.92 }}>{row.sellFeeTry != null ? formatTRY(row.sellFeeTry) : "—"}</div>
+                    <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {row.sellNetTry != null ? formatTRY(row.sellNetTry) : "—"}
+                    </div>
+                    <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", opacity: 0.92 }}>
+                      {row.sellFeeTry != null ? formatTRY(row.sellFeeTry) : "—"}
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        color:
+                          row.netVsPaid == null
+                            ? "rgba(255,255,255,0.5)"
+                            : row.netVsPaid >= 0
+                              ? "#86efac"
+                              : "#fca5a5",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {row.netVsPaid != null ? `${row.netVsPaid >= 0 ? "+" : ""}${formatTRY(row.netVsPaid)}` : "—"}
+                    </div>
                     <div>
                       <button
                         type="button"
