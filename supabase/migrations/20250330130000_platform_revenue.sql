@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS platform_revenue (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   property_id uuid,
-  position_id uuid,
   type text NOT NULL CHECK (type IN ('buy_fee', 'sell_fee')),
   gross_amount numeric NOT NULL DEFAULT 0,
   fee_rate numeric NOT NULL DEFAULT 0,

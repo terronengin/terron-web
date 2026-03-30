@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   } = await authClient.auth.getUser(token);
   if (authErr || !user?.id) return bad("Oturum geçersiz", 401);
 
-  let body: { propertyId?: string; totalPaid?: number; positionId?: string | null };
+  let body: { propertyId?: string; totalPaid?: number };
   try {
     body = await req.json();
   } catch {
@@ -44,7 +44,6 @@ export async function POST(req: Request) {
 
   const propertyId = String(body.propertyId ?? "").trim();
   const totalPaid = Number(body.totalPaid);
-  const positionId = body.positionId ? String(body.positionId).trim() : null;
 
   if (!propertyId) return bad("propertyId gerekli", 400);
   if (!Number.isFinite(totalPaid) || totalPaid <= 0) return bad("totalPaid geçersiz", 400);
@@ -58,7 +57,6 @@ export async function POST(req: Request) {
   const { error: insErr } = await sb.from("platform_revenue").insert({
     user_id: user.id,
     property_id: propertyId,
-    position_id: positionId,
     type: "buy_fee",
     gross_amount: Math.round(totalPaid),
     fee_rate: BUY_FEE_RATE,

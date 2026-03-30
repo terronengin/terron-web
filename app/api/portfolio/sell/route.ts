@@ -134,7 +134,6 @@ export async function POST(req: Request) {
     .insert({
       user_id: user.id,
       property_id: pos.property_id,
-      position_id: positionId,
       type: "sell_fee",
       gross_amount: Math.round(quote.grossSaleValue),
       fee_rate: SELL_FEE_RATE,
