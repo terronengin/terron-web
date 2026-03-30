@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { buyFeeFromTotalPaid } from "@/lib/admin/analytics";
+import { formatM2 } from "@/lib/formatM2";
 import { calculateSellQuoteTRY } from "@/lib/sim/realEstatePrice";
 
 type RealPositionRow = {
