@@ -53,6 +53,12 @@ export async function GET(req: Request) {
     const { data: wallRows, error: wErr } = await sb.from("wallets").select("user_id,balance").limit(50000);
     if (wErr) throw wErr;
 
+    const { data: revRows, error: revErr } = await sb
+      .from("platform_revenue")
+      .select("type,gross_amount,fee_amount,created_at")
+      .limit(200000);
+    if (revErr) throw revErr;
+
     const rows = (props ?? []) as {
       total_area_m2: number | null;
       available_m2: number | null;
@@ -127,13 +133,21 @@ export async function GET(req: Request) {
       if (Number.isFinite(b)) totalUserBalances += b;
     }
 
-    const daily: AdminAnalyticsDailyRow[] = [...dayMap.entries()]
-      .map(([date, v]) => ({
-        date,
-        buyFee: Math.round(v.buyFee),
-        volumePaid: Math.round(v.volumePaid),
-        positionOpens: v.positionOpens,
-      }))
+    const allDates = new Set<string>([...dayMap.keys(), ...ledgerDayMap.keys()]);
+    const daily: AdminAnalyticsDailyRow[] = [...allDates]
+      .map((date) => {
+        const p = dayMap.get(date);
+        const L = ledgerDayMap.get(date);
+        return {
+          date,
+          buyFee: Math.round(L?.buyFee ?? p?.buyFee ?? 0),
+          sellFee: Math.round(L?.sellFee ?? 0),
+          buyVolume: Math.round(L?.buyVol ?? p?.volumePaid ?? 0),
+          sellVolume: Math.round(L?.sellVol ?? 0),
+          volumePaid: Math.round(p?.volumePaid ?? L?.buyVol ?? 0),
+          positionOpens: p?.positionOpens ?? 0,
+        };
+      })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
       .slice(0, 120);
 
@@ -155,6 +169,11 @@ export async function GET(req: Request) {
         estimatedBuyFees: Math.round(estimatedBuyFeesFromPositions),
       },
       fees: {
+        ledgerBuyFees: Math.round(ledgerBuyFees),
+        ledgerSellFees: Math.round(ledgerSellFees),
+        ledgerTotalFees: Math.round(ledgerBuyFees + ledgerSellFees),
+        ledgerBuyVolume: Math.round(ledgerBuyVolume),
+        ledgerSellVolume: Math.round(ledgerSellVolume),
         estimatedBuyFeesFromPositions: Math.round(estimatedBuyFeesFromPositions),
         estimatedSellFeesFromSoldM2: Math.round(estimatedSellFeesFromSoldM2),
         totalEstimatedTerronTreasury: Math.round(totalEstimatedTerronTreasury),

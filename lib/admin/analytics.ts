@@ -10,6 +10,9 @@ export function buyFeeFromTotalPaid(totalPaid: number): number {
 export type AdminAnalyticsDailyRow = {
   date: string;
   buyFee: number;
+  sellFee: number;
+  buyVolume: number;
+  sellVolume: number;
   volumePaid: number;
   positionOpens: number;
 };
@@ -32,6 +35,16 @@ export type AdminAnalyticsPayload = {
     estimatedBuyFees: number;
   };
   fees: {
+    /** Defterden: alış komisyonları toplamı */
+    ledgerBuyFees: number;
+    /** Defterden: satış komisyonları toplamı */
+    ledgerSellFees: number;
+    /** Terron toplam komisyon geliri (alış + satış) */
+    ledgerTotalFees: number;
+    /** Alış işlem hacmi: ödenen toplamlar (Σ gross_amount, buy_fee) */
+    ledgerBuyVolume: number;
+    /** Satış işlem hacmi: brüt satış (Σ gross_amount, sell_fee) */
+    ledgerSellVolume: number;
     estimatedBuyFeesFromPositions: number;
     estimatedSellFeesFromSoldM2: number;
     totalEstimatedTerronTreasury: number;

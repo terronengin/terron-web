@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { calculateSellQuoteTRY } from "@/lib/sim/realEstatePrice";
+import { calculateSellQuoteTRY, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
 
 export const runtime = "nodejs";
 
@@ -118,7 +118,6 @@ export async function POST(req: Request) {
     const { error: wInsErr } = await sb.from("wallets").insert({
       user_id: user.id,
       balance: nextBal,
-      updated_at: iso,
     });
     if (wInsErr) {
       await sb
@@ -129,8 +128,32 @@ export async function POST(req: Request) {
     }
   }
 
+  const { data: revRow, error: revErr } = await sb
+    .from("platform_revenue")
+    .insert({
+      user_id: user.id,
+      property_id: pos.property_id,
+      position_id: positionId,
+      type: "sell_fee",
+      gross_amount: Math.round(quote.grossSaleValue),
+      fee_rate: SELL_FEE_RATE,
+      fee_amount: sellFee,
+    })
+    .select("id")
+    .single();
+
+  if (revErr) {
+    await sb
+      .from("properties")
+      .update({ available_m2: prevAvail, sold_m2: prevSold, updated_at: iso })
+      .eq("id", pos.property_id);
+    await sb.from("wallets").update({ balance: curBal }).eq("user_id", user.id);
+    return bad(revErr.message, 500);
+  }
+
   const { error: delErr } = await sb.from("positions").delete().eq("id", positionId).eq("user_id", user.id);
   if (delErr) {
+    if (revRow?.id) await sb.from("platform_revenue").delete().eq("id", revRow.id);
     await sb
       .from("properties")
       .update({ available_m2: prevAvail, sold_m2: prevSold, updated_at: iso })

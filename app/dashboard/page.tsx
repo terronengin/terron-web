@@ -412,6 +412,22 @@ export default function DashboardPage() {
     return rounded;
   }
 
+  async function recordBuyRevenue(propertyId: string, totalPaid: number, positionId?: string) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch("/api/platform/revenue/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ propertyId, totalPaid, positionId }),
+      });
+      if (!res.ok) console.warn("[revenue/buy]", await res.text());
+    } catch (e) {
+      console.warn("[revenue/buy]", e);
+    }
+  }
+
   async function handleOpenPosition() {
     try {
       if (!selected) {
@@ -524,11 +540,11 @@ export default function DashboardPage() {
         entry_price: entryPriceM2,
         units: m2,
       };
-      const { error: posErr } = await supabase.from("positions").insert(payload);
+      const { data: posIns, error: posErr } = await supabase.from("positions").insert(payload).select("id").single();
       if (posErr) {
         await supabase
           .from("wallets")
-          .update({ balance: balance, updated_at: new Date().toISOString() })
+          .update({ balance: balance })
           .eq("user_id", user.id);
         await supabase
           .from("properties")
@@ -542,6 +558,7 @@ export default function DashboardPage() {
         setBuyInProgress(false);
         return;
       }
+      if (posIns?.id) void recordBuyRevenue(selected.id, totalPaid, posIns.id);
       setWalletBalance(newBalance);
       updateLocalPropertyM2(selected.id, m2);
       await ensureAndLoadWallet();
@@ -681,7 +698,10 @@ export default function DashboardPage() {
           setCheckingOut(false);
           return;
         }
-        if (ins?.id) insertedIds.push(String(ins.id));
+        if (ins?.id) {
+          insertedIds.push(String(ins.id));
+          void recordBuyRevenue(it.property.id, it.totalPaid, String(ins.id));
+        }
         updateLocalPropertyM2(it.property.id, it.m2);
       }
       setWalletBalance(newBalanceDb);

@@ -170,9 +170,26 @@ export default function AdminPage() {
         generatedAt,
         properties,
         positions,
-        fees,
+        fees: {
+          ledgerBuyFees: fees.ledgerBuyFees ?? 0,
+          ledgerSellFees: fees.ledgerSellFees ?? 0,
+          ledgerTotalFees: fees.ledgerTotalFees ?? 0,
+          ledgerBuyVolume: fees.ledgerBuyVolume ?? 0,
+          ledgerSellVolume: fees.ledgerSellVolume ?? 0,
+          estimatedBuyFeesFromPositions: fees.estimatedBuyFeesFromPositions ?? 0,
+          estimatedSellFeesFromSoldM2: fees.estimatedSellFeesFromSoldM2 ?? 0,
+          totalEstimatedTerronTreasury: fees.totalEstimatedTerronTreasury ?? 0,
+        },
         wallets,
-        daily,
+        daily: (daily ?? []).map((d) => ({
+          date: d.date,
+          buyFee: d.buyFee ?? 0,
+          sellFee: d.sellFee ?? 0,
+          buyVolume: d.buyVolume ?? d.volumePaid ?? 0,
+          sellVolume: d.sellVolume ?? 0,
+          volumePaid: d.volumePaid ?? 0,
+          positionOpens: d.positionOpens ?? 0,
+        })),
       });
     } catch (e: unknown) {
       console.warn("[admin] analytics", e);
@@ -332,8 +349,9 @@ export default function AdminPage() {
     const asc = [...analytics.daily].sort((a, b) => a.date.localeCompare(b.date));
     let cum = 0;
     return asc.map((d) => {
-      cum += d.buyFee;
-      return { ...d, cumulativeBuyFee: cum };
+      const dayFees = (d.buyFee ?? 0) + (d.sellFee ?? 0);
+      cum += dayFees;
+      return { ...d, cumulativeTotalFee: cum };
     });
   }, [analytics]);
 
@@ -696,19 +714,29 @@ export default function AdminPage() {
                 sub: "Aktif işlem adedi • benzersiz kullanıcı",
               },
               {
-                k: "İşlem hacmi (₺)",
+                k: "Alış işlem hacmi (defter, ₺)",
+                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerBuyVolume)}` : analyticsLoading ? "…" : "—",
+                sub: "Kullanıcıların alımda ödediği toplam (komisyon dahil)",
+              },
+              {
+                k: "Satış işlem hacmi — brüt (defter, ₺)",
+                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerSellVolume)}` : analyticsLoading ? "…" : "—",
+                sub: "Satışta işlem gören brüt tutarlar (liste × m²)",
+              },
+              {
+                k: "Pozisyon ödemeleri (referans, ₺)",
                 v: analytics ? `₺${fmtTRY(analytics.positions.totalPaidVolume)}` : analyticsLoading ? "…" : "—",
-                sub: "Pozisyonlarda ödenen toplam",
+                sub: "Açık/kapanmış pozisyon total_paid toplamı",
               },
               {
-                k: "Alım komisyonu (Σ)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.estimatedBuyFeesFromPositions)}` : analyticsLoading ? "…" : "—",
-                sub: "Pozisyon ödemelerinden %0,5 (modelle uyumlu)",
+                k: "Alıştan gelir — komisyon (defter)",
+                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerBuyFees)}` : analyticsLoading ? "…" : "—",
+                sub: "platform_revenue (buy_fee) birikimi",
               },
               {
-                k: "Satış komisyonu (tahm. Σ)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.estimatedSellFeesFromSoldM2)}` : analyticsLoading ? "…" : "—",
-                sub: "İlan sold_m² × liste fiyatı × %1",
+                k: "Satıştan gelir — komisyon (defter)",
+                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerSellFees)}` : analyticsLoading ? "…" : "—",
+                sub: "platform_revenue (sell_fee) birikimi",
               },
             ].map((x) => (
               <div
@@ -740,13 +768,12 @@ export default function AdminPage() {
                 opacity: !analytics || analyticsLoading ? 0.55 : 1,
               }}
             >
-              <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 900, color: "#fef9c3" }}>Terron kasası (tahmini)</div>
+              <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 900, color: "#fef9c3" }}>Terron komisyon kasası (defter)</div>
               <div style={{ fontSize: 26, fontWeight: 950, marginTop: 6, color: "#fff" }}>
-                {analytics ? `₺${fmtTRY(analytics.fees.totalEstimatedTerronTreasury)}` : analyticsLoading ? "…" : "—"}
+                {analytics ? `₺${fmtTRY(analytics.fees.ledgerTotalFees)}` : analyticsLoading ? "…" : "—"}
               </div>
               <div style={{ fontSize: 11, opacity: 0.75, marginTop: 8, lineHeight: 1.4, color: "#e7e5e4" }}>
-                Alım %0,5 + satış %1 (satış tarafı, satılan m² × fiyat üzerinden). Tıklayınca günlük alım komisyonu
-                dökümü.
+                Her alım/satışta kaydedilen komisyonların toplamı. Tıklayınca günlük döküm (alış + satış komisyonu).
               </div>
               <div style={{ fontSize: 10, marginTop: 10, opacity: 0.65 }}>
                 Kullanıcı cüzdanları toplamı:{" "}
@@ -757,11 +784,10 @@ export default function AdminPage() {
           </div>
 
           <div style={{ fontSize: 11, opacity: 0.55, marginTop: 14, lineHeight: 1.45 }}>
-            <b>Doğruluk:</b> Alım komisyonu toplamı, her pozisyondaki <code>total_paid</code> için uygulama modeliyle aynıdır:
-            komisyon = tutar × 0,005 ÷ 1,005 (%0,5 brüt içinde). Satılan m² toplamı ilanlardaki{" "}
-            <code>sold_m2</code> alanlarından; satış komisyonu tahmini = Σ (satılan m² × liste ₺/m²) × %1 (günlük satış
-            defteri yok). Tahminler mevcut tablolardan türetilir; gerçek muhasebe için ayrı defter gerekir. Günlük tablo
-            yalnızca pozisyon açılışlarına dayalı alım komisyonunu listeler.
+            <b>Defter:</b> Alım ve satış komisyonları <code>platform_revenue</code> tablosunda işlem bazında kayıt altına
+            alınır; üstteki tutarlar bu kayıtların toplamıdır. Referans tahminleri (ilan satılan m² × fiyat) eski
+            yöntemdir. Arsa fiyatı işlemle otomatik değişmez; kullanıcıdan kesilen komisyon net satış / ödeme akışına
+            göre hesaplanır.
           </div>
         </div>
 
@@ -1910,10 +1936,9 @@ export default function AdminPage() {
                   <div style={{ fontSize: 12, fontWeight: 900, color: "#c9a227", letterSpacing: "0.1em" }}>
                     TERRON KASASI
                   </div>
-                  <h2 style={{ fontSize: 22, fontWeight: 950, margin: "8px 0 0" }}>Günlük alım komisyonu dökümü</h2>
+                  <h2 style={{ fontSize: 22, fontWeight: 950, margin: "8px 0 0" }}>Günlük komisyon dökümü</h2>
                   <p style={{ margin: "8px 0 0", fontSize: 13, opacity: 0.75, lineHeight: 1.55 }}>
-                    Pozisyon tablosundaki ödemelerden türetilen <b>%0,5</b> alım komisyonu. Satış tarafı günlük kaydı olmadan
-                    toplam tahmini: <b>₺{fmtTRY(analytics.fees.estimatedSellFeesFromSoldM2)}</b> (satılan m² × liste × %1).
+                    <code>platform_revenue</code> kayıtlarına göre günlük alış ve satış komisyonları ile kümülatif toplam.
                   </p>
                 </div>
                 <button
@@ -1942,9 +1967,9 @@ export default function AdminPage() {
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Toplam tahmini kasa</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Toplam komisyon (defter)</div>
                   <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.totalEstimatedTerronTreasury)}
+                    ₺{fmtTRY(analytics.fees.ledgerTotalFees)}
                   </div>
                 </div>
                 <div
@@ -1955,9 +1980,9 @@ export default function AdminPage() {
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Alım komisyonu (Σ)</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Alıştan gelir</div>
                   <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.estimatedBuyFeesFromPositions)}
+                    ₺{fmtTRY(analytics.fees.ledgerBuyFees)}
                   </div>
                 </div>
                 <div
@@ -1968,9 +1993,9 @@ export default function AdminPage() {
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Satış komisyonu (tahm. Σ)</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Satıştan gelir</div>
                   <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.estimatedSellFeesFromSoldM2)}
+                    ₺{fmtTRY(analytics.fees.ledgerSellFees)}
                   </div>
                 </div>
               </div>
@@ -1979,7 +2004,7 @@ export default function AdminPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr",
+                    gridTemplateColumns: "0.9fr 1fr 1fr 1fr 1fr 1fr 1.1fr",
                     gap: 0,
                     padding: "10px 12px",
                     background: "rgba(255,255,255,0.05)",
@@ -1989,17 +2014,19 @@ export default function AdminPage() {
                   }}
                 >
                   <div>Tarih</div>
-                  <div style={{ textAlign: "right" }}>Günlük alım kom.</div>
-                  <div style={{ textAlign: "right" }}>Gün hacmi</div>
-                  <div style={{ textAlign: "right" }}>Açılış</div>
-                  <div style={{ textAlign: "right" }}>Kümülatif alım kom.</div>
+                  <div style={{ textAlign: "right" }}>Alış kom.</div>
+                  <div style={{ textAlign: "right" }}>Satış kom.</div>
+                  <div style={{ textAlign: "right" }}>Alış hacmi</div>
+                  <div style={{ textAlign: "right" }}>Satış hacmi</div>
+                  <div style={{ textAlign: "right" }}>Poz. aç.</div>
+                  <div style={{ textAlign: "right" }}>Küm. kom.</div>
                 </div>
                 {treasuryDailyDisplay.map((d) => (
                   <div
                     key={d.date}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr",
+                      gridTemplateColumns: "0.9fr 1fr 1fr 1fr 1fr 1fr 1.1fr",
                       gap: 0,
                       padding: "10px 12px",
                       fontSize: 13,
@@ -2009,15 +2036,19 @@ export default function AdminPage() {
                   >
                     <div>{d.date}</div>
                     <div style={{ textAlign: "right" }}>₺{fmtTRY(d.buyFee)}</div>
-                    <div style={{ textAlign: "right", opacity: 0.9 }}>₺{fmtTRY(d.volumePaid)}</div>
+                    <div style={{ textAlign: "right" }}>₺{fmtTRY(d.sellFee ?? 0)}</div>
+                    <div style={{ textAlign: "right", opacity: 0.9 }}>₺{fmtTRY(d.buyVolume ?? d.volumePaid)}</div>
+                    <div style={{ textAlign: "right", opacity: 0.9 }}>₺{fmtTRY(d.sellVolume ?? 0)}</div>
                     <div style={{ textAlign: "right" }}>{fmtNumber(d.positionOpens)}</div>
                     <div style={{ textAlign: "right", fontWeight: 800, color: "#a7f3d0" }}>
-                      ₺{fmtTRY(d.cumulativeBuyFee)}
+                      ₺{fmtTRY(d.cumulativeTotalFee)}
                     </div>
                   </div>
                 ))}
                 {treasuryDailyDisplay.length === 0 ? (
-                  <div style={{ padding: 16, fontSize: 13, opacity: 0.65 }}>Henüz günlük ayrıştırılacak pozisyon yok.</div>
+                  <div style={{ padding: 16, fontSize: 13, opacity: 0.65 }}>
+                    Henüz defter kaydı yok. Alım/satış yaptıkça satırlar oluşur.
+                  </div>
                 ) : null}
               </div>
             </div>
