@@ -96,15 +96,15 @@ export async function POST(req: Request) {
     return bad("İlan güncellenemedi (kayıt bulunamadı).", 404);
   }
 
-  const { data: wBefore } = await sb.from("wallets").select("balance").eq("user_id", user.id).maybeSingle();
+  const { data: wBefore } = await sb.from("wallets").select("user_id,balance").eq("user_id", user.id).maybeSingle();
   const curBal = wBefore?.balance != null ? Number(wBefore.balance) : 0;
   const nextBal = Math.max(0, curBal + net);
 
   const { data: wUpRows, error: wUpErr } = await sb
     .from("wallets")
-    .update({ balance: nextBal, updated_at: iso })
+    .update({ balance: nextBal })
     .eq("user_id", user.id)
-    .select("id");
+    .select("user_id");
 
   if (wUpErr) {
     await sb
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
       .from("properties")
       .update({ available_m2: prevAvail, sold_m2: prevSold, updated_at: iso })
       .eq("id", pos.property_id);
-    await sb.from("wallets").update({ balance: curBal, updated_at: iso }).eq("user_id", user.id);
+    await sb.from("wallets").update({ balance: curBal }).eq("user_id", user.id);
     return bad(delErr.message, 500);
   }
 

@@ -406,10 +406,7 @@ export default function DashboardPage() {
     }
     const { error: updateErr } = await supabase
       .from("wallets")
-      .update({
-        balance: rounded,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ balance: rounded })
       .eq("user_id", user.id);
     if (updateErr) throw updateErr;
     return rounded;
@@ -502,7 +499,7 @@ export default function DashboardPage() {
       const newBalance = balance - totalPaid;
       const { error: upErr } = await supabase
         .from("wallets")
-        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .update({ balance: newBalance })
         .eq("user_id", user.id);
       if (upErr) {
         await supabase
@@ -628,7 +625,7 @@ export default function DashboardPage() {
       const newBalanceDb = balanceDb - realTotal;
       const { error: upErr } = await supabase
         .from("wallets")
-        .update({ balance: newBalanceDb, updated_at: new Date().toISOString() })
+        .update({ balance: newBalanceDb })
         .eq("user_id", user.id);
       if (upErr) {
         for (const p of touchedProps) {
@@ -665,7 +662,7 @@ export default function DashboardPage() {
         if (posErr) {
           await supabase
             .from("wallets")
-            .update({ balance: balanceDb, updated_at: new Date().toISOString() })
+            .update({ balance: balanceDb })
             .eq("user_id", user.id);
           for (const p of touchedProps) {
             await supabase

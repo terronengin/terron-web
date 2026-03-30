@@ -76,7 +76,6 @@ async function resetPlatform(sb: SupabaseClient) {
     const batch = users.map((u) => ({
       user_id: u.id,
       balance: 1000000,
-      updated_at: new Date().toISOString(),
     }));
     const { error: upErr } = await sb.from("wallets").upsert(batch, { onConflict: "user_id" });
     if (upErr) throw upErr;
