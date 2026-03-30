@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
 
 export const runtime = "nodejs";
 
@@ -14,11 +15,11 @@ export async function POST(req: Request) {
     if (!propertyId || typeof propertyId !== "string") return bad("propertyId gerekli");
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // ✅ server-only
+    const serviceKey = getServiceRoleKey();
     const openaiKey = process.env.OPENAI_API_KEY;
 
     if (!supabaseUrl) return bad("NEXT_PUBLIC_SUPABASE_URL yok", 500);
-    if (!serviceKey) return bad("SUPABASE_SERVICE_ROLE_KEY yok", 500);
+    if (!serviceKey) return responseMissingServiceRole();
     if (!openaiKey) return bad("OPENAI_API_KEY yok", 500);
 
     const sb = createClient(supabaseUrl, serviceKey, {

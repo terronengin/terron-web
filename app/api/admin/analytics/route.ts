@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isAdminEmail } from "@/lib/admin/isAdmin";
 import { buyFeeFromTotalPaid, type AdminAnalyticsPayload, type AdminAnalyticsDailyRow } from "@/lib/admin/analytics";
+import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
 import { SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
 
 export const runtime = "nodejs";
@@ -13,10 +14,10 @@ function bad(msg: string, status = 400) {
 export async function GET(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = getServiceRoleKey();
 
   if (!supabaseUrl || !anonKey) return bad("Supabase yapılandırması eksik", 500);
-  if (!serviceKey) return bad("SUPABASE_SERVICE_ROLE_KEY tanımlı değil", 500);
+  if (!serviceKey) return responseMissingServiceRole();
 
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
@@ -57,7 +58,6 @@ export async function GET(req: Request) {
       .from("platform_revenue")
       .select("type,gross_amount,fee_amount,created_at")
       .limit(200000);
-    if (revErr) throw revErr;
 
     const rows = (props ?? []) as {
       total_area_m2: number | null;
@@ -131,6 +131,39 @@ export async function GET(req: Request) {
     for (const w of wallets) {
       const b = Number(w.balance ?? 0);
       if (Number.isFinite(b)) totalUserBalances += b;
+    }
+
+    let ledgerBuyFees = 0;
+    let ledgerSellFees = 0;
+    let ledgerBuyVolume = 0;
+    let ledgerSellVolume = 0;
+    const ledgerDayMap = new Map<
+      string,
+      { buyFee: number; sellFee: number; buyVol: number; sellVol: number }
+    >();
+
+    if (!revErr && revRows) {
+      for (const r of revRows) {
+        const t = String((r as { type?: string }).type ?? "");
+        const fee = Number((r as { fee_amount?: number }).fee_amount ?? 0);
+        const gross = Number((r as { gross_amount?: number }).gross_amount ?? 0);
+        const day = String((r as { created_at?: string }).created_at || "").slice(0, 10) || "1970-01-01";
+        const cur = ledgerDayMap.get(day) ?? { buyFee: 0, sellFee: 0, buyVol: 0, sellVol: 0 };
+        if (t === "buy_fee") {
+          ledgerBuyFees += fee;
+          ledgerBuyVolume += gross;
+          cur.buyFee += fee;
+          cur.buyVol += gross;
+        } else if (t === "sell_fee") {
+          ledgerSellFees += fee;
+          ledgerSellVolume += gross;
+          cur.sellFee += fee;
+          cur.sellVol += gross;
+        }
+        ledgerDayMap.set(day, cur);
+      }
+    } else if (revErr) {
+      console.warn("[admin/analytics] platform_revenue okunamadı, defter sıfırlanıyor:", revErr.message);
     }
 
     const allDates = new Set<string>([...dayMap.keys(), ...ledgerDayMap.keys()]);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
 import { calculateSellQuoteTRY, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
 
 export const runtime = "nodejs";
@@ -15,10 +16,10 @@ function bad(msg: string, status = 400) {
 export async function POST(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = getServiceRoleKey();
 
   if (!supabaseUrl || !anonKey) return bad("Supabase yapılandırması eksik", 500);
-  if (!serviceKey) return bad("SUPABASE_SERVICE_ROLE_KEY tanımlı değil", 500);
+  if (!serviceKey) return responseMissingServiceRole();
 
   const authHeader = req.headers.get("authorization");
   const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
