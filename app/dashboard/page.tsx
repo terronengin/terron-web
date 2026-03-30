@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import MapView from "../components/MapView";
 import { supabase } from "../../lib/supabaseClient";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
-import { calculateSimpleBuyQuoteTRY, getPostBuyPriceMultiplier, BUY_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import {
+  calculateSimpleBuyQuoteTRY,
+  calculateSimpleBuyQuoteFromGrossTRY,
+  getPostBuyPriceMultiplier,
+} from "@/lib/sim/realEstatePrice";
 import { getTerronSalePricePerM2, getDemandPressure } from "@/lib/propertySalePrice";
 import { normalizePropertyForPanel } from "@/lib/normalizePropertyForPanel";
 import { normalizeExplorerLatLng } from "@/lib/dashboard/explorerCoords";
@@ -149,6 +153,23 @@ export default function DashboardPage() {
     return calculateSimpleBuyQuoteTRY(salePx, qty, { totalParcelM2: totalParcel });
   }
 
+  /** Sepet / Satın Al: brüt TL girilmişse brüt tabanlı teklif; değilse yalnızca girilen m² (min ile doldurulmaz). */
+  function getActiveBuyQuoteForAction(p: Property | null, buyM2Val: number, buyBudgetVal: number) {
+    if (!p) {
+      return { quote: null as ReturnType<typeof getBuyQuoteForProperty> | null, effectiveM2: 0 };
+    }
+    const gb = Math.round(buyBudgetVal);
+    const salePx = getTerronSalePricePerM2(p, userId ?? "global");
+    const totalParcel = Math.max(1, Number(p.total_area_m2 ?? 1));
+    if (gb > 0) {
+      const quote = calculateSimpleBuyQuoteFromGrossTRY(salePx, gb, { totalParcelM2: totalParcel });
+      return { quote, effectiveM2: Number(quote.impliedM2 ?? 0) };
+    }
+    const rawM2 = Math.max(0, Number(buyM2Val) || 0);
+    const quote = getBuyQuoteForProperty(p, rawM2);
+    return { quote, effectiveM2: rawM2 };
+  }
+
   function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {
     setItems((prev) =>
       prev.map((p) => {
@@ -183,16 +204,21 @@ export default function DashboardPage() {
   function syncBuyFromM2(nextM2: number, p: Property | null) {
     const safeM2 = Math.max(0, nextM2 || 0);
     setBuyM2(safeM2);
-    const quote = getBuyQuoteForProperty(p, safeM2 || 1);
-    setBuyBudget(Math.round(quote.totalCost));
+    if (!p || safeM2 <= 0) {
+      setBuyBudget(0);
+      return;
+    }
+    const quote = getBuyQuoteForProperty(p, safeM2);
+    setBuyBudget(Math.round(quote.grossAssetValue));
   }
 
+  /** TL alanı = brüt arsa tutarı (komisyon hariç); m² = brüt / satış ₺/m² */
   function syncBuyFromBudget(nextBudget: number, p: Property | null) {
-    const safeBudget = Math.max(0, nextBudget || 0);
-    setBuyBudget(safeBudget);
+    const gross = Math.max(0, Math.round(Number(nextBudget) || 0));
+    setBuyBudget(gross);
     const salePx = Math.max(1, getTerronSalePricePerM2(p, userId ?? "global"));
-    const calcM2 = safeBudget / (salePx * (1 + BUY_FEE_RATE));
-    setBuyM2(Number(calcM2.toFixed(2)));
+    const calcM2 = gross > 0 ? gross / salePx : 0;
+    setBuyM2(Number(calcM2.toFixed(8)));
   }
 
   function cartTotal() {
@@ -204,32 +230,31 @@ export default function DashboardPage() {
       alert("Önce bir arsa seçin.");
       return;
     }
-    const m2 = Number(buyM2);
-    if (!Number.isFinite(m2) || m2 <= 0) {
+    const { quote, effectiveM2: m2ForCart } = getActiveBuyQuoteForAction(selected, buyM2, buyBudget);
+    if (!quote || !Number.isFinite(m2ForCart) || m2ForCart <= 0) {
       alert("m² miktarı geçersiz.");
       return;
     }
     const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
     const maxBuy = Number(selected.max_buy_m2 ?? getPropertyAvailableM2(selected));
     const available = getPropertyAvailableM2(selected);
-    if (m2 < minBuy) {
+    if (m2ForCart < minBuy) {
       alert(`Minimum alım ${formatNumber(minBuy)} m²`);
       return;
     }
-    if (m2 > available) {
+    if (m2ForCart > available) {
       alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
       return;
     }
-    if (Number.isFinite(maxBuy) && m2 > maxBuy) {
+    if (Number.isFinite(maxBuy) && m2ForCart > maxBuy) {
       alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsiniz.`);
       return;
     }
-    const quote = getBuyQuoteForProperty(selected, m2);
     setCart((prev) => [
       {
         key: `${selected.id}_${Date.now()}`,
         property: selected,
-        m2,
+        m2: m2ForCart,
         salePricePerM2: quote.salePricePerM2,
         discountedPricePerM2: quote.discountedPricePerM2,
         bulkDiscountRate: quote.bulkDiscountRate,
@@ -328,8 +353,8 @@ export default function DashboardPage() {
         alert("Önce bir arsa seçin.");
         return;
       }
-      const m2 = Number(buyM2);
-      if (!Number.isFinite(m2) || m2 <= 0) {
+      const { quote, effectiveM2: m2 } = getActiveBuyQuoteForAction(selected, buyM2, buyBudget);
+      if (!quote || !Number.isFinite(m2) || m2 <= 0) {
         alert("m² miktarı geçersiz.");
         return;
       }
@@ -348,7 +373,6 @@ export default function DashboardPage() {
         alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsiniz.`);
         return;
       }
-      const quote = getBuyQuoteForProperty(selected, m2);
       const entryPriceM2 = quote.salePricePerM2;
       const totalPaid = quote.totalCost;
 
@@ -1402,7 +1426,19 @@ export default function DashboardPage() {
   const selectedSoldM2 = getPropertySoldM2(selected);
   const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
   const selectedMaxBuyM2 = Number(selected?.max_buy_m2 ?? selectedAvailableM2);
-  const selectedQuote = selected ? getBuyQuoteForProperty(selected, buyM2 || selectedMinBuyM2) : null;
+  const { selectedQuote, selectedDisplayM2 } = useMemo(() => {
+    if (!selected) return { selectedQuote: null, selectedDisplayM2: 0 };
+    const gb = Math.round(buyBudget);
+    const salePx = getTerronSalePricePerM2(selected, userId ?? "global");
+    const totalParcel = Math.max(1, Number(selected.total_area_m2 ?? 1));
+    const previewM2 = Math.max(0, Number(buyM2) || selectedMinBuyM2);
+    if (gb > 0) {
+      const quote = calculateSimpleBuyQuoteFromGrossTRY(salePx, gb, { totalParcelM2: totalParcel });
+      return { selectedQuote: quote, selectedDisplayM2: quote.impliedM2 ?? previewM2 };
+    }
+    const quote = getBuyQuoteForProperty(selected, previewM2);
+    return { selectedQuote: quote, selectedDisplayM2: previewM2 };
+  }, [selected, buyM2, buyBudget, selectedMinBuyM2, userId]);
   const selectedMinBuyCost = selected ? getBuyQuoteForProperty(selected, selectedMinBuyM2).totalCost : 0;
   const selectedTotalCost = Math.max(0, Number(selectedQuote?.totalCost ?? 0));
   const selectedDemandPressure = selected ? getDemandPressure(selected) : 0;
@@ -1415,7 +1451,7 @@ export default function DashboardPage() {
     const safeMin = Math.max(1, Number(selected.min_buy_m2 ?? 1));
     const quote = getBuyQuoteForProperty(selected, safeMin);
     setBuyM2(safeMin);
-    setBuyBudget(Math.round(quote.totalCost));
+    setBuyBudget(Math.round(quote.grossAssetValue));
     setActiveInsightTab("arsa");
   }, [selected?.id]);
 
@@ -2538,7 +2574,7 @@ export default function DashboardPage() {
                 >
                   <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.88, letterSpacing: 0.4 }}>Alım</div>
                   <div style={{ fontSize: 9, opacity: 0.62, marginTop: 2, lineHeight: 1.35 }}>
-                    Alım komisyonu %0,5 (tutara dahil)
+                    Alım komisyonu brüt arsa tutarı üzerinden %0,5; toplam ödeneğe eklenir
                   </div>
                   <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4, lineHeight: 1.4 }}>
                     Talep {(selectedDemandPressure * 100).toFixed(0)}% · Bakiye{" "}
@@ -2565,7 +2601,7 @@ export default function DashboardPage() {
                       />
                     </div>
                     <div>
-                      <div style={{ ...tinyLabel, marginBottom: 4 }}>TL</div>
+                      <div style={{ ...tinyLabel, marginBottom: 4 }}>Arsa tutarı (₺)</div>
                       <input
                         type="number"
                         value={buyBudget}
@@ -2573,7 +2609,7 @@ export default function DashboardPage() {
                         step={1}
                         onChange={(e) => syncBuyFromBudget(Number(e.target.value), selected)}
                         style={{ ...inputStyle, padding: "8px 10px", fontSize: 13 }}
-                        placeholder="Toplam"
+                        placeholder="Brüt"
                       />
                     </div>
                   </div>
@@ -2588,7 +2624,7 @@ export default function DashboardPage() {
                   >
                     <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Alım özeti</div>
                     <div style={{ fontSize: 9, opacity: 0.55, marginBottom: 6 }}>
-                      Satış tutarı ₺{formatTRY(selectedQuote?.salePricePerM2 ?? 0)}/m² × {formatDecimal(buyM2 || selectedMinBuyM2)} m²
+                      Satış tutarı ₺{formatTRY(selectedQuote?.salePricePerM2 ?? 0)}/m² × {formatDecimal(selectedDisplayM2 || selectedMinBuyM2)} m²
                     </div>
                     <div
                       style={{
@@ -2626,7 +2662,7 @@ export default function DashboardPage() {
                     >
                       <div style={{ textAlign: "right" }}>
                         <div style={{ fontSize: 9, opacity: 0.65 }}>m²</div>
-                        <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>{formatDecimal(buyM2)}</div>
+                        <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>{formatDecimal(selectedDisplayM2)}</div>
                       </div>
                     </div>
                     <div style={{ fontSize: 9, opacity: 0.58, marginTop: 6, lineHeight: 1.35 }}>

@@ -288,6 +288,54 @@ export function calculateSimpleBuyQuoteTRY(
 }
 
 /**
+ * Kullanıcı TL alanına **brüt arsa tutarını** yazdığında (komisyon hariç).
+ * m² = gross / salePricePerM2; komisyon brütün üzerine eklenir (1,005 ile bölünmez).
+ */
+export function calculateSimpleBuyQuoteFromGrossTRY(
+  salePricePerM2: number,
+  grossPropertyAmount: number,
+  opts?: { totalParcelM2?: number }
+) {
+  const sale = safeNum(salePricePerM2, 0);
+  const gross = Math.max(0, Math.round(Number(grossPropertyAmount) || 0));
+  const parcelTotal = opts?.totalParcelM2 != null ? Math.max(1, safeNum(opts.totalParcelM2, 1)) : null;
+  if (gross <= 0 || !Number.isFinite(sale) || sale <= 0) {
+    return {
+      salePricePerM2: sale,
+      bulkDiscountRate: 0,
+      discountedPricePerM2: sale,
+      grossAssetValue: 0,
+      buyFeeRate: BUY_FEE_RATE,
+      buyFee: 0,
+      totalCost: 0,
+      shareOfParcel: 0,
+      parcelShareMultiplier: 1,
+      parcelShareLabel: "",
+      adjustedListPricePerM2: sale,
+    };
+  }
+  const impliedM2 = gross / sale;
+  const buyFee = buyFeeFromGrossProperty(gross);
+  const totalCost = gross + buyFee;
+  const shareOfParcel = parcelTotal != null ? impliedM2 / parcelTotal : 0;
+  return {
+    salePricePerM2: sale,
+    bulkDiscountRate: 0,
+    discountedPricePerM2: sale,
+    grossAssetValue: gross,
+    buyFeeRate: BUY_FEE_RATE,
+    buyFee,
+    totalCost,
+    shareOfParcel,
+    parcelShareMultiplier: 1,
+    parcelShareLabel: "",
+    adjustedListPricePerM2: sale,
+    /** Brüt arsadan türetilen m² (satış ₺/m² ile) */
+    impliedM2,
+  };
+}
+
+/**
  * Satış ödeme özeti
  */
 export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) {
