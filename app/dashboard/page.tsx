@@ -4,11 +4,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapView from "../components/MapView";
 import { supabase } from "../../lib/supabaseClient";
+import { isVisibleOnExplorer } from "@/lib/propertyListing";
 import {
   simulatePropertyPriceTRY,
   calculateBuyQuoteTRY,
   getPostBuyPriceMultiplier,
 } from "@/lib/sim/realEstatePrice";
+import { normalizePropertyForPanel } from "@/lib/normalizePropertyForPanel";
+import { normalizeExplorerLatLng } from "@/lib/dashboard/explorerCoords";
+import { isAdminEmail } from "@/lib/admin/isAdmin";
+import type { PropertyRow } from "@/lib/terron/propertyRow";
 
 type MarketArea = {
   id: string;
@@ -24,31 +29,8 @@ type MarketArea = {
   shock_size: number;
 };
 
-type Property = {
-  id: string;
-  title: string;
-  country?: string | null;
-  city: string;
-  district: string | null;
-  neighborhood?: string | null;
-  zoning_status?: "imarli" | "imarsiz" | "bilinmiyor" | string | null;
-  price_per_m2?: number | null;
-  total_area_m2: number;
-  available_m2?: number | null;
-  sold_m2?: number | null;
-  min_buy_m2?: number | null;
-  max_buy_m2?: number | null;
-  risk_score: number;
-  development_score: number;
-  expected_annual_return: number;
-  last_30d_change: number;
-  latitude: number | null;
-  longitude: number | null;
-  quality_score?: number;
-  rental_yield_annual?: number;
-  total_shares?: number;
-  area?: MarketArea | null;
-};
+/** Supabase satırı; `area` join ile gelir */
+type Property = PropertyRow & { area?: MarketArea | null };
 
 type RiskBand = "" | "low" | "mid" | "high";
 type TrendBand = "" | "rising" | "flat" | "falling";
@@ -56,12 +38,6 @@ type PriceBand = "" | "0-10000" | "10001-25000" | "25001-50000" | "50001-100000"
 type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
 type InsightTab = "arsa" | "gelisim" | "risk";
-
-const USE_DEMO_SEED_IF_EMPTY = true;
-const DEMO_CITY_COUNT = 30;
-const DEMO_PROPERTY_CAP = 5000;
-const DEMO_MIN_PER_DISTRICT = 3;
-const DEMO_MAX_PER_DISTRICT = 10;
 
 type CartItem = {
   key: string;
@@ -75,40 +51,10 @@ type CartItem = {
   totalPaid: number;
 };
 
-type DemoPosition = {
-  id: string;
-  property_id: string;
-  m2: number;
-  total_paid: number;
-  entry_price_m2: number;
-  created_at: string;
-  snapshot: {
-    title?: string;
-    city?: string;
-    district?: string | null;
-    neighborhood?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-  };
-};
-
-type DistrictFeature = {
-  city: string;
-  district: string;
-  geometry: any;
-  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number };
-  centroid: [number, number];
-  areaApprox: number;
-};
-
-type ActivityItem = {
-  id: string;
-  name: string;
-  city: string;
-  district: string | null;
-  neighborhood: string | null;
-  m2: number;
-  createdAt: string;
+type FetchClientPaginatedResult = {
+  rows: Property[];
+  error?: Error | null;
+  strategy?: string;
 };
 
 const MapViewAny = MapView as any;
@@ -141,20 +87,22 @@ export default function DashboardPage() {
   const [zoning, setZoning] = useState<ZoningBand>("");
   const [areaBand, setAreaBand] = useState<AreaBand>("");
 
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
-  const [opening, setOpening] = useState(false);
+  const [buyInProgress, setBuyInProgress] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
 
-  const [buyM2, setBuyM2] = useState<number>(10);
-  const [buyBudget, setBuyBudget] = useState<number>(0);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [buyM2, setBuyM2] = useState(10);
+  const [buyBudget, setBuyBudget] = useState(0);
+  const [cart, setCart] = useState<CartItem[]>([]);
 
   const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
 
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [checkingOut, setCheckingOut] = useState(false);
-
-  const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
-
   const HEADER_H = isMobile ? 110 : 64;
+
+  /** Harita / panel: yayındaki tüm görünür ilanlar (seeded + kullanıcı) */
+  function showListedProperty(p: Property | null): boolean {
+    return !!p && isVisibleOnExplorer(p);
+  }
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 980);
@@ -163,63 +111,14 @@ export default function DashboardPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  function isDemoPropertyId(id: string) {
-    return typeof id === "string" && id.startsWith("demo_");
-  }
-
   function clamp01(x: number) {
     if (!Number.isFinite(x)) return 0;
     return Math.max(0, Math.min(1, x));
   }
 
-  function loadDemoPositions(): DemoPosition[] {
-    try {
-      const raw = localStorage.getItem("terron_demo_positions");
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveDemoPositions(list: DemoPosition[]) {
-    localStorage.setItem("terron_demo_positions", JSON.stringify(list));
-  }
-
-  function loadActivityFeed(): ActivityItem[] {
-    try {
-      const raw = localStorage.getItem("terron_activity_feed");
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveActivityFeed(list: ActivityItem[]) {
-    localStorage.setItem("terron_activity_feed", JSON.stringify(list.slice(0, 40)));
-    setActivityFeed(list.slice(0, 40));
-  }
-
-  function pushActivity(entry: Omit<ActivityItem, "id" | "createdAt">) {
-    const list = loadActivityFeed();
-    const next: ActivityItem = {
-      id: `act_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
-      createdAt: new Date().toISOString(),
-      ...entry,
-    };
-    list.unshift(next);
-    saveActivityFeed(list);
-  }
-
-  useEffect(() => {
-    setActivityFeed(loadActivityFeed());
-  }, []);
-
-  function cartTotal() {
-    return cart.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
+  function getListingPricePerM2(p: Property | null) {
+    if (!p) return 0;
+    return Math.max(0, Number(p.price_per_m2 ?? 0));
   }
 
   function getPropertyAvailableM2(p: Property | null) {
@@ -242,32 +141,66 @@ export default function DashboardPage() {
     const sold = getPropertySoldM2(p);
     const total = Math.max(1, Number(p.total_area_m2 ?? 1));
     const soldRatio = sold / total;
-
     const demandFromSold = soldRatio * 0.65;
     const demandFromDev = clamp01(Number(p.development_score ?? 50) / 100) * 0.22;
     const demandFromTrend = clamp01((Number(p.last_30d_change ?? 0) + 12) / 24) * 0.13;
-
     return clamp01(demandFromSold + demandFromDev + demandFromTrend);
   }
 
   function getDemandAdjustedPricePerM2(p: Property | null) {
     if (!p) return 0;
-
     const baseSim =
       getRealEstateSim(p)?.pricePerM2 ||
       Number(p.price_per_m2 ?? 0) ||
       Number(p.area?.base_m2_price ?? 0) ||
       1;
-
     const pressure = getDemandPressure(p);
     const demandPremium = 1 + pressure * 0.16;
     const lowDemandPenalty = pressure < 0.22 ? 1 - (0.22 - pressure) * 0.1 : 1;
-
     return Math.max(1, baseSim * demandPremium * lowDemandPenalty);
   }
 
   function getPositionVisiblePricePerM2(p: Property | null) {
     return getDemandAdjustedPricePerM2(p);
+  }
+
+  function getRealEstateSim(p: Property) {
+    if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
+    const seedScope = userId ?? "global";
+    const risk01 = clamp01((p.risk_score ?? 50) / 100);
+    const dev01 = clamp01((p.development_score ?? 50) / 100);
+    const quality01 =
+      p.quality_score != null
+        ? clamp01(Number(p.quality_score))
+        : clamp01(0.55 + dev01 * 0.2 - risk01 * 0.1);
+    const rentalYield = p.rental_yield_annual != null ? clamp01(Number(p.rental_yield_annual)) : 0.05;
+    const propertyForSim = {
+      id: p.id,
+      area_m2: Number(p.total_area_m2),
+      quality_score: quality01,
+      development_score: dev01,
+      risk_score: risk01,
+      rental_yield_annual: rentalYield,
+      demand_score: getDemandPressure(p),
+      buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
+      buy_pressure_m2: Number(p.sold_m2 ?? 0),
+      sell_pressure_count: 0,
+      sell_pressure_m2: 0,
+      area: {
+        id: p.area.id,
+        base_m2_price: Number(p.area.base_m2_price),
+        expected_real_return_annual: Number(p.area.expected_real_return_annual ?? 0.03),
+        inflation_annual: Number(p.area.inflation_annual ?? 0.0),
+        vol_annual: Number(p.area.vol_annual ?? 0.12),
+        cycle_strength: Number(p.area.cycle_strength ?? 0.6),
+        shock_prob_annual: Number(p.area.shock_prob_annual ?? 0.06),
+        shock_size: Number(p.area.shock_size ?? -0.08),
+      },
+    };
+    const out = simulatePropertyPriceTRY(propertyForSim as Parameters<typeof simulatePropertyPriceTRY>[0], 0, seedScope);
+    const totalShares = Number(p.total_shares ?? 100000);
+    const sharePrice = out.price / Math.max(1, totalShares);
+    return { ...out, sharePrice, totalShares };
   }
 
   function getBuyQuoteForProperty(p: Property | null, m2: number) {
@@ -279,11 +212,13 @@ export default function DashboardPage() {
         grossAssetValue: 0,
         buyFee: 0,
         totalCost: 0,
+        shareOfParcel: 0,
+        parcelShareMultiplier: 1,
+        parcelShareLabel: "",
+        adjustedListPricePerM2: 0,
       };
     }
-
     const marketPricePerM2 = getPositionVisiblePricePerM2(p);
-
     return calculateBuyQuoteTRY(
       {
         id: p.id,
@@ -314,7 +249,7 @@ export default function DashboardPage() {
           shock_prob_annual: Number(p.area?.shock_prob_annual ?? 0.06),
           shock_size: Number(p.area?.shock_size ?? -0.08),
         },
-      } as any,
+      } as Parameters<typeof calculateBuyQuoteTRY>[0],
       marketPricePerM2,
       Math.max(1, Number(m2 || 1))
     );
@@ -324,12 +259,10 @@ export default function DashboardPage() {
     setItems((prev) =>
       prev.map((p) => {
         if (p.id !== propertyId) return p;
-
         const available = getPropertyAvailableM2(p);
         const sold = getPropertySoldM2(p);
         const currentPrice = Number(p.price_per_m2 ?? p.area?.base_m2_price ?? 1);
         const buyLift = getPostBuyPriceMultiplier(purchasedM2);
-
         return {
           ...p,
           available_m2: Math.max(0, available - purchasedM2),
@@ -338,15 +271,12 @@ export default function DashboardPage() {
         };
       })
     );
-
     setSelected((prev) => {
       if (!prev || prev.id !== propertyId) return prev;
-
       const available = getPropertyAvailableM2(prev);
       const sold = getPropertySoldM2(prev);
       const currentPrice = Number(prev.price_per_m2 ?? prev.area?.base_m2_price ?? 1);
       const buyLift = getPostBuyPriceMultiplier(purchasedM2);
-
       return {
         ...prev,
         available_m2: Math.max(0, available - purchasedM2),
@@ -366,45 +296,41 @@ export default function DashboardPage() {
   function syncBuyFromBudget(nextBudget: number, p: Property | null) {
     const safeBudget = Math.max(0, nextBudget || 0);
     setBuyBudget(safeBudget);
-
     const listPrice = Math.max(1, getPositionVisiblePricePerM2(p));
     const calcM2 = safeBudget / listPrice;
     setBuyM2(Number(calcM2.toFixed(2)));
   }
 
+  function cartTotal() {
+    return cart.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
+  }
+
   function addSelectedToCart() {
     if (!selected) {
-      alert("Önce bir arsa seç.");
+      alert("Önce bir arsa seçin.");
       return;
     }
-
     const m2 = Number(buyM2);
     if (!Number.isFinite(m2) || m2 <= 0) {
       alert("m² miktarı geçersiz.");
       return;
     }
-
     const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
     const maxBuy = Number(selected.max_buy_m2 ?? getPropertyAvailableM2(selected));
     const available = getPropertyAvailableM2(selected);
-
     if (m2 < minBuy) {
       alert(`Minimum alım ${formatNumber(minBuy)} m²`);
       return;
     }
-
     if (m2 > available) {
       alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
       return;
     }
-
     if (Number.isFinite(maxBuy) && m2 > maxBuy) {
-      alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsin.`);
+      alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsiniz.`);
       return;
     }
-
     const quote = getBuyQuoteForProperty(selected, m2);
-
     setCart((prev) => [
       {
         key: `${selected.id}_${Date.now()}`,
@@ -419,8 +345,7 @@ export default function DashboardPage() {
       },
       ...prev,
     ]);
-
-    alert("Sepete eklendi ✅");
+    alert("Sepete eklendi ✓");
   }
 
   function removeFromCart(key: string) {
@@ -429,6 +354,350 @@ export default function DashboardPage() {
 
   function clearCart() {
     setCart([]);
+  }
+
+  async function ensureAndLoadWallet() {
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) return;
+    const { data: w, error: wErr } = await supabase
+      .from("wallets")
+      .select("user_id,balance")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (wErr) {
+      console.warn("[wallet] select error:", wErr);
+      return;
+    }
+    if (w?.balance != null) {
+      setWalletBalance(Number(w.balance));
+      return;
+    }
+    const { data: ins, error: insErr } = await supabase
+      .from("wallets")
+      .insert({ user_id: user.id, balance: 1000000 })
+      .select("balance")
+      .single();
+    if (insErr) {
+      console.warn("[wallet] insert error:", insErr);
+      return;
+    }
+    setWalletBalance(Number(ins.balance));
+  }
+
+  async function syncWalletBalanceToDb(nextBalance: number) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) throw new Error("Kullanıcı bulunamadı.");
+    const rounded = Math.max(0, Math.round(Number(nextBalance || 0)));
+    const { data: walletRow, error: walletErr } = await supabase
+      .from("wallets")
+      .select("user_id,balance")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (walletErr) throw walletErr;
+    if (!walletRow) {
+      const { error: insertErr } = await supabase.from("wallets").insert({
+        user_id: user.id,
+        balance: rounded,
+      });
+      if (insertErr) throw insertErr;
+      return rounded;
+    }
+    const { error: updateErr } = await supabase
+      .from("wallets")
+      .update({
+        balance: rounded,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+    if (updateErr) throw updateErr;
+    return rounded;
+  }
+
+  async function handleOpenPosition() {
+    try {
+      if (!selected) {
+        alert("Önce bir arsa seçin.");
+        return;
+      }
+      const m2 = Number(buyM2);
+      if (!Number.isFinite(m2) || m2 <= 0) {
+        alert("m² miktarı geçersiz.");
+        return;
+      }
+      const available = getPropertyAvailableM2(selected);
+      const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
+      const maxBuy = Number(selected.max_buy_m2 ?? available);
+      if (m2 < minBuy) {
+        alert(`Minimum alım ${formatNumber(minBuy)} m²`);
+        return;
+      }
+      if (m2 > available) {
+        alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
+        return;
+      }
+      if (Number.isFinite(maxBuy) && m2 > maxBuy) {
+        alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsiniz.`);
+        return;
+      }
+      const quote = getBuyQuoteForProperty(selected, m2);
+      const entryPriceM2 = quote.discountedPricePerM2;
+      const totalPaid = quote.totalCost;
+
+      setBuyInProgress(true);
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
+      if (!user) {
+        alert("Giriş yapılmamış görünüyor. Tekrar giriş yapın.");
+        setBuyInProgress(false);
+        return;
+      }
+      const { data: w, error: wErr } = await supabase
+        .from("wallets")
+        .select("user_id,balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (wErr) {
+        alert("Cüzdan okunamadı: " + wErr.message);
+        setBuyInProgress(false);
+        return;
+      }
+      let balance = w?.balance != null ? Number(w.balance) : null;
+      if (balance == null) {
+        const { data: ins, error: insErr } = await supabase
+          .from("wallets")
+          .insert({ user_id: user.id, balance: 1000000 })
+          .select("balance")
+          .single();
+        if (insErr) {
+          alert("Cüzdan oluşturulamadı: " + insErr.message);
+          setBuyInProgress(false);
+          return;
+        }
+        balance = Number(ins.balance);
+      }
+      if (balance < totalPaid) {
+        alert(`Yetersiz bakiye. Bakiye: ₺${formatTRY(Math.round(balance))}`);
+        setWalletBalance(balance);
+        setBuyInProgress(false);
+        return;
+      }
+      const nextAvailable = Math.max(0, available - m2);
+      const nextSold = getPropertySoldM2(selected) + m2;
+      const { error: propErr } = await supabase
+        .from("properties")
+        .update({
+          available_m2: nextAvailable,
+          sold_m2: nextSold,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selected.id)
+        .gte("available_m2", m2);
+      if (propErr) {
+        alert("Arsa stoğu güncellenemedi: " + propErr.message);
+        setBuyInProgress(false);
+        return;
+      }
+      const newBalance = balance - totalPaid;
+      const { error: upErr } = await supabase
+        .from("wallets")
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .eq("user_id", user.id);
+      if (upErr) {
+        await supabase
+          .from("properties")
+          .update({
+            available_m2: available,
+            sold_m2: getPropertySoldM2(selected),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selected.id);
+        alert("Bakiye güncellenemedi: " + upErr.message);
+        setBuyInProgress(false);
+        return;
+      }
+      const payload = {
+        user_id: user.id,
+        property_id: selected.id,
+        m2,
+        total_paid: totalPaid,
+        entry_price_m2: entryPriceM2,
+        amount: totalPaid,
+        entry_price: entryPriceM2,
+        units: m2,
+      };
+      const { error: posErr } = await supabase.from("positions").insert(payload);
+      if (posErr) {
+        await supabase
+          .from("wallets")
+          .update({ balance: balance, updated_at: new Date().toISOString() })
+          .eq("user_id", user.id);
+        await supabase
+          .from("properties")
+          .update({
+            available_m2: available,
+            sold_m2: getPropertySoldM2(selected),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selected.id);
+        alert("Pozisyon açılamadı: " + posErr.message);
+        setBuyInProgress(false);
+        return;
+      }
+      setWalletBalance(newBalance);
+      updateLocalPropertyM2(selected.id, m2);
+      await ensureAndLoadWallet();
+      alert("m² pozisyonu açıldı ✓");
+      setBuyInProgress(false);
+    } catch (e: unknown) {
+      console.error("[POS] exception:", e);
+      alert("Beklenmeyen hata: " + (e instanceof Error ? e.message : String(e)));
+      setBuyInProgress(false);
+    }
+  }
+
+  async function handleCheckoutCart() {
+    try {
+      if (cart.length === 0) {
+        alert("Sepet boş.");
+        return;
+      }
+      const total = cartTotal();
+      const currentBalance = Number(walletBalance ?? 0);
+      if (currentBalance < total) {
+        alert(
+          `Yetersiz bakiye. Bakiye: ₺${formatTRY(Math.round(currentBalance))} • Sepet: ₺${formatTRY(Math.round(total))}`,
+        );
+        return;
+      }
+      setCheckingOut(true);
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
+      if (!user) {
+        alert("Giriş yapılmamış görünüyor.");
+        setCheckingOut(false);
+        return;
+      }
+      const realItems = cart;
+      const realTotal = realItems.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
+      const { data: w, error: wErr } = await supabase
+        .from("wallets")
+        .select("user_id,balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (wErr) {
+        alert("Cüzdan okunamadı: " + wErr.message);
+        setCheckingOut(false);
+        return;
+      }
+      const balanceDb = w?.balance != null ? Number(w.balance) : currentBalance;
+      if (balanceDb < realTotal) {
+        alert(
+          `Yetersiz bakiye (sunucu). Bakiye: ₺${formatTRY(Math.round(balanceDb))} • Sepet: ₺${formatTRY(Math.round(realTotal))}`
+        );
+        setCheckingOut(false);
+        return;
+      }
+      const touchedProps: Array<{ id: string; available: number; sold: number }> = [];
+      for (const it of realItems) {
+        const currentProp = items.find((x) => x.id === it.property.id) ?? it.property;
+        const avail = getPropertyAvailableM2(currentProp);
+        const sold = getPropertySoldM2(currentProp);
+        if (it.m2 > avail) {
+          alert(`${currentProp.title} için yeterli m² kalmadı.`);
+          setCheckingOut(false);
+          return;
+        }
+        touchedProps.push({ id: currentProp.id, available: avail, sold });
+        const { error: propErr } = await supabase
+          .from("properties")
+          .update({
+            available_m2: Math.max(0, avail - it.m2),
+            sold_m2: sold + it.m2,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", currentProp.id)
+          .gte("available_m2", it.m2);
+        if (propErr) {
+          alert("Arsa stoğu güncellenemedi: " + propErr.message);
+          setCheckingOut(false);
+          return;
+        }
+      }
+      const newBalanceDb = balanceDb - realTotal;
+      const { error: upErr } = await supabase
+        .from("wallets")
+        .update({ balance: newBalanceDb, updated_at: new Date().toISOString() })
+        .eq("user_id", user.id);
+      if (upErr) {
+        for (const p of touchedProps) {
+          await supabase
+            .from("properties")
+            .update({
+              available_m2: p.available,
+              sold_m2: p.sold,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", p.id);
+        }
+        alert("Bakiye güncellenemedi: " + upErr.message);
+        setCheckingOut(false);
+        return;
+      }
+      const insertedIds: string[] = [];
+      for (const it of realItems) {
+        const payload = {
+          user_id: user.id,
+          property_id: it.property.id,
+          m2: it.m2,
+          total_paid: it.totalPaid,
+          entry_price_m2: it.discountedPricePerM2,
+          amount: it.totalPaid,
+          entry_price: it.discountedPricePerM2,
+          units: it.m2,
+        };
+        const { data: ins, error: posErr } = await supabase
+          .from("positions")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (posErr) {
+          await supabase
+            .from("wallets")
+            .update({ balance: balanceDb, updated_at: new Date().toISOString() })
+            .eq("user_id", user.id);
+          for (const p of touchedProps) {
+            await supabase
+              .from("properties")
+              .update({
+                available_m2: p.available,
+                sold_m2: p.sold,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", p.id);
+          }
+          if (insertedIds.length > 0) {
+            await supabase.from("positions").delete().in("id", insertedIds);
+          }
+          alert("Toplu alım sırasında hata: " + posErr.message);
+          setCheckingOut(false);
+          return;
+        }
+        if (ins?.id) insertedIds.push(String(ins.id));
+        updateLocalPropertyM2(it.property.id, it.m2);
+      }
+      setWalletBalance(newBalanceDb);
+      await ensureAndLoadWallet();
+
+      clearCart();
+      alert("Toplu m² alımı tamam ✓");
+      setCheckingOut(false);
+    } catch (e: unknown) {
+      console.error("[CART] exception:", e);
+      alert("Beklenmeyen hata: " + (e instanceof Error ? e.message : String(e)));
+      setCheckingOut(false);
+    }
   }
 
   useEffect(() => {
@@ -476,103 +745,276 @@ export default function DashboardPage() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  async function load(): Promise<void> {
-    const PAGE = 1000;
-    setPropertiesLoading(true);
+  useEffect(() => {
+    if (!email) return;
+    void ensureAndLoadWallet();
+  }, [email]);
 
-    const buildQuery = () => {
-      let q = supabase
-        .from("properties")
-        .select(
-          `
-        *,
-        area:market_areas (
-          id,
-          name,
-          city,
-          district,
-          base_m2_price,
-          expected_real_return_annual,
-          inflation_annual,
-          vol_annual,
-          cycle_strength,
-          shock_prob_annual,
-          shock_size
-        )
-      `
-        )
-        .eq("status", "active")
+  async function load(): Promise<void> {
+    /** Sunucu tarafı explorer filtreleri (.eq, .lte, …) — select ile aynı scope içinde */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const applyExplorerFilters = (q: any) => {
+      let qq = q
+        .in("listing_status", ["approved"])
         .order("created_at", { ascending: false });
 
-      if (city) q = q.eq("city", city);
-      if (district) q = q.eq("district", district);
-      if (neighborhood) q = q.eq("neighborhood", neighborhood);
+      if (city) qq = qq.eq("city", city);
+      if (district) qq = qq.eq("district", district);
+      if (neighborhood) qq = qq.eq("neighborhood", neighborhood);
 
       if (riskBand) {
-        if (riskBand === "low") q = q.lte("risk_score", 30);
-        if (riskBand === "mid") q = q.gt("risk_score", 30).lte("risk_score", 70);
-        if (riskBand === "high") q = q.gt("risk_score", 70);
+        if (riskBand === "low") qq = qq.lte("risk_score", 30);
+        if (riskBand === "mid") qq = qq.gt("risk_score", 30).lte("risk_score", 70);
+        if (riskBand === "high") qq = qq.gt("risk_score", 70);
       }
 
-      if (trendBand === "rising") q = q.gte("last_30d_change", 10);
-      if (trendBand === "flat") q = q.gte("last_30d_change", -3).lte("last_30d_change", 10);
-      if (trendBand === "falling") q = q.lte("last_30d_change", -3);
+      if (trendBand === "rising") qq = qq.gte("last_30d_change", 10);
+      if (trendBand === "flat") qq = qq.gte("last_30d_change", -3).lte("last_30d_change", 10);
+      if (trendBand === "falling") qq = qq.lte("last_30d_change", -3);
 
-      if (priceBand === "0-10000") q = q.gte("price_per_m2", 0).lte("price_per_m2", 10000);
-      if (priceBand === "10001-25000") q = q.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
-      if (priceBand === "25001-50000") q = q.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
-      if (priceBand === "50001-100000") q = q.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
-      if (priceBand === "100001+") q = q.gte("price_per_m2", 100001);
+      if (priceBand === "0-10000") qq = qq.gte("price_per_m2", 0).lte("price_per_m2", 10000);
+      if (priceBand === "10001-25000") qq = qq.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
+      if (priceBand === "25001-50000") qq = qq.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
+      if (priceBand === "50001-100000") qq = qq.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
+      if (priceBand === "100001+") qq = qq.gte("price_per_m2", 100001);
 
-      if (zoning) q = q.eq("zoning_status", zoning);
+      if (zoning) qq = qq.eq("zoning_status", zoning);
 
-      if (areaBand === "0-500") q = q.gte("total_area_m2", 0).lte("total_area_m2", 500);
-      if (areaBand === "501-2000") q = q.gte("total_area_m2", 501).lte("total_area_m2", 2000);
-      if (areaBand === "2001-10000") q = q.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
-      if (areaBand === "10001+") q = q.gte("total_area_m2", 10001);
+      if (areaBand === "0-500") qq = qq.gte("total_area_m2", 0).lte("total_area_m2", 500);
+      if (areaBand === "501-2000") qq = qq.gte("total_area_m2", 501).lte("total_area_m2", 2000);
+      if (areaBand === "2001-10000") qq = qq.gte("total_area_m2", 2001).lte("total_area_m2", 10000);
+      if (areaBand === "10001+") qq = qq.gte("total_area_m2", 10001);
 
-      return q;
+      return qq;
     };
 
-    const all: Property[] = [];
-    let from = 0;
-    let batchCount = 0;
+    async function fetchClientPaginated(): Promise<FetchClientPaginatedResult> {
+      const PAGE = 1000;
+      let from = 0;
+      const acc: Property[] = [];
 
-    while (true) {
-      const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+      const normalizeRow = (row: Record<string, unknown>): Property | null => {
+        const rawLat = Number(row?.latitude);
+        const rawLng = Number(row?.longitude);
 
-      if (error) {
-        console.error("[dashboard] properties load error:", error);
-        break;
+        let lat = rawLat;
+        let lng = rawLng;
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+        if (lat > 45 && lng < 45) {
+          const temp = lat;
+          lat = lng;
+          lng = temp;
+        }
+
+        if (lat < 35 || lat > 43 || lng < 25 || lng > 45) return null;
+
+        return {
+          ...row,
+          latitude: lat,
+          longitude: lng,
+        } as Property;
+      };
+
+      while (true) {
+        console.log("[dashboard] starting property page fetch", { from, PAGE });
+
+        let data: unknown[] | null = null;
+        let queryError: { message?: string; details?: string; hint?: string; code?: string } | null = null;
+        let pageStrategy = "server_filters";
+
+        try {
+          let q = supabase.from("properties").select(`
+            id,
+            title,
+            country,
+            city,
+            district,
+            neighborhood,
+            latitude,
+            longitude,
+            price_per_m2,
+            total_area_m2,
+            available_m2,
+            sold_m2,
+            min_buy_m2,
+            max_buy_m2,
+            zoning_status,
+            risk_score,
+            development_score,
+            expected_annual_return,
+            last_30d_change,
+            rental_yield_annual,
+            quality_score,
+            created_at,
+            listing_status,
+            is_real
+          `);
+
+          try {
+            q = typeof applyExplorerFilters === "function" ? applyExplorerFilters(q) : q.order("created_at", { ascending: false });
+          } catch (filterBuildError) {
+            console.error("[dashboard] applyExplorerFilters build failed", filterBuildError);
+            q = q.order("created_at", { ascending: false });
+            pageStrategy = "filter_build_failed_fallback";
+          }
+
+          const res = await q.range(from, from + PAGE - 1);
+          data = (res.data as unknown[]) ?? null;
+          queryError = res.error
+            ? (res.error as { message?: string; details?: string; hint?: string; code?: string })
+            : null;
+        } catch (e) {
+          console.error("[dashboard] filtered query threw", e);
+          queryError = { message: String(e) };
+        }
+
+        if (queryError) {
+          const err = queryError;
+          console.error("[dashboard] fetchClientPaginated query error", {
+            message: err?.message,
+            details: err?.details,
+            hint: err?.hint,
+            code: err?.code,
+            from,
+            pageSize: PAGE,
+          });
+
+          pageStrategy = "minimal_fallback";
+
+          try {
+            const fallback = await supabase
+              .from("properties")
+              .select(`
+            id,
+            title,
+            country,
+            city,
+            district,
+            neighborhood,
+            latitude,
+            longitude,
+            price_per_m2,
+            total_area_m2,
+            available_m2,
+            sold_m2,
+            min_buy_m2,
+            max_buy_m2,
+            zoning_status,
+            risk_score,
+            development_score,
+            expected_annual_return,
+            last_30d_change,
+            rental_yield_annual,
+            quality_score,
+            created_at,
+            listing_status,
+            is_real
+          `)
+              .order("created_at", { ascending: false })
+              .range(from, from + PAGE - 1);
+
+            data = (fallback.data as unknown[]) ?? null;
+            const fbErr = fallback.error as { message?: string; details?: string; hint?: string; code?: string } | null;
+
+            if (fbErr) {
+              console.error("[dashboard] fallback query failed but page will continue", {
+                message: fbErr?.message,
+                details: fbErr?.details,
+                hint: fbErr?.hint,
+                code: fbErr?.code,
+                from,
+                pageSize: PAGE,
+              });
+
+              return {
+                rows: acc,
+                error: null,
+                strategy: "fallback_failed_continue",
+              };
+            }
+          } catch (fallbackThrown) {
+            console.error("[dashboard] fallback query threw but page will continue", fallbackThrown);
+            return {
+              rows: acc,
+              error: null,
+              strategy: "fallback_threw_continue",
+            };
+          }
+        }
+
+        const chunk = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        console.log("[dashboard] fetched raw chunk:", chunk.length);
+
+        let normalized = chunk.map(normalizeRow).filter((x): x is Property => x !== null);
+
+        // Haritada yalnızca normalizeRow ile TR içi geçerli koordinatlı kayıtlar kalır; mapItemsForView ek süzüm yapar.
+        // Haritada yine yalnızca normalizeRow ile TR içi geçerli koordinatlı kayıtlar kalır; mapItemsForView ek süzüm yapar.
+
+        console.log("[dashboard] normalized valid chunk:", normalized.length);
+        acc.push(...normalized);
+
+        if (!data || chunk.length < PAGE) break;
+        from += PAGE;
       }
 
-      const chunk = (data ?? []) as Property[];
-      all.push(...chunk);
-      batchCount += 1;
-      if (chunk.length < PAGE) break;
-      from += PAGE;
+      console.log("[dashboard] final fetched rows:", acc.length);
+
+      return {
+        rows: acc,
+        error: null,
+        strategy: "success",
+      };
     }
 
-    if (USE_DEMO_SEED_IF_EMPTY && all.length < 100) {
-      try {
-        const seeded = await generateDemoPropertiesFromDistrictGeo({
-          countCities: DEMO_CITY_COUNT,
-          countProps: DEMO_PROPERTY_CAP,
-          minPerDistrict: DEMO_MIN_PER_DISTRICT,
-          maxPerDistrict: DEMO_MAX_PER_DISTRICT,
-          seed: 1337,
+    let all: Property[] = [];
+    let loadSource = "none";
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (token) {
+        const res = await fetch("/api/properties/dashboard", {
+          headers: { Authorization: `Bearer ${token}` },
         });
+        const json = (await res.json()) as { ok?: boolean; items?: Property[]; error?: string; useClient?: boolean };
+        if (res.ok && json.ok && Array.isArray(json.items)) {
+          all = json.items;
+          loadSource = "api_service_role";
+        } else if (res.status === 503) {
+          console.warn("[dashboard] API 503 (service role yok), istemci sorgusu kullanılıyor");
+        } else if (!res.ok) {
+          console.warn("[dashboard] API error:", json?.error, res.status);
+        }
+      }
+    } catch (e) {
+      console.warn("[dashboard] /api/properties/dashboard fetch failed:", e);
+    }
 
-        setItems(seeded);
-        console.log("[dashboard] batch count:", batchCount, "| final loaded count:", seeded.length, "(demo seed)");
-        return;
-      } catch (e) {
-        console.error("[DEMO] seed error:", e);
+    if (all.length === 0) {
+      const clientResult = await fetchClientPaginated();
+      all = clientResult.rows;
+      loadSource = clientResult.strategy ?? "client_fetch";
+      if (clientResult.strategy && clientResult.strategy !== "success") {
+        console.error("[dashboard] client fetch ended with strategy (no throw):", clientResult.strategy);
       }
     }
+
+    let mapReady = 0;
+    for (const p of all) {
+      if (normalizeExplorerLatLng(p.latitude, p.longitude)) mapReady += 1;
+    }
+
+    console.log("[dashboard] fetched rows:", all.length);
+    console.log("[dashboard] properties load:", {
+      totalRowsFetched: all.length,
+      afterCoordNormalization: mapReady,
+      loadSource,
+    });
 
     setItems(all);
-    console.log("[dashboard] batch count:", batchCount, "| final loaded count:", all.length);
+    console.log("[dashboard] map properties count:", all.length);
   }
 
   useEffect(() => {
@@ -581,12 +1023,25 @@ export default function DashboardPage() {
       return;
     }
     let mounted = true;
+    const onRefresh = () => {
+      if (!mounted) return;
+      setPropertiesLoading(true);
+      void load().finally(() => {
+        if (mounted) setPropertiesLoading(false);
+      });
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("terron:properties:refresh", onRefresh);
+    }
     setPropertiesLoading(true);
-    load().finally(() => {
+    void load().finally(() => {
       if (mounted) setPropertiesLoading(false);
     });
     return () => {
       mounted = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("terron:properties:refresh", onRefresh);
+      }
     };
   }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
 
@@ -621,6 +1076,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelected(null);
+    setBuyInProgress(false);
   }, [city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand, searchText]);
 
   const filteredItems = useMemo(() => {
@@ -647,6 +1103,302 @@ export default function DashboardPage() {
 
     return arr;
   }, [items, searchText]);
+
+  /** UUID / string id farkları (yeni kayıtlar bazen farklı casing) */
+  function samePropertyId(a: unknown, b: unknown): boolean {
+    const sa = String(a ?? "").trim();
+    const sb = String(b ?? "").trim();
+    if (sa === sb) return true;
+    return sa.toLowerCase() === sb.toLowerCase();
+  }
+
+  /** UUID tire / format farkları (Postgres vs string) */
+  function samePropertyIdLoose(a: unknown, b: unknown): boolean {
+    if (samePropertyId(a, b)) return true;
+    const sa = String(a ?? "")
+      .replace(/-/g, "")
+      .toLowerCase();
+    const sb = String(b ?? "")
+      .replace(/-/g, "")
+      .toLowerCase();
+    if (sa.length >= 24 && sb.length >= 24 && sa === sb) return true;
+    return false;
+  }
+
+  function selectPropertyForPanel(p: Property | null | undefined): Property | null {
+    if (!p) return null;
+    return normalizePropertyForPanel(p as any) as Property;
+  }
+
+  /** MapView: id boşken kullanılan ll_lat_lng — id ile DB eşleşmezse koordinattan bul */
+  function parseSyntheticLlId(id: string): { lat: number; lng: number } | null {
+    const m = /^ll_([\d.-]+)_([\d.-]+)$/.exec(String(id).trim());
+    if (!m) return null;
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  }
+
+  function normLoc(s: string | null | undefined): string {
+    return String(s ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  function hashStringToSeed32(s: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  /** Harita tıklaması → tam Property: id → konum (şehir/ilçe/mahalle) → koordinat */
+  function findPropertyForMapSelection(p: {
+    id: string;
+    propertyId?: string | null;
+    title: string;
+    city: string;
+    district: string | null;
+    neighborhood: string | null;
+    latitude: number;
+    longitude: number;
+  }): Property | null {
+    const keys = [p.id, p.propertyId].filter((x) => x != null && String(x).trim() !== "").map((x) => String(x).trim());
+    for (const k of keys) {
+      const f =
+        items.find((x) => samePropertyIdLoose(x.id, k)) ?? filteredItems.find((x) => samePropertyIdLoose(x.id, k));
+      if (f) return f;
+    }
+
+    const nc = normLoc(p.city);
+    const nd = normLoc(p.district);
+    const nn = normLoc(p.neighborhood);
+    const nt = normLoc(p.title);
+
+    if (nc.trim() !== "") {
+      const locCandidates = items.filter((x) => {
+        if (normLoc(x.city) !== nc) return false;
+        if (normLoc(x.district) !== nd) return false;
+        if (normLoc(x.neighborhood) !== nn) return false;
+        return true;
+      });
+
+      if (locCandidates.length === 1) return locCandidates[0];
+
+      if (locCandidates.length > 1) {
+        const byTitle = locCandidates.filter((x) => normLoc(x.title) === nt);
+        if (byTitle.length === 1) return byTitle[0];
+
+        const lat0 = Number(p.latitude);
+        const lng0 = Number(p.longitude);
+        if (Number.isFinite(lat0) && Number.isFinite(lng0)) {
+          const eps = 1.2e-4;
+          let best: Property | null = null;
+          let bestSum = Infinity;
+          for (const x of locCandidates) {
+            const xlat = Number(x.latitude);
+            const xlng = Number(x.longitude);
+            if (!Number.isFinite(xlat) || !Number.isFinite(xlng)) continue;
+            const sum = Math.abs(xlat - lat0) + Math.abs(xlng - lng0);
+            if (sum < bestSum && sum <= eps * 2) {
+              bestSum = sum;
+              best = x;
+            }
+          }
+          if (best) return best;
+        }
+        if (byTitle.length > 0) return byTitle[0];
+      }
+    }
+
+    const lat = Number(p.latitude);
+    const lng = Number(p.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const eps = 1.2e-4;
+    let best: Property | null = null;
+    let bestSum = Infinity;
+    for (const x of items) {
+      const xlat = Number(x.latitude);
+      const xlng = Number(x.longitude);
+      if (!Number.isFinite(xlat) || !Number.isFinite(xlng)) continue;
+      const sum = Math.abs(xlat - lat) + Math.abs(xlng - lng);
+      if (sum < bestSum && sum <= eps * 2) {
+        bestSum = sum;
+        best = x;
+      }
+    }
+    return best;
+  }
+
+  type MapItemPayload = {
+    id: string;
+    propertyId?: string | null;
+    title: string;
+    city: string;
+    district: string | null;
+    neighborhood: string | null;
+    latitude: number;
+    longitude: number;
+    country?: string | null;
+    price_per_m2?: number | null;
+    total_area_m2?: number;
+    available_m2?: number | null;
+    sold_m2?: number | null;
+    min_buy_m2?: number | null;
+    max_buy_m2?: number | null;
+    zoning_status?: string | null;
+    is_real?: boolean | null;
+    listing_status?: string | null;
+    listing_description?: string | null;
+    owner_name?: string | null;
+    owner_phone?: string | null;
+    owner_email?: string | null;
+    is_verified?: boolean | null;
+    ada_no?: string | null;
+    parcel_no?: string | null;
+  };
+
+  /** items’ta bulunamadıysa ama MapView tam alan gönderdiyse (aynı id ile) */
+  function propertyFromMapItemPayload(p: MapItemPayload): Property | null {
+    const id = String(p.propertyId ?? p.id ?? "").trim();
+    if (!id) return null;
+    const ta = Number(p.total_area_m2);
+    const total = Number.isFinite(ta) && ta > 0 ? ta : 1000;
+    return normalizePropertyForPanel({
+      id,
+      title: p.title || "Arsa",
+      city: p.city || "—",
+      district: p.district,
+      neighborhood: p.neighborhood ?? null,
+      country: p.country ?? null,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      total_area_m2: total,
+      available_m2: p.available_m2 ?? null,
+      sold_m2: p.sold_m2 ?? null,
+      min_buy_m2: p.min_buy_m2 ?? null,
+      max_buy_m2: p.max_buy_m2 ?? null,
+      risk_score: 50,
+      development_score: 50,
+      expected_annual_return: 0,
+      last_30d_change: 0,
+      price_per_m2: p.price_per_m2 ?? 0,
+      zoning_status: p.zoning_status ?? "bilinmiyor",
+      is_real: p.is_real,
+      listing_status: p.listing_status ?? null,
+      listing_description: p.listing_description ?? null,
+      owner_name: p.owner_name ?? null,
+      owner_phone: p.owner_phone ?? null,
+      owner_email: p.owner_email ?? null,
+      is_verified: p.is_verified ?? null,
+      ada_no: p.ada_no ?? null,
+      parcel_no: p.parcel_no ?? null,
+    }) as Property;
+  }
+
+  /** Son çare: deterministik çeşitlilik (tümü 0 m² / aynı metin olmasın) */
+  function propertyFromMapFallback(p: {
+    id: string;
+    title: string;
+    city: string;
+    district: string | null;
+    neighborhood: string | null;
+    latitude: number;
+    longitude: number;
+    country?: string | null;
+  }): Property {
+    const seed = hashStringToSeed32(`${p.id}|${p.latitude}|${p.longitude}`);
+    const r = (n: number) => (((seed ^ n * 2246822519) * 2654435761) >>> 0) % 1000000;
+    const total = 2000 + (r(1) % 8000);
+    const sold = Math.min(Math.floor(total * (0.08 + (r(2) % 25) / 200)), Math.max(0, total - 100));
+    const available = Math.max(0, total - sold);
+    const price = 2500 + (r(3) % 45000);
+    return normalizePropertyForPanel({
+      id: p.id,
+      title: p.title || "Arsa",
+      city: p.city || "—",
+      district: p.district,
+      neighborhood: p.neighborhood ?? null,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      country: p.country ?? null,
+      total_area_m2: total,
+      available_m2: available,
+      sold_m2: sold,
+      risk_score: 30 + (r(4) % 50),
+      development_score: 30 + (r(5) % 50),
+      expected_annual_return: (r(6) % 15) + 2,
+      last_30d_change: ((r(7) % 21) - 10) / 10,
+      price_per_m2: price,
+      zoning_status: "bilinmiyor",
+    }) as Property;
+  }
+
+  /** MapView: arama metni sonrası liste; koordinat TR + normalizeExplorerLatLng */
+  const mapItemsForView = useMemo(() => {
+    const out = filteredItems
+      .map((p) => {
+        const n = normalizeExplorerLatLng(p.latitude, p.longitude);
+        if (!n) return null;
+        const lat = n.latitude;
+        const lng = n.longitude;
+        const idStr = String(p.id ?? "").trim();
+        return {
+          id: idStr || `ll_${lat.toFixed(6)}_${lng.toFixed(6)}`,
+          propertyId: idStr || undefined,
+          title: String(p.title ?? "").trim() || "Arsa",
+          city: String(p.city ?? "").trim() || "—",
+          district: p.district ?? null,
+          neighborhood: p.neighborhood ?? null,
+          latitude: lat,
+          longitude: lng,
+          country: p.country ?? undefined,
+          price_per_m2: p.price_per_m2 ?? null,
+          total_area_m2: p.total_area_m2,
+          available_m2: p.available_m2 ?? null,
+          sold_m2: p.sold_m2 ?? null,
+          min_buy_m2: p.min_buy_m2 ?? null,
+          max_buy_m2: p.max_buy_m2 ?? null,
+          zoning_status: p.zoning_status ?? null,
+          is_real: p.is_real,
+          listing_status: p.listing_status ?? null,
+          listing_description: p.listing_description ?? null,
+          owner_name: p.owner_name ?? null,
+          owner_phone: p.owner_phone ?? null,
+          owner_email: p.owner_email ?? null,
+          is_verified: p.is_verified ?? null,
+          ada_no: p.ada_no ?? null,
+          parcel_no: p.parcel_no ?? null,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    console.log("[dashboard] map pipeline:", {
+      itemsAfterSearchFilter: filteredItems.length,
+      mapItemsAfterCoordFilter: out.length,
+    });
+    return out;
+  }, [filteredItems]);
+
+  /** Harita flyTo / marker için normalize [lng,lat]; geçersizse marker yok, panel yine açık kalabilir. */
+  const selectedForMap = useMemo(() => {
+    if (!selected) return null;
+    const n = normalizeExplorerLatLng(selected.latitude, selected.longitude);
+    if (!n) return null;
+    return {
+      id: selected.id,
+      title: selected.title,
+      city: selected.city,
+      district: selected.district ?? null,
+      neighborhood: selected.neighborhood ?? null,
+      latitude: n.latitude,
+      longitude: n.longitude,
+    };
+  }, [selected]);
 
   const visibleItems = useMemo(() => {
     let arr = [...filteredItems];
@@ -733,592 +1485,7 @@ export default function DashboardPage() {
     router.replace("/login");
   }
 
-  async function ensureAndLoadWallet() {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) return;
-
-    const { data: w, error: wErr } = await supabase
-      .from("wallets")
-      .select("user_id,balance")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (wErr) {
-      console.warn("[wallet] select error:", wErr);
-      return;
-    }
-
-    if (w?.balance != null) {
-      setWalletBalance(Number(w.balance));
-      return;
-    }
-
-    const { data: ins, error: insErr } = await supabase
-      .from("wallets")
-      .insert({ user_id: user.id, balance: 1000000 })
-      .select("balance")
-      .single();
-
-    if (insErr) {
-      console.warn("[wallet] insert error:", insErr);
-      return;
-    }
-
-    setWalletBalance(Number(ins.balance));
-  }
-
-  async function syncWalletBalanceToDb(nextBalance: number) {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) throw new Error("Kullanıcı bulunamadı.");
-
-    const rounded = Math.max(0, Math.round(Number(nextBalance || 0)));
-
-    const { data: walletRow, error: walletErr } = await supabase
-      .from("wallets")
-      .select("user_id,balance")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (walletErr) throw walletErr;
-
-    if (!walletRow) {
-      const { error: insertErr } = await supabase.from("wallets").insert({
-        user_id: user.id,
-        balance: rounded,
-      });
-
-      if (insertErr) throw insertErr;
-      return rounded;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("wallets")
-      .update({
-        balance: rounded,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user.id);
-
-    if (updateErr) throw updateErr;
-
-    return rounded;
-  }
-
-  useEffect(() => {
-    if (!email) return;
-    ensureAndLoadWallet();
-  }, [email]);
-
-  function getRealEstateSim(p: Property) {
-    if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
-
-    const seedScope = userId ?? "global";
-    const risk01 = clamp01((p.risk_score ?? 50) / 100);
-    const dev01 = clamp01((p.development_score ?? 50) / 100);
-
-    const quality01 =
-      p.quality_score != null ? clamp01(p.quality_score) : clamp01(0.55 + dev01 * 0.2 - risk01 * 0.1);
-
-    const rentalYield = p.rental_yield_annual != null ? clamp01(p.rental_yield_annual) : 0.05;
-
-    const propertyForSim = {
-      id: p.id,
-      area_m2: Number(p.total_area_m2),
-      quality_score: quality01,
-      development_score: dev01,
-      risk_score: risk01,
-      rental_yield_annual: rentalYield,
-      demand_score: getDemandPressure(p),
-      buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
-      buy_pressure_m2: Number(p.sold_m2 ?? 0),
-      sell_pressure_count: 0,
-      sell_pressure_m2: 0,
-      area: {
-        id: p.area.id,
-        base_m2_price: Number(p.area.base_m2_price),
-        expected_real_return_annual: Number(p.area.expected_real_return_annual ?? 0.03),
-        inflation_annual: Number(p.area.inflation_annual ?? 0.0),
-        vol_annual: Number(p.area.vol_annual ?? 0.12),
-        cycle_strength: Number(p.area.cycle_strength ?? 0.6),
-        shock_prob_annual: Number(p.area.shock_prob_annual ?? 0.06),
-        shock_size: Number(p.area.shock_size ?? -0.08),
-      },
-    };
-
-    const out = simulatePropertyPriceTRY(propertyForSim as any, 0, seedScope);
-    const totalShares = Number(p.total_shares ?? 100000);
-    const sharePrice = out.price / Math.max(1, totalShares);
-
-    return { ...out, sharePrice, totalShares };
-  }
-
-  async function handleOpenPosition() {
-    try {
-      if (!selected) {
-        alert("Önce bir arsa seç.");
-        return;
-      }
-
-      const m2 = Number(buyM2);
-      if (!Number.isFinite(m2) || m2 <= 0) {
-        alert("m² miktarı geçersiz.");
-        return;
-      }
-
-      const available = getPropertyAvailableM2(selected);
-      const minBuy = Math.max(1, Number(selected.min_buy_m2 ?? 1));
-      const maxBuy = Number(selected.max_buy_m2 ?? available);
-
-      if (m2 < minBuy) {
-        alert(`Minimum alım ${formatNumber(minBuy)} m²`);
-        return;
-      }
-
-      if (m2 > available) {
-        alert(`Bu arsada sadece ${formatNumber(available)} m² kaldı.`);
-        return;
-      }
-
-      if (Number.isFinite(maxBuy) && m2 > maxBuy) {
-        alert(`Bu arsa için tek seferde maksimum ${formatNumber(maxBuy)} m² alabilirsin.`);
-        return;
-      }
-
-      const quote = getBuyQuoteForProperty(selected, m2);
-      const entryPriceM2 = quote.discountedPricePerM2;
-      const totalPaid = quote.totalCost;
-
-      if (isDemoPropertyId(selected.id)) {
-        const currentBalance = Number(walletBalance ?? 0);
-        if (currentBalance < totalPaid) {
-          alert(`Yetersiz bakiye. Bakiye: ${formatNumber(currentBalance)} Çip`);
-          return;
-        }
-
-        setOpening(true);
-
-        const nextBalance = Math.max(0, Math.round(currentBalance - totalPaid));
-        const prevSelected = selected;
-        const prevItems = items;
-
-        setWalletBalance(nextBalance);
-
-        const list = loadDemoPositions();
-        const newDemoId = `demo_pos_${Date.now()}`;
-        list.unshift({
-          id: newDemoId,
-          property_id: selected.id,
-          m2,
-          total_paid: totalPaid,
-          entry_price_m2: entryPriceM2,
-          created_at: new Date().toISOString(),
-          snapshot: {
-            title: selected.title,
-            city: selected.city,
-            district: selected.district,
-            neighborhood: selected.neighborhood,
-            latitude: selected.latitude,
-            longitude: selected.longitude,
-          },
-        });
-        saveDemoPositions(list);
-
-        updateLocalPropertyM2(selected.id, m2);
-        pushActivity({
-          name: displayName || "Kullanıcı",
-          city: selected.city,
-          district: selected.district,
-          neighborhood: selected.neighborhood ?? null,
-          m2,
-        });
-
-        try {
-          const syncedBalance = await syncWalletBalanceToDb(nextBalance);
-          setWalletBalance(syncedBalance);
-          alert("Demo m² yatırımı açıldı ✅");
-        } catch (e: any) {
-          saveDemoPositions(loadDemoPositions().filter((x) => x.id !== newDemoId));
-          setItems(prevItems);
-          setSelected(prevSelected);
-          setWalletBalance(currentBalance);
-          alert("Demo alımında wallet senkron hatası: " + (e?.message ?? String(e)));
-        } finally {
-          setOpening(false);
-        }
-
-        return;
-      }
-
-      setOpening(true);
-
-      const { data: userRes } = await supabase.auth.getUser();
-      const user = userRes?.user;
-
-      if (!user) {
-        alert("Giriş yapılmamış görünüyor. Tekrar login ol.");
-        setOpening(false);
-        return;
-      }
-
-      const { data: w, error: wErr } = await supabase
-        .from("wallets")
-        .select("user_id,balance")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (wErr) {
-        alert("Wallet okunamadı: " + wErr.message);
-        setOpening(false);
-        return;
-      }
-
-      let balance = w?.balance != null ? Number(w.balance) : null;
-
-      if (balance == null) {
-        const { data: ins, error: insErr } = await supabase
-          .from("wallets")
-          .insert({ user_id: user.id, balance: 1000000 })
-          .select("balance")
-          .single();
-
-        if (insErr) {
-          alert("Wallet oluşturulamadı: " + insErr.message);
-          setOpening(false);
-          return;
-        }
-
-        balance = Number(ins.balance);
-      }
-
-      if (balance < totalPaid) {
-        alert(`Yetersiz bakiye. Bakiye: ${formatNumber(balance)} Çip`);
-        setWalletBalance(balance);
-        setOpening(false);
-        return;
-      }
-
-      const nextAvailable = Math.max(0, available - m2);
-      const nextSold = getPropertySoldM2(selected) + m2;
-
-      const { error: propErr } = await supabase
-        .from("properties")
-        .update({
-          available_m2: nextAvailable,
-          sold_m2: nextSold,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selected.id)
-        .gte("available_m2", m2);
-
-      if (propErr) {
-        alert("Arsa stoku güncellenemedi: " + propErr.message);
-        setOpening(false);
-        return;
-      }
-
-      const newBalance = balance - totalPaid;
-
-      const { error: upErr } = await supabase
-        .from("wallets")
-        .update({ balance: newBalance, updated_at: new Date().toISOString() })
-        .eq("user_id", user.id);
-
-      if (upErr) {
-        await supabase
-          .from("properties")
-          .update({
-            available_m2: available,
-            sold_m2: getPropertySoldM2(selected),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", selected.id);
-
-        alert("Bakiye güncellenemedi: " + upErr.message);
-        setOpening(false);
-        return;
-      }
-
-      const payload = {
-        user_id: user.id,
-        property_id: selected.id,
-        m2,
-        total_paid: totalPaid,
-        entry_price_m2: entryPriceM2,
-        amount: totalPaid,
-        entry_price: entryPriceM2,
-        units: m2,
-      };
-
-      const { error: posErr } = await supabase.from("positions").insert(payload);
-
-      if (posErr) {
-        await supabase
-          .from("wallets")
-          .update({ balance: balance, updated_at: new Date().toISOString() })
-          .eq("user_id", user.id);
-
-        await supabase
-          .from("properties")
-          .update({
-            available_m2: available,
-            sold_m2: getPropertySoldM2(selected),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", selected.id);
-
-        alert("Pozisyon açılamadı: " + posErr.message);
-        setOpening(false);
-        return;
-      }
-
-      setWalletBalance(newBalance);
-      updateLocalPropertyM2(selected.id, m2);
-      pushActivity({
-        name: displayName || "Kullanıcı",
-        city: selected.city,
-        district: selected.district,
-        neighborhood: selected.neighborhood ?? null,
-        m2,
-      });
-
-      await ensureAndLoadWallet();
-
-      alert("m² pozisyonu açıldı ✅");
-      setOpening(false);
-    } catch (e: any) {
-      console.error("[POS] exception:", e);
-      alert("Beklenmeyen hata: " + (e?.message ?? String(e)));
-      setOpening(false);
-    }
-  }
-
-  async function handleCheckoutCart() {
-    try {
-      if (cart.length === 0) {
-        alert("Sepet boş.");
-        return;
-      }
-
-      const total = cartTotal();
-      const currentBalance = Number(walletBalance ?? 0);
-
-      if (currentBalance < total) {
-        alert(`Yetersiz bakiye. Bakiye: ${formatNumber(currentBalance)} Çip • Sepet: ${formatNumber(total)} Çip`);
-        return;
-      }
-
-      setCheckingOut(true);
-
-      const demoItems = cart.filter((x) => isDemoPropertyId(x.property.id));
-      const realItems = cart.filter((x) => !isDemoPropertyId(x.property.id));
-
-      if (demoItems.length > 0) {
-        const list = loadDemoPositions();
-
-        for (const it of demoItems) {
-          list.unshift({
-            id: `demo_pos_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
-            property_id: it.property.id,
-            m2: it.m2,
-            total_paid: it.totalPaid,
-            entry_price_m2: it.discountedPricePerM2,
-            created_at: new Date().toISOString(),
-            snapshot: {
-              title: it.property.title,
-              city: it.property.city,
-              district: it.property.district,
-              neighborhood: it.property.neighborhood,
-              latitude: it.property.latitude,
-              longitude: it.property.longitude,
-            },
-          });
-
-          updateLocalPropertyM2(it.property.id, it.m2);
-          pushActivity({
-            name: displayName || "Kullanıcı",
-            city: it.property.city,
-            district: it.property.district,
-            neighborhood: it.property.neighborhood ?? null,
-            m2: it.m2,
-          });
-        }
-
-        saveDemoPositions(list);
-      }
-
-      if (realItems.length > 0) {
-        const { data: userRes } = await supabase.auth.getUser();
-        const user = userRes?.user;
-
-        if (!user) {
-          alert("Giriş yapılmamış görünüyor. Tekrar login ol.");
-          setCheckingOut(false);
-          return;
-        }
-
-        const realTotal = realItems.reduce((s, x) => s + Number(x.totalPaid || 0), 0);
-
-        const { data: w, error: wErr } = await supabase
-          .from("wallets")
-          .select("user_id,balance")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (wErr) {
-          alert("Wallet okunamadı: " + wErr.message);
-          setCheckingOut(false);
-          return;
-        }
-
-        const balanceDb = w?.balance != null ? Number(w.balance) : currentBalance;
-
-        if (balanceDb < realTotal) {
-          alert(
-            `Yetersiz bakiye (DB). Bakiye: ${formatNumber(balanceDb)} Çip • Gerçek sepet: ${formatNumber(realTotal)} Çip`
-          );
-          setCheckingOut(false);
-          return;
-        }
-
-        const touchedProps: Array<{ id: string; available: number; sold: number }> = [];
-
-        for (const it of realItems) {
-          const currentProp = items.find((x) => x.id === it.property.id) ?? it.property;
-          const available = getPropertyAvailableM2(currentProp);
-          const sold = getPropertySoldM2(currentProp);
-
-          if (it.m2 > available) {
-            alert(`${currentProp.title} için yeterli m² kalmadı.`);
-            setCheckingOut(false);
-            return;
-          }
-
-          touchedProps.push({
-            id: currentProp.id,
-            available,
-            sold,
-          });
-
-          const { error: propErr } = await supabase
-            .from("properties")
-            .update({
-              available_m2: Math.max(0, available - it.m2),
-              sold_m2: sold + it.m2,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", currentProp.id)
-            .gte("available_m2", it.m2);
-
-          if (propErr) {
-            alert("Arsa stoğu güncellenemedi: " + propErr.message);
-            setCheckingOut(false);
-            return;
-          }
-        }
-
-        const newBalanceDb = balanceDb - realTotal;
-        const { error: upErr } = await supabase
-          .from("wallets")
-          .update({ balance: newBalanceDb, updated_at: new Date().toISOString() })
-          .eq("user_id", user.id);
-
-        if (upErr) {
-          for (const p of touchedProps) {
-            await supabase
-              .from("properties")
-              .update({
-                available_m2: p.available,
-                sold_m2: p.sold,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", p.id);
-          }
-
-          alert("Bakiye güncellenemedi: " + upErr.message);
-          setCheckingOut(false);
-          return;
-        }
-
-        const insertedIds: string[] = [];
-
-        for (const it of realItems) {
-          const payload = {
-            user_id: user.id,
-            property_id: it.property.id,
-            m2: it.m2,
-            total_paid: it.totalPaid,
-            entry_price_m2: it.discountedPricePerM2,
-            amount: it.totalPaid,
-            entry_price: it.discountedPricePerM2,
-            units: it.m2,
-          };
-
-          const { data: ins, error: posErr } = await supabase
-            .from("positions")
-            .insert(payload)
-            .select("id")
-            .single();
-
-          if (posErr) {
-            await supabase
-              .from("wallets")
-              .update({ balance: balanceDb, updated_at: new Date().toISOString() })
-              .eq("user_id", user.id);
-
-            for (const p of touchedProps) {
-              await supabase
-                .from("properties")
-                .update({
-                  available_m2: p.available,
-                  sold_m2: p.sold,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", p.id);
-            }
-
-            if (insertedIds.length > 0) {
-              await supabase.from("positions").delete().in("id", insertedIds);
-            }
-
-            alert("Toplu alım sırasında hata: " + posErr.message);
-            setCheckingOut(false);
-            return;
-          }
-
-          if (ins?.id) insertedIds.push(String(ins.id));
-
-          updateLocalPropertyM2(it.property.id, it.m2);
-          pushActivity({
-            name: displayName || "Kullanıcı",
-            city: it.property.city,
-            district: it.property.district,
-            neighborhood: it.property.neighborhood ?? null,
-            m2: it.m2,
-          });
-        }
-
-        setWalletBalance(newBalanceDb);
-        await ensureAndLoadWallet();
-      } else {
-        const nextBalance = Math.max(0, Math.round(currentBalance - total));
-        const syncedBalance = await syncWalletBalanceToDb(nextBalance);
-        setWalletBalance(syncedBalance);
-      }
-
-      clearCart();
-      alert("Toplu m² alımı tamam ✅");
-      setCheckingOut(false);
-    } catch (e: any) {
-      console.error("[CART] exception:", e);
-      alert("Beklenmeyen hata: " + (e?.message ?? String(e)));
-      setCheckingOut(false);
-    }
-  }
-
-  const selectedSim = selected ? getRealEstateSim(selected) : null;
-  const selectedPricePerM2 = selected ? getPositionVisiblePricePerM2(selected) : 0;
+  const selectedPricePerM2 = selected ? getListingPricePerM2(selected) : 0;
   const selectedAvailableM2 = getPropertyAvailableM2(selected);
   const selectedSoldM2 = getPropertySoldM2(selected);
   const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
@@ -1327,6 +1494,9 @@ export default function DashboardPage() {
   const selectedMinBuyCost = selected ? getBuyQuoteForProperty(selected, selectedMinBuyM2).totalCost : 0;
   const selectedTotalCost = Math.max(0, Number(selectedQuote?.totalCost ?? 0));
   const selectedDemandPressure = selected ? getDemandPressure(selected) : 0;
+  const listingDemandRatio = selected
+    ? clamp01(getPropertySoldM2(selected) / Math.max(1, Number(selected.total_area_m2 ?? 1)))
+    : 0;
 
   useEffect(() => {
     if (!selected) return;
@@ -1607,6 +1777,7 @@ export default function DashboardPage() {
               setZoning("");
               setAreaBand("");
               setSelected(null);
+              setBuyInProgress(false);
             }}
             style={{ ...btnGhost, flex: 1 }}
           >
@@ -1620,14 +1791,14 @@ export default function DashboardPage() {
         <div style={{ marginTop: 18, fontSize: 12, opacity: 0.75 }}>Öne Çıkan Arsalar</div>
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
           {regionList.map((p) => {
-            const pPrice = getPositionVisiblePricePerM2(p);
+            const pPrice = getListingPricePerM2(p);
             const pAvailable = getPropertyAvailableM2(p);
 
             return (
               <button
                 key={p.id}
                 onClick={() => {
-                  setSelected(p);
+                  setSelected(selectPropertyForPanel(p));
                   setPanelOpen(false);
                 }}
                 style={{
@@ -1763,6 +1934,21 @@ export default function DashboardPage() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 900,
+                    color: "#F5D76E",
+                    padding: "6px 12px",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    whiteSpace: "nowrap",
+                  }}
+                  title="Cüzdan bakiyesi"
+                >
+                  {walletBalance != null ? `₺${formatTRY(Math.round(walletBalance))}` : "—"}
+                </div>
                 <button onClick={() => setPanelOpen(true)} style={btnGhost}>
                   Filtreler
                 </button>
@@ -1771,12 +1957,19 @@ export default function DashboardPage() {
                   Portföy
                 </button>
 
-                <div style={badgeBox}>
-                  <div style={{ fontSize: 11, opacity: 0.75 }}>Bakiye</div>
-                  <div style={{ fontSize: 13, fontWeight: 900 }}>
-                    {walletBalance == null ? "—" : `${formatNumber(walletBalance)} Çip`}
-                  </div>
-                </div>
+                <button onClick={() => router.push("/inquiries")} style={btnGhost} title="Gerçek ilan talep süreci">
+                  Talep Süreci
+                </button>
+
+                <button onClick={() => router.push("/submit-property")} style={btnGhost}>
+                  İlan Ver
+                </button>
+
+                {isAdminEmail(email) ? (
+                  <button onClick={() => router.push("/admin")} style={btnGhost}>
+                    Admin
+                  </button>
+                ) : null}
 
                 <div
                   style={{
@@ -1885,46 +2078,55 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr auto auto",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 900,
+                    color: "#F5D76E",
+                    padding: "0 10px",
+                    height: 38,
+                    display: "flex",
+                    alignItems: "center",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                  title="Cüzdan bakiyesi"
+                >
+                  {walletBalance != null ? `₺${formatTRY(Math.round(walletBalance))}` : "—"}
+                </div>
                 <button
                   onClick={() => setPanelOpen(true)}
-                  style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}
+                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
                 >
                   Filtreler
                 </button>
 
-                <button
-                  onClick={() => router.push("/portfolio")}
-                  style={{ ...btnGhost, width: "100%", padding: "0 10px", height: 38 }}
-                >
+                <button onClick={() => router.push("/portfolio")} style={{ ...btnGhost, padding: "0 10px", height: 38 }}>
                   Portföy
                 </button>
 
-                <div
-                  style={{
-                    height: 38,
-                    padding: "6px 10px",
-                    borderRadius: 13,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    minWidth: 94,
-                  }}
+                <button
+                  onClick={() => router.push("/inquiries")}
+                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
+                  title="Gerçek ilan talep süreci"
                 >
-                  <div style={{ fontSize: 10, opacity: 0.72, lineHeight: 1 }}>Çip</div>
-                  <div style={{ fontSize: 12, fontWeight: 900, lineHeight: 1.1, marginTop: 3 }}>
-                    {walletBalance == null ? "—" : formatCompactChip(walletBalance)}
-                  </div>
-                </div>
+                  Talep
+                </button>
+
+                <button
+                  onClick={() => router.push("/submit-property")}
+                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
+                >
+                  İlan Ver
+                </button>
+
+                {isAdminEmail(email) ? (
+                  <button onClick={() => router.push("/admin")} style={{ ...btnGhost, padding: "0 10px", height: 38 }}>
+                    Admin
+                  </button>
+                ) : null}
 
                 <button onClick={logout} style={{ ...btnGhost, padding: "0 12px", height: 38 }}>
                   Çıkış
@@ -1962,89 +2164,10 @@ export default function DashboardPage() {
           </button>
         )}
 
-        {!selected && activityFeed.length > 0 && (
-          <div
-            style={{
-              position: "absolute",
-              right: isMobile ? 10 : 16,
-              top: HEADER_H + 12,
-              width: isMobile ? "calc(100vw - 20px)" : 330,
-              maxHeight: isMobile ? 170 : 260,
-              overflow: "hidden",
-              borderRadius: 18,
-              zIndex: 13,
-              background: "rgba(10,14,24,0.74)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              backdropFilter: "blur(14px)",
-              boxShadow: "0 18px 55px rgba(0,0,0,0.28)",
-            }}
-          >
-            <div
-              style={{
-                padding: "12px 14px",
-                borderBottom: "1px solid rgba(255,255,255,0.10)",
-                fontSize: 12,
-                fontWeight: 900,
-                letterSpacing: 0.4,
-                opacity: 0.92,
-              }}
-            >
-              Canlı Yatırım Akışı
-            </div>
-
-            <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-              {activityFeed.slice(0, isMobile ? 4 : 6).map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 900 }}>{a.name}</div>
-                  <div style={{ fontSize: 12, opacity: 0.78, marginTop: 4 }}>
-                    {a.city}
-                    {a.district ? ` / ${a.district}` : ""}
-                    {a.neighborhood ? ` / ${a.neighborhood}` : ""}
-                  </div>
-                  <div style={{ fontSize: 12, marginTop: 6 }}>
-                    <span style={{ color: "#F5D76E", fontWeight: 900 }}>{formatDecimal(a.m2)} m²</span> aldı
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
           <MapViewAny
-            items={filteredItems
-              .filter((p) => typeof p.latitude === "number" && typeof p.longitude === "number")
-              .map((p) => ({
-                id: p.id,
-                title: p.title,
-                city: p.city,
-                district: p.district ?? null,
-                neighborhood: p.neighborhood ?? null,
-                latitude: Number(p.latitude),
-                longitude: Number(p.longitude),
-                country: p.country ?? undefined,
-              }))}
-            selected={
-              selected
-                ? {
-                    id: selected.id,
-                    title: selected.title,
-                    city: selected.city,
-                    district: selected.district ?? null,
-                    neighborhood: selected.neighborhood ?? null,
-                    latitude: Number(selected.latitude ?? 0),
-                    longitude: Number(selected.longitude ?? 0),
-                  }
-                : null
-            }
+            items={mapItemsForView}
+            selected={selectedForMap}
             filters={{
               city,
               district,
@@ -2067,10 +2190,64 @@ export default function DashboardPage() {
               setSelected(null);
             }}
             onSelectPropertyId={(id: string) => {
-              const found = items.find((x) => x.id === id) || filteredItems.find((x) => x.id === id) || null;
-              setSelected(found);
+              const k = String(id).trim();
+              let found =
+                items.find((x) => samePropertyIdLoose(x.id, k)) ??
+                filteredItems.find((x) => samePropertyIdLoose(x.id, k)) ??
+                null;
+              if (!found) {
+                const ll = parseSyntheticLlId(k);
+                if (ll) {
+                  found = findPropertyForMapSelection({
+                    id: k,
+                    propertyId: undefined,
+                    title: "",
+                    city: "",
+                    district: null,
+                    neighborhood: null,
+                    latitude: ll.lat,
+                    longitude: ll.lng,
+                  });
+                  if (!found) {
+                    setSelected(
+                      selectPropertyForPanel(
+                        propertyFromMapFallback({
+                          id: k,
+                          title: "Arsa",
+                          city: "—",
+                          district: null,
+                          neighborhood: null,
+                          latitude: ll.lat,
+                          longitude: ll.lng,
+                        }),
+                      ),
+                    );
+                    return;
+                  }
+                }
+              }
+              setSelected(selectPropertyForPanel(found));
             }}
             onOpenInfo={() => undefined}
+            onPropertyClick={(p: MapItemPayload) => {
+              const found = findPropertyForMapSelection(p);
+              if (found) {
+                setSelected(selectPropertyForPanel(found));
+                setPanelOpen(false);
+                return;
+              }
+              const fromPayload = propertyFromMapItemPayload(p);
+              if (fromPayload) {
+                setSelected(fromPayload);
+                setPanelOpen(false);
+                return;
+              }
+              setSelected(selectPropertyForPanel(propertyFromMapFallback(p)));
+              setPanelOpen(false);
+            }}
+            onOpenPropertyPanel={() => {
+              setPanelOpen(false);
+            }}
           />
         </div>
 
@@ -2078,7 +2255,10 @@ export default function DashboardPage() {
           <>
             {isMobile && (
               <div
-                onClick={() => setSelected(null)}
+                onClick={() => {
+                  setSelected(null);
+                  setBuyInProgress(false);
+                }}
                 style={{
                   position: "absolute",
                   inset: 0,
@@ -2093,6 +2273,8 @@ export default function DashboardPage() {
               style={{
                 position: "absolute",
                 zIndex: 12,
+                display: "flex",
+                flexDirection: "column",
                 overflow: "hidden",
                 boxShadow: "0 18px 55px rgba(0,0,0,0.35)",
                 background: "rgba(10,14,24,0.78)",
@@ -2104,194 +2286,294 @@ export default function DashboardPage() {
                       right: 10,
                       bottom: 10,
                       top: "auto",
+                      height: "62vh",
                       maxHeight: "62vh",
                       borderRadius: 22,
                     }
                   : {
                       right: 16,
                       top: HEADER_H + 12,
-                      width: 340,
-                      maxHeight: "calc(100vh - 88px)",
+                      width: 320,
+                      height: `calc(100vh - ${HEADER_H + 24}px)`,
+                      maxHeight: `calc(100vh - ${HEADER_H + 24}px)`,
                       borderRadius: 18,
                     }),
               }}
             >
               <div
                 style={{
-                  height: 46,
+                  flexShrink: 0,
+                  height: 40,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  padding: "10px 12px",
+                  padding: "0 10px",
                   borderBottom: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
-                <div style={{ fontSize: 12, opacity: 0.84, fontWeight: 900, letterSpacing: 0.5 }}>
-                  m² Yatırım Paneli
+                <div style={{ fontSize: 11, opacity: 0.88, fontWeight: 900, letterSpacing: 0.4 }}>
+                  İlan detayı
                 </div>
-                <button onClick={() => setSelected(null)} style={smallGhostBtn} title="Kapat">
+                <button
+                  onClick={() => {
+                    setSelected(null);
+                    setBuyInProgress(false);
+                  }}
+                  style={smallGhostBtn}
+                  title="Kapat"
+                >
                   ✕
                 </button>
               </div>
 
               <div
                 style={{
-                  padding: 12,
+                  flex: 1,
+                  minHeight: 0,
+                  padding: "8px 10px 10px",
                   overflowY: "auto",
-                  maxHeight: isMobile ? "calc(62vh - 46px)" : "calc(100vh - 134px)",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                  <div style={{ lineHeight: 1.15, minWidth: 0 }}>
-                    <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.3 }}>
-                      {selected.neighborhood ? selected.neighborhood : selected.district ? selected.district : selected.city}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    paddingBottom: 8,
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  {showListedProperty(selected) ? (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                      <span
+                        style={{
+                          fontSize: 8,
+                          fontWeight: 900,
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          background: "rgba(245,215,110,0.14)",
+                          border: "1px solid rgba(245,215,110,0.4)",
+                        }}
+                      >
+                        Yayında
+                      </span>
+                      {selected.is_verified ? (
+                        <span
+                          style={{
+                            fontSize: 8,
+                            fontWeight: 900,
+                            padding: "2px 6px",
+                            borderRadius: 999,
+                            background: "rgba(56,189,248,0.12)",
+                            border: "1px solid rgba(56,189,248,0.4)",
+                          }}
+                        >
+                          Doğrulandı
+                        </span>
+                      ) : null}
                     </div>
-                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                      {selected.city}
-                      {selected.district && ` / ${selected.district}`}
-                      {selected.neighborhood && ` / ${selected.neighborhood}`}
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-                      Toplam Alan: <b>{formatNumber(selected.total_area_m2)}</b> m²
-                    </div>
+                  ) : null}
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 800,
+                      lineHeight: 1.25,
+                      maxHeight: "2.5em",
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical" as const,
+                    }}
+                  >
+                    {selected.title?.trim() ||
+                      selected.neighborhood ||
+                      selected.district ||
+                      selected.city}
                   </div>
-
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, opacity: 0.7 }}>Arsa Değeri</div>
-                    <div style={{ fontSize: 18, fontWeight: 1100, letterSpacing: 0.2 }}>
-                      {selectedSim
-                        ? `₺${formatTRY(selectedSim.price)}`
-                        : `₺${formatTRY(selectedPricePerM2 * selected.total_area_m2)}`}
+                  <div style={{ fontSize: 10, opacity: 0.72, lineHeight: 1.3 }}>
+                    {selected.city}
+                    {selected.district ? ` · ${selected.district}` : ""}
+                    {selected.neighborhood ? ` · ${selected.neighborhood}` : ""}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ fontSize: 10, opacity: 0.65 }}>
+                      Toplam <b>{formatNumber(selected.total_area_m2)}</b> m²
+                      {selected.zoning_status ? (
+                        <span style={{ marginLeft: 6, opacity: 0.55 }}>
+                          · {String(selected.zoning_status).toUpperCase()}
+                        </span>
+                      ) : null}
                     </div>
-                    <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
-                      {selected.zoning_status ? String(selected.zoning_status).toUpperCase() : "—"}
+                    <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 0.02, whiteSpace: "nowrap" }}>
+                      ₺{formatTRY(selectedPricePerM2 * Number(selected.total_area_m2 ?? 0))}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Gelişim</div>
-                    <div style={metricValue}>%{formatInt(selected.development_score)}</div>
-                  </div>
-
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Risk</div>
-                    <div style={metricValue}>%{formatInt(selected.risk_score)}</div>
-                  </div>
-
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Son 30 Gün</div>
-                    <div style={metricValue}>{signedPct(selected.last_30d_change)}%</div>
-                  </div>
-
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Yıllık Beklenti</div>
-                    <div style={metricValue}>%{Number(selected.expected_annual_return ?? 0).toFixed(1)}</div>
-                  </div>
-
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Liste ₺/m²</div>
-                    <div style={metricValue}>₺{formatTRY(selectedQuote?.listPricePerM2 ?? selectedPricePerM2)}</div>
-                  </div>
-
-                  <div style={metricBox}>
-                    <div style={metricLabel}>Talep Skoru</div>
-                    <div style={metricValue}>%{Math.round(selectedDemandPressure * 100)}</div>
-                  </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 6,
+                    marginTop: 8,
+                  }}
+                >
+                  {(
+                    [
+                      ["Gelişim", `%${formatInt(selected.development_score)}`],
+                      ["Risk", `%${formatInt(selected.risk_score)}`],
+                      ["30 gün", `${signedPct(selected.last_30d_change)}%`],
+                      ["Beklenti", `%${Number(selected.expected_annual_return ?? 0).toFixed(1)}`],
+                      ["₺/m²", `₺${formatTRY(selectedPricePerM2)}`],
+                      ["Doluluk", `%${Math.round(listingDemandRatio * 100)}`],
+                    ] as const
+                  ).map(([label, val]) => (
+                    <div
+                      key={label}
+                      style={{
+                        padding: "6px 6px",
+                        borderRadius: 10,
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <div style={{ fontSize: 9, opacity: 0.62, fontWeight: 700, letterSpacing: 0.2 }}>{label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>{val}</div>
+                    </div>
+                  ))}
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
-                  <button onClick={() => setActiveInsightTab("arsa")} style={tabBtn(activeInsightTab === "arsa")}>
-                    Arsa Bilgisi
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 8 }}>
+                  <button
+                    onClick={() => setActiveInsightTab("arsa")}
+                    style={{ ...tabBtn(activeInsightTab === "arsa"), padding: "6px 6px", fontSize: 11 }}
+                  >
+                    Arsa
                   </button>
-                  <button onClick={() => setActiveInsightTab("gelisim")} style={tabBtn(activeInsightTab === "gelisim")}>
+                  <button
+                    onClick={() => setActiveInsightTab("gelisim")}
+                    style={{ ...tabBtn(activeInsightTab === "gelisim"), padding: "6px 6px", fontSize: 11 }}
+                  >
                     Gelişim
                   </button>
-                  <button onClick={() => setActiveInsightTab("risk")} style={tabBtn(activeInsightTab === "risk")}>
+                  <button
+                    onClick={() => setActiveInsightTab("risk")}
+                    style={{ ...tabBtn(activeInsightTab === "risk"), padding: "6px 6px", fontSize: 11 }}
+                  >
                     Risk
                   </button>
                 </div>
 
                 <div
                   style={{
-                    marginTop: 10,
-                    padding: 12,
-                    borderRadius: 16,
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 12,
                     background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.10)",
+                    maxHeight: "min(200px, 30vh)",
+                    overflowY: "auto",
                   }}
                 >
                   {activeInsightTab === "arsa" && (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
-                        <b>Ada / Parsel</b>: Demo aşamada otomatik üretim.
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {selected.ai_summary ? (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            lineHeight: 1.45,
+                            padding: 8,
+                            borderRadius: 10,
+                            background: "rgba(201,162,39,0.08)",
+                            border: "1px solid rgba(245,215,110,0.2)",
+                          }}
+                        >
+                          <div style={{ fontSize: 9, opacity: 0.7, fontWeight: 800, marginBottom: 4 }}>
+                            Yatırım özeti
+                          </div>
+                          {selected.ai_summary}
+                        </div>
+                      ) : null}
+                      <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.45 }}>
+                        Ada/Parsel:{" "}
+                        {selected.ada_no || selected.parcel_no
+                          ? `${selected.ada_no ?? "—"} / ${selected.parcel_no ?? "—"}`
+                          : "—"}{" "}
+                        · İmar: {selected.zoning_status || "—"}
                         <br />
-                        <b>Konum</b>: {selected.city}
-                        {selected.district ? ` / ${selected.district}` : ""}
-                        {selected.neighborhood ? ` / ${selected.neighborhood}` : ""}
-                        <br />
-                        <b>İmar Durumu</b>: {selected.zoning_status || "Bilinmiyor"}
-                        <br />
-                        <b>Toplam Alan</b>: {formatNumber(selected.total_area_m2)} m²
-                        <br />
-                        <b>Kalan Alan</b>: {formatNumber(Math.round(selectedAvailableM2))} m²
-                        <br />
-                        <b>Satılan Alan</b>: {formatNumber(Math.round(selectedSoldM2))} m²
+                        Kalan <b>{formatNumber(Math.round(selectedAvailableM2))}</b> m² · Satılan{" "}
+                        <b>{formatNumber(Math.round(selectedSoldM2))}</b> m²
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>Etrafında</div>
-                          <div style={miniInfoText}>{inferNearbyText(selected)}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Etrafında</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
+                            {inferNearbyText(selected)}
+                          </div>
                         </div>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>Yatırım Notu</div>
-                          <div style={miniInfoText}>{inferInvestmentNote(selected)}</div>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Özet</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
+                            {inferLandSummary(selected)}
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {activeInsightTab === "gelisim" && (
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                        Bu alanın gelişim puanı <b>%{formatInt(selected.development_score)}</b>. Son 5 yıllık ivme,
-                        ulaşım etkisi, çevre yerleşim artışı ve değerleme baskısı ile birlikte okunur.
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {selected.growth_story ? (
+                        <div style={{ fontSize: 11, opacity: 0.9, lineHeight: 1.45 }}>{selected.growth_story}</div>
+                      ) : null}
+                      <div style={{ fontSize: 11, opacity: 0.82, lineHeight: 1.45 }}>
+                        Gelişim <b>%{formatInt(selected.development_score)}</b> — ivme ve yerleşim baskısı birlikte okunur.
                       </div>
 
-                      <MiniBars title="Son 5 Yıl Gelişim Skoru" values={developmentHistory} suffix="%" />
+                      <MiniBars title="Son 5 Yıl Gelişim" values={developmentHistory} suffix="%" />
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>Neden gelişiyor?</div>
-                          <div style={miniInfoText}>{inferGrowthReason(selected)}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Neden gelişiyor?</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferGrowthReason(selected)}</div>
                         </div>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>İmar açılımı etkisi</div>
-                          <div style={miniInfoText}>{inferZoningImpact(selected)}</div>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>İmar etkisi</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferZoningImpact(selected)}</div>
                         </div>
                       </div>
                     </div>
                   )}
 
                   {activeInsightTab === "risk" && (
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div style={{ fontSize: 12, opacity: 0.86, lineHeight: 1.5 }}>
-                        Bu alanın risk puanı <b>%{formatInt(selected.risk_score)}</b>. Likidite, imar belirsizliği,
-                        çevresel dalgalanma ve piyasa oynaklığı ile birlikte değerlendirilir.
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {selected.risk_factors ? (
+                        <div style={{ fontSize: 11, opacity: 0.9, lineHeight: 1.45 }}>{selected.risk_factors}</div>
+                      ) : null}
+                      <div style={{ fontSize: 11, opacity: 0.82, lineHeight: 1.45 }}>
+                        Risk <b>%{formatInt(selected.risk_score)}</b> — likidite ve imar belirsizliği birlikte değerlendirilir.
                       </div>
 
-                      <MiniBars title="Son 5 Yıl Risk Skoru" values={riskHistory} suffix="%" />
+                      <MiniBars title="Son 5 Yıl Risk" values={riskHistory} suffix="%" />
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>Likidite</div>
-                          <div style={miniInfoText}>{inferLiquidityText(selected)}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Likidite</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferLiquidityText(selected)}</div>
                         </div>
-                        <div style={miniInfoCard}>
-                          <div style={miniInfoLabel}>Belirsizlik</div>
-                          <div style={miniInfoText}>{inferRiskText(selected)}</div>
+                        <div style={{ ...miniInfoCard, padding: 8 }}>
+                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Belirsizlik</div>
+                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferRiskText(selected)}</div>
                         </div>
                       </div>
                     </div>
@@ -2300,26 +2582,24 @@ export default function DashboardPage() {
 
                 <div
                   style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 16,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                    <div style={{ fontSize: 11, opacity: 0.75 }}>Satış Doluluk Oranı</div>
-                    <div style={{ fontSize: 12, fontWeight: 1000 }}>{soldPct.toFixed(1)}%</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 10, opacity: 0.7 }}>Doluluk</span>
+                    <span style={{ fontSize: 11, fontWeight: 900 }}>{soldPct.toFixed(1)}%</span>
                   </div>
-
                   <div
                     style={{
-                      marginTop: 8,
-                      height: 10,
+                      marginTop: 4,
+                      height: 5,
                       borderRadius: 999,
                       overflow: "hidden",
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: "rgba(255,255,255,0.07)",
                     }}
                   >
                     <div
@@ -2330,163 +2610,195 @@ export default function DashboardPage() {
                       }}
                     />
                   </div>
-
-                  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.72 }}>
-                    Kalan: {formatNumber(Math.round(selectedAvailableM2))} m² • Minimum alım:{" "}
-                    {formatNumber(selectedMinBuyM2)} m²
+                  <div style={{ marginTop: 4, fontSize: 10, opacity: 0.65, lineHeight: 1.35 }}>
+                    Kalan {formatNumber(Math.round(selectedAvailableM2))} m² · Min. alım {formatNumber(selectedMinBuyM2)} m²
                   </div>
                 </div>
 
                 <div
                   style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 16,
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 12,
                     background: "rgba(255,255,255,0.05)",
                     border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.75 }}>Alım Paneli</div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div>
-                        <div style={tinyLabel}>m² gir</div>
-                        <input
-                          type="number"
-                          value={buyM2}
-                          min={0}
-                          step={0.01}
-                          onChange={(e) => syncBuyFromM2(Number(e.target.value), selected)}
-                          style={inputStyle}
-                          placeholder="Kaç m²?"
-                        />
-                      </div>
-
-                      <div>
-                        <div style={tinyLabel}>TL gir</div>
-                        <input
-                          type="number"
-                          value={buyBudget}
-                          min={0}
-                          step={1}
-                          onChange={(e) => syncBuyFromBudget(Number(e.target.value), selected)}
-                          style={inputStyle}
-                          placeholder="Kaç TL?"
-                        />
-                      </div>
+                  <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.88, letterSpacing: 0.4 }}>Alım</div>
+                  <div style={{ fontSize: 9, opacity: 0.62, marginTop: 2, lineHeight: 1.35 }}>
+                    Alım komisyonu %0,5 (tutara dahil)
+                  </div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4, lineHeight: 1.4 }}>
+                    Talep {(selectedDemandPressure * 100).toFixed(0)}% · Bakiye{" "}
+                    <b>₺{formatTRY(Math.round(walletBalance ?? 0))}</b>
+                  </div>
+                  <div style={{ fontSize: 10, opacity: 0.72, marginTop: 4, lineHeight: 1.45 }}>
+                    Liste <b>₺{formatTRY(selectedPricePerM2)}</b> /m² · Görünen{" "}
+                    <b>₺{formatTRY(getPositionVisiblePricePerM2(selected))}</b> /m²
+                  </div>
+                  <div style={{ fontSize: 10, opacity: 0.72, marginTop: 2 }}>
+                    Min {formatNumber(selectedMinBuyM2)} m² · Max{" "}
+                    {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                    <div>
+                      <div style={{ ...tinyLabel, marginBottom: 4 }}>m²</div>
+                      <input
+                        type="number"
+                        value={buyM2}
+                        min={0}
+                        step={0.01}
+                        onChange={(e) => syncBuyFromM2(Number(e.target.value), selected)}
+                        style={{ ...inputStyle, padding: "8px 10px", fontSize: 13 }}
+                        placeholder="m²"
+                      />
                     </div>
-
+                    <div>
+                      <div style={{ ...tinyLabel, marginBottom: 4 }}>TL</div>
+                      <input
+                        type="number"
+                        value={buyBudget}
+                        min={0}
+                        step={1}
+                        onChange={(e) => syncBuyFromBudget(Number(e.target.value), selected)}
+                        style={{ ...inputStyle, padding: "8px 10px", fontSize: 13 }}
+                        placeholder="Toplam"
+                      />
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 8,
+                      borderRadius: 10,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Hesap özeti</div>
                     <div
                       style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.10)",
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 4,
+                        fontSize: 10,
+                        opacity: 0.88,
+                        lineHeight: 1.35,
                       }}
                     >
-                      <div style={{ fontSize: 12, opacity: 0.78 }}>Hesap Özeti</div>
-
-                      <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-                        Liste fiyatı: <b>₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}</b> / m²
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-                        Toplu alım indirimi: <b>%{((selectedQuote?.bulkDiscountRate ?? 0) * 100).toFixed(1)}</b>
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-                        İndirimli fiyat: <b>₺{formatTRY(selectedQuote?.discountedPricePerM2 ?? 0)}</b> / m²
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-                        Net arsa değeri: <b>{formatNumber(Math.round(selectedQuote?.grossAssetValue ?? 0))} Çip</b>
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-                        Alış komisyonu (%0.5): <b>{formatNumber(Math.round(selectedQuote?.buyFee ?? 0))} Çip</b>
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
-                        <div>
-                          <div style={{ fontSize: 12, opacity: 0.78 }}>Toplam Tutar</div>
-                          <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
-                            {formatNumber(Math.round(selectedTotalCost))} Çip
-                          </div>
+                      <span>Liste / m²</span>
+                      <span style={{ textAlign: "right" }}>₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}</span>
+                      <span>Parsel payı</span>
+                      <span style={{ textAlign: "right" }}>
+                        %{((selectedQuote?.shareOfParcel ?? 0) * 100).toFixed(1)}
+                      </span>
+                      <span>Parsel birim çarpanı</span>
+                      <span style={{ textAlign: "right" }}>
+                        ×{(selectedQuote?.parcelShareMultiplier ?? 1).toFixed(2)}
+                      </span>
+                      <span>Liste (pay sonrası) / m²</span>
+                      <span style={{ textAlign: "right" }}>
+                        ₺{formatTRY(selectedQuote?.adjustedListPricePerM2 ?? selectedQuote?.listPricePerM2 ?? 0)}
+                      </span>
+                      <span>Toplu m² indirimi</span>
+                      <span style={{ textAlign: "right" }}>
+                        %{((selectedQuote?.bulkDiscountRate ?? 0) * 100).toFixed(1)}
+                      </span>
+                      <span>Net değer</span>
+                      <span style={{ textAlign: "right" }}>
+                        ₺{formatTRY(Math.round(selectedQuote?.grossAssetValue ?? 0))}
+                      </span>
+                      <span>Komisyon (%0,5)</span>
+                      <span style={{ textAlign: "right" }}>
+                        ₺{formatTRY(Math.round(selectedQuote?.buyFee ?? 0))}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 9, opacity: 0.65, marginTop: 5, lineHeight: 1.35 }}>
+                      {selectedQuote?.parcelShareLabel ?? ""}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end",
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        gap: 8,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 9, opacity: 0.65 }}>Ödenecek</div>
+                        <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>
+                          ₺{formatTRY(Math.round(selectedTotalCost))}
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 12, opacity: 0.78 }}>Alınacak m²</div>
-                          <div style={{ fontSize: 18, fontWeight: 1000, marginTop: 6 }}>
-                            {formatDecimal(buyM2)} m²
-                          </div>
-                        </div>
                       </div>
-
-                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 8 }}>
-                        Tek sefer maksimum:{" "}
-                        {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                        Minimum alım maliyeti: {formatNumber(Math.round(selectedMinBuyCost))} Çip
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.72, marginTop: 4 }}>
-                        Not: Anlık alım sonrası kâr göstergesi sıfıra yakın başlar; fiyat zaman ve talebe göre şekillenir.
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 9, opacity: 0.65 }}>m²</div>
+                        <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>{formatDecimal(buyM2)}</div>
                       </div>
                     </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <button style={neutralActionBtn} onClick={addSelectedToCart}>
-                        Sepete Ekle
-                      </button>
-
-                      <button
-                        style={{
-                          ...neutralActionBtn,
-                          opacity: opening ? 0.7 : 1,
-                          cursor: opening ? "not-allowed" : "pointer",
-                        }}
-                        disabled={opening}
-                        onClick={handleOpenPosition}
-                      >
-                        {opening ? "Alınıyor..." : "Tekli Satın Al"}
-                      </button>
+                    <div style={{ fontSize: 9, opacity: 0.58, marginTop: 6, lineHeight: 1.35 }}>
+                      Min. maliyet ₺{formatTRY(Math.round(selectedMinBuyCost))} · Tek sefer üst limit{" "}
+                      {formatNumber(Math.round(Math.min(selectedAvailableM2, selectedMaxBuyM2)))} m²
                     </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
+                    <button type="button" style={{ ...neutralActionBtn, padding: "10px 8px", fontSize: 12 }} onClick={addSelectedToCart}>
+                      Sepete ekle
+                    </button>
+                    <button
+                      type="button"
+                      title={buyInProgress ? "İşlem sürüyor" : "Satın Al"}
+                      style={{
+                        ...neutralActionBtn,
+                        padding: "10px 8px",
+                        fontSize: 12,
+                        fontWeight: 950,
+                        opacity: buyInProgress ? 0.55 : 1,
+                        cursor: buyInProgress ? "not-allowed" : "pointer",
+                      }}
+                      disabled={buyInProgress}
+                      onClick={() => void handleOpenPosition()}
+                    >
+                      Satın Al
+                    </button>
                   </div>
                 </div>
 
                 <div
                   style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 16,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div style={{ lineHeight: 1.1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 1000 }}>Sepet</div>
-                      <div style={{ fontSize: 13, opacity: 0.78, marginTop: 4 }}>
-                        {cart.length} ürün • Genel Toplam:{" "}
-                        <span style={{ color: "#F5D76E" }}>{formatNumber(Math.round(cartTotal()))} Çip</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 950 }}>Sepet</div>
+                      <div style={{ fontSize: 10, opacity: 0.72, marginTop: 2 }}>
+                        {cart.length} kalem ·{" "}
+                        <span style={{ color: "#F5D76E" }}>₺{formatTRY(Math.round(cartTotal()))}</span>
                       </div>
                     </div>
-
-                    <button onClick={clearCart} style={smallGhostBtn} title="Sepeti temizle">
+                    <button type="button" onClick={clearCart} style={{ ...smallGhostBtn, padding: "6px 8px", fontSize: 11 }}>
                       Temizle
                     </button>
                   </div>
-
                   <div
                     style={{
-                      marginTop: 10,
+                      marginTop: 6,
                       display: "flex",
                       flexDirection: "column",
-                      gap: 8,
-                      maxHeight: 180,
+                      gap: 4,
+                      maxHeight: 100,
                       overflow: "auto",
                     }}
                   >
                     {cart.length === 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        Sepet boş. “Sepete Ekle” ile birden çok arsa biriktir.
-                      </div>
+                      <div style={{ fontSize: 10, opacity: 0.65 }}>Sepet boş.</div>
                     ) : (
                       cart.slice(0, 30).map((it) => (
                         <div
@@ -2494,19 +2806,19 @@ export default function DashboardPage() {
                           style={{
                             display: "grid",
                             gridTemplateColumns: "1fr auto auto",
-                            gap: 10,
+                            gap: 6,
                             alignItems: "center",
-                            padding: "10px 10px",
-                            borderRadius: 14,
+                            padding: "6px 8px",
+                            borderRadius: 10,
                             background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.10)",
+                            border: "1px solid rgba(255,255,255,0.08)",
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
                             <div
                               style={{
-                                fontWeight: 900,
-                                fontSize: 12,
+                                fontWeight: 800,
+                                fontSize: 10,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
@@ -2514,42 +2826,40 @@ export default function DashboardPage() {
                             >
                               {it.property.city}
                               {it.property.district ? ` / ${it.property.district}` : ""}
-                              {it.property.neighborhood ? ` / ${it.property.neighborhood}` : ""}
                             </div>
-                            <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>
-                              {formatDecimal(it.m2)} m² • indirim %{(it.bulkDiscountRate * 100).toFixed(1)}
+                            <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
+                              {formatDecimal(it.m2)} m² · %{(it.bulkDiscountRate * 100).toFixed(1)} ind.
                             </div>
                           </div>
-
-                          <div style={{ fontWeight: 1000, fontSize: 12, whiteSpace: "nowrap" }}>
-                            {formatNumber(Math.round(it.totalPaid))} Çip
+                          <div style={{ fontWeight: 900, fontSize: 10, whiteSpace: "nowrap" }}>
+                            {formatNumber(Math.round(it.totalPaid))}
                           </div>
-
-                          <button onClick={() => removeFromCart(it.key)} style={smallGhostBtn} title="Sepetten çıkar">
+                          <button type="button" onClick={() => removeFromCart(it.key)} style={{ ...smallGhostBtn, padding: "4px 6px" }} title="Çıkar">
                             ✕
                           </button>
                         </div>
                       ))
                     )}
                   </div>
-
                   <button
-                    onClick={handleCheckoutCart}
+                    type="button"
+                    onClick={() => void handleCheckoutCart()}
                     disabled={checkingOut || cart.length === 0}
                     style={{
-                      marginTop: 10,
+                      marginTop: 8,
                       width: "100%",
-                      padding: 12,
-                      borderRadius: 14,
+                      padding: "10px 10px",
+                      borderRadius: 12,
                       background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.16)",
+                      border: "1px solid rgba(255,255,255,0.14)",
                       color: "white",
-                      fontWeight: 1100,
+                      fontWeight: 950,
+                      fontSize: 12,
                       cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
-                      opacity: checkingOut || cart.length === 0 ? 0.65 : 1,
+                      opacity: checkingOut || cart.length === 0 ? 0.55 : 1,
                     }}
                   >
-                    {checkingOut ? "Toplu alınıyor..." : "Toplu Al (Sepeti Onayla)"}
+                    Sepeti onayla
                   </button>
                 </div>
               </div>
@@ -2559,18 +2869,20 @@ export default function DashboardPage() {
       </section>
     </div>
   );
-}function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
+}
+
+function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
   const { title, values, suffix = "" } = props;
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.88, marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 10, fontWeight: 800, opacity: 0.88, marginBottom: 6 }}>{title}</div>
       <div style={{ display: "grid", gap: 8 }}>
         {values.map((v, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "44px 1fr 42px", gap: 8, alignItems: "center" }}>
-            <div style={{ fontSize: 11, opacity: 0.7 }}>{2021 + i}</div>
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr 36px", gap: 6, alignItems: "center" }}>
+            <div style={{ fontSize: 9, opacity: 0.65 }}>{2021 + i}</div>
             <div
               style={{
-                height: 10,
+                height: 6,
                 borderRadius: 999,
                 background: "rgba(255,255,255,0.08)",
                 overflow: "hidden",
@@ -2585,7 +2897,7 @@ export default function DashboardPage() {
                 }}
               />
             </div>
-            <div style={{ fontSize: 11, textAlign: "right", opacity: 0.85 }}>
+            <div style={{ fontSize: 9, textAlign: "right", opacity: 0.85 }}>
               {formatInt(v)}
               {suffix}
             </div>
@@ -2608,10 +2920,10 @@ function inferNearbyText(p: Property) {
     : "Tarla-arsa dönüşüm hattı, büyüyen yerleşim ve ulaşım bağlantısı potansiyeli";
 }
 
-function inferInvestmentNote(p: Property) {
-  if (p.zoning_status === "imarli") return "Likiditesi daha yüksek, parçalı alım-satım için daha uygun";
-  if ((p.development_score ?? 0) > 70) return "Orta vadede imar beklentisiyle değer baskısı üretebilir";
-  return "Daha sabırlı yatırım gerektirir, getiri potansiyeli planlama gelişimine bağlıdır";
+function inferLandSummary(p: Property) {
+  if (p.zoning_status === "imarli") return "İmarlı yapılaşma hakkı olan parsellerde işlem süreçleri genelde daha öngörülebilirdir.";
+  if ((p.development_score ?? 0) > 70) return "Bölgesel gelişim göstergeleri güçlü; detaylar için yerinde keşif önerilir.";
+  return "İmar ve planlama durumu yerinde kontrol edilmelidir.";
 }
 
 function inferGrowthReason(p: Property) {
@@ -2807,568 +3119,3 @@ const miniInfoCard: React.CSSProperties = {
 
 const miniInfoLabel: React.CSSProperties = { fontSize: 11, opacity: 0.7, fontWeight: 800 };
 const miniInfoText: React.CSSProperties = { fontSize: 12, opacity: 0.9, marginTop: 6, lineHeight: 1.4 };
-
-async function generateDemoPropertiesFromDistrictGeo(opts: {
-  countCities: number;
-  countProps: number;
-  minPerDistrict: number;
-  maxPerDistrict: number;
-  seed: number;
-}): Promise<Property[]> {
-  const rng = mulberry32(opts.seed);
-
-  const res = await fetch("/geo/gadm41_TUR_2.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("İlçe geojson okunamadı: /geo/gadm41_TUR_2.json");
-
-  const gj = await res.json();
-  const rawFeatures = Array.isArray(gj?.features) ? gj.features : [];
-
-  const districtFeatures = rawFeatures
-    .map((f: any) => {
-      const city = String(f?.properties?.NAME_1 || "").trim();
-      const district = String(f?.properties?.NAME_2 || "").trim();
-      if (!city || !district || !f?.geometry) return null;
-
-      const bbox = bboxFromGeometryLocal(f.geometry);
-      const centroid = centroidFromGeometryLocal(f.geometry);
-      const areaApprox = geometryAreaApprox(f.geometry);
-
-      if (!bbox || !centroid || !areaApprox) return null;
-
-      return { city, district, geometry: f.geometry, bbox, centroid, areaApprox } as DistrictFeature;
-    })
-    .filter(Boolean) as DistrictFeature[];
-
-  const cityPriority = [
-    "İstanbul",
-    "Ankara",
-    "İzmir",
-    "Bursa",
-    "Antalya",
-    "Adana",
-    "Konya",
-    "Kocaeli",
-    "Gaziantep",
-    "Mersin",
-    "Kayseri",
-    "Samsun",
-    "Eskişehir",
-    "Denizli",
-    "Tekirdağ",
-    "Sakarya",
-    "Balıkesir",
-    "Manisa",
-    "Aydın",
-    "Muğla",
-    "Trabzon",
-    "Ordu",
-    "Giresun",
-    "Rize",
-    "Erzurum",
-    "Diyarbakır",
-    "Şanlıurfa",
-    "Malatya",
-    "Kahramanmaraş",
-    "Hatay",
-  ];
-
-  const citySet = new Set(districtFeatures.map((x) => x.city));
-  const chosenCities = cityPriority.filter((c) => citySet.has(c)).slice(0, opts.countCities);
-
-  const metroWeight: Record<string, number> = {};
-  for (const c of chosenCities) {
-    let m = 1;
-    if (c === "İstanbul") m = 1.7;
-    else if (c === "Ankara" || c === "İzmir") m = 1.45;
-    else if (["Bursa", "Kocaeli", "Antalya", "Tekirdağ", "Sakarya", "Muğla", "Aydın"].includes(c)) m = 1.25;
-    else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(c)) m = 1.15;
-    metroWeight[c] = m;
-  }
-
-  const coastalCities = new Set([
-    "İstanbul",
-    "İzmir",
-    "Muğla",
-    "Aydın",
-    "Antalya",
-    "Mersin",
-    "Balıkesir",
-    "Çanakkale",
-    "Samsun",
-    "Trabzon",
-    "Ordu",
-    "Rize",
-    "Hatay",
-  ]);
-  const industrialCities = new Set([
-    "İstanbul",
-    "Kocaeli",
-    "Bursa",
-    "Tekirdağ",
-    "Sakarya",
-    "Gaziantep",
-    "Kayseri",
-    "Konya",
-    "Manisa",
-    "Denizli",
-    "Adana",
-  ]);
-
-  const demoAreas: Record<string, MarketArea> = {};
-  for (const c of chosenCities) {
-    const basePrice =
-      c === "İstanbul"
-        ? 32000
-        : c === "Ankara"
-        ? 20500
-        : c === "İzmir"
-        ? 23000
-        : coastalCities.has(c)
-        ? Math.round(15000 * (metroWeight[c] ?? 1))
-        : industrialCities.has(c)
-        ? Math.round(14500 * (metroWeight[c] ?? 1))
-        : Math.round(12000 * (metroWeight[c] ?? 1));
-
-    demoAreas[c] = {
-      id: `area_${slug(c)}`,
-      city: c,
-      district: null,
-      name: `${c} Genel`,
-      base_m2_price: Math.round(basePrice),
-      expected_real_return_annual: Number((0.03 + rng() * 0.028).toFixed(4)),
-      inflation_annual: 0,
-      vol_annual: Number((0.10 + rng() * 0.08).toFixed(4)),
-      cycle_strength: Number((0.46 + rng() * 0.36).toFixed(4)),
-      shock_prob_annual: Number((0.045 + rng() * 0.045).toFixed(4)),
-      shock_size: Number((-0.06 - rng() * 0.08).toFixed(4)),
-    };
-  }
-
-  const targetDistricts = districtFeatures
-    .filter((x) => chosenCities.includes(x.city))
-    .sort((a, b) => b.areaApprox * (metroWeight[b.city] ?? 1) - a.areaApprox * (metroWeight[a.city] ?? 1));
-
-  const out: Property[] = [];
-  let idx = 0;
-
-  for (const dist of targetDistricts) {
-    if (out.length >= opts.countProps) break;
-
-    const urbanity = getDistrictUrbanityScore(dist.city, dist.district);
-    const centerity = getDistrictCenterityScore(dist.city, dist.district);
-    const districtDensity = getDistrictPropertyTarget({
-      rng,
-      areaApprox: dist.areaApprox,
-      city: dist.city,
-      district: dist.district,
-      minPerDistrict: opts.minPerDistrict,
-      maxPerDistrict: opts.maxPerDistrict,
-    });
-
-    const neighborhoodPool = buildNeighborhoodPool(dist.city, dist.district, rng);
-    const usedPoints: Array<[number, number]> = [];
-    const minDistanceKm = computeMinDistanceKm(dist.areaApprox, districtDensity);
-
-    for (let i = 0; i < districtDensity; i++) {
-      if (out.length >= opts.countProps) break;
-
-      const zoning = decideZoning(rng, dist.city, dist.district, centerity, urbanity);
-      const point =
-        randomPointInGeometryWithMinDistance(dist.geometry, dist.bbox, usedPoints, minDistanceKm, rng) ??
-        randomPointInGeometry(dist.geometry, dist.bbox, rng) ??
-        dist.centroid;
-
-      usedPoints.push(point);
-
-      const neighborhood = neighborhoodPool[Math.floor(rng() * neighborhoodPool.length)];
-      const areaM2 = generateParcelArea(zoning, urbanity, rng);
-
-      const baseCityPrice = demoAreas[dist.city]?.base_m2_price ?? 12000;
-      const districtBoost =
-        1 +
-        centerity * 0.22 +
-        urbanity * 0.15 +
-        (coastalCities.has(dist.city) ? 0.06 : 0) +
-        (industrialCities.has(dist.city) ? 0.04 : 0);
-      const zoningMult = zoning === "imarli" ? 1.22 + rng() * 0.22 : 0.45 + rng() * 0.18;
-      const microJitter = 0.9 + rng() * 0.24;
-
-      const pricePerM2 = Math.round(baseCityPrice * districtBoost * zoningMult * microJitter);
-
-      let development =
-        34 +
-        centerity * 24 +
-        urbanity * 18 +
-        (zoning === "imarli" ? 12 : -4) +
-        (coastalCities.has(dist.city) ? 6 : 0) +
-        (industrialCities.has(dist.city) ? 4 : 0) +
-        (rng() - 0.5) * 16;
-
-      let risk =
-        54 -
-        centerity * 10 -
-        urbanity * 8 +
-        (zoning === "imarsiz" ? 14 : -7) +
-        (coastalCities.has(dist.city) ? -2 : 0) +
-        (industrialCities.has(dist.city) ? 3 : 0) +
-        (rng() - 0.5) * 14;
-
-      let expectedAnnual =
-        9 +
-        centerity * 3 +
-        urbanity * 2.5 +
-        (zoning === "imarli" ? 3 : 1.5) +
-        (coastalCities.has(dist.city) ? 1.5 : 0) +
-        (rng() - 0.5) * 4.5;
-
-      let last30 = (rng() - 0.5) * 10 + centerity * 2.2 + urbanity * 1.3 + (zoning === "imarli" ? 1.8 : 0.3);
-
-      development = clampInt(development, 18, 96);
-      risk = clampInt(risk, 8, 95);
-      expectedAnnual = Number(clamp(expectedAnnual, 5.5, 24).toFixed(2));
-      last30 = Number(clamp(last30, -8, 14).toFixed(2));
-
-      const minBuyM2 = zoning === "imarli" ? 1 : Math.max(1, roundStep(Math.min(20, areaM2 * 0.004), 1));
-      const maxBuyM2 = Math.max(minBuyM2, roundStep(Math.min(areaM2 * 0.22, zoning === "imarli" ? 400 : 1200), 1));
-
-      const soldSeedPct = Math.max(
-        0,
-        Math.min(1, development / 100 * 0.35 + (zoning === "imarli" ? 0.12 : 0.03) + rng() * 0.08)
-      );
-      const soldM2 = Math.min(areaM2 * 0.55, Math.round(areaM2 * soldSeedPct));
-      const availableM2 = Math.max(0, areaM2 - soldM2);
-
-      const ada = 10 + Math.floor(rng() * 450);
-      const parsel = 1 + Math.floor(rng() * 1300);
-
-      out.push({
-        id: `demo_${idx}_${slug(dist.city)}_${slug(dist.district)}_${ada}_${parsel}`,
-        title: `${dist.city} ${dist.district} ${ada} Ada ${parsel} Parsel`,
-        country: "Türkiye",
-        city: dist.city,
-        district: dist.district,
-        neighborhood,
-        zoning_status: zoning,
-        price_per_m2: Math.max(1500, pricePerM2),
-        total_area_m2: areaM2,
-        available_m2: availableM2,
-        sold_m2: soldM2,
-        min_buy_m2: minBuyM2,
-        max_buy_m2: maxBuyM2,
-        risk_score: risk,
-        development_score: development,
-        expected_annual_return: expectedAnnual,
-        last_30d_change: last30,
-        latitude: Number(point[1].toFixed(6)),
-        longitude: Number(point[0].toFixed(6)),
-        quality_score: Math.max(0, Math.min(1, 0.42 + development / 240 - risk / 280 + (rng() - 0.5) * 0.1)),
-        rental_yield_annual: Math.max(0, Math.min(1, 0.03 + rng() * 0.035)),
-        total_shares: 100000,
-        area: demoAreas[dist.city],
-      });
-
-      idx += 1;
-    }
-  }
-
-  out.sort((a, b) => {
-    const sa = Number(a.development_score ?? 0) * 1.25 + Number(a.expected_annual_return ?? 0) - Number(a.risk_score ?? 0) * 0.7;
-    const sb = Number(b.development_score ?? 0) * 1.25 + Number(b.expected_annual_return ?? 0) - Number(b.risk_score ?? 0) * 0.7;
-    return sb - sa;
-  });
-
-  return out;
-}
-
-function decideZoning(
-  rng: () => number,
-  city: string,
-  district: string,
-  centerity: number,
-  urbanity: number
-): "imarli" | "imarsiz" {
-  let p = 0.52 + centerity * 0.16 + urbanity * 0.1;
-  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) p += 0.06;
-  if (containsAnyNormalized(district, ["merkez", "konak", "çankaya", "kadıköy", "beşiktaş", "şişli", "bornova", "nilüfer", "muratpaşa"])) p += 0.08;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "yayladagi", "pazaryeri", "saray", "çiftlik"])) p -= 0.08;
-  return rng() < Math.max(0, Math.min(1, p)) ? "imarli" : "imarsiz";
-}
-
-function generateParcelArea(zoning: "imarli" | "imarsiz", urbanity: number, rng: () => number) {
-  if (zoning === "imarli") {
-    const min = 280;
-    const max = 2600 - urbanity * 450;
-    return Math.max(220, Math.round(min + rng() * Math.max(240, max - min)));
-  }
-  const min = 900;
-  const max = 12000 - urbanity * 1600;
-  return Math.max(700, Math.round(min + rng() * Math.max(1500, max - min)));
-}
-
-function getDistrictPropertyTarget(args: {
-  rng: () => number;
-  areaApprox: number;
-  city: string;
-  district: string;
-  minPerDistrict: number;
-  maxPerDistrict: number;
-}) {
-  const { rng, areaApprox, city, district, minPerDistrict, maxPerDistrict } = args;
-  let score = 0;
-  score += normalizeApprox(areaApprox, 0.02, 1.6) * 3.4;
-  if (city === "İstanbul") score += 2.2;
-  else if (city === "Ankara" || city === "İzmir") score += 1.6;
-  else if (["Bursa", "Kocaeli", "Antalya", "Muğla", "Aydın", "Tekirdağ", "Sakarya"].includes(city)) score += 1.1;
-  else if (["Adana", "Mersin", "Gaziantep", "Konya", "Kayseri", "Samsun", "Eskişehir", "Denizli"].includes(city)) score += 0.7;
-  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "nilüfer", "muratpaşa", "karşıyaka"])) score += 1.4;
-  score += rng() * 1.1;
-  const target = Math.round(minPerDistrict + score);
-  return clamp(target, minPerDistrict, maxPerDistrict);
-}
-
-function buildNeighborhoodPool(city: string, district: string, rng: () => number) {
-  const districtStem = cleanDistrictStem(district);
-  const common = [
-    "Atatürk Mah.",
-    "Cumhuriyet Mah.",
-    "Bahçelievler Mah.",
-    "Yıldız Mah.",
-    "Kurtuluş Mah.",
-    "Çınar Mah.",
-    "Pınar Mah.",
-    "Yeni Mah.",
-    "İstasyon Mah.",
-    "Güneş Mah.",
-    "Mevlana Mah.",
-    "Fatih Mah.",
-    "İnönü Mah.",
-    "Akşemsettin Mah.",
-  ];
-  const premium = [
-    `${districtStem} Merkez Mah.`,
-    `${districtStem} Park Mah.`,
-    `${districtStem} Vadi Mah.`,
-    `${districtStem} Panorama Mah.`,
-    `${districtStem} Seyir Mah.`,
-    `${districtStem} Bahçe Mah.`,
-    `${districtStem} Konutları`,
-    `${districtStem} Yeni Yerleşim Mah.`,
-  ];
-  const coastal = ["Sahil Mah.", "Marina Mah.", "Yalı Mah.", "Kıyı Mah."];
-  const industrial = ["Organize Mah.", "Sanayi Yakası Mah.", "Lojistik Mah."];
-
-  let pool = [...common, ...premium];
-  if (["İstanbul", "İzmir", "Muğla", "Aydın", "Antalya", "Mersin", "Balıkesir", "Samsun", "Trabzon", "Ordu", "Rize", "Hatay"].includes(city)) {
-    pool = [...pool, ...coastal];
-  }
-  if (["Kocaeli", "Bursa", "Gaziantep", "Kayseri", "Konya", "Manisa", "Denizli", "Tekirdağ", "Adana"].includes(city)) {
-    pool = [...pool, ...industrial];
-  }
-
-  const uniq = Array.from(new Set(pool));
-  const shuffled = [...uniq].sort(() => rng() - 0.5);
-  return shuffled.slice(0, 8 + Math.floor(rng() * 4));
-}
-
-function cleanDistrictStem(district: string) {
-  return district.replace(/( Belediyesi| İlçesi| Merkez| Merkez İlçe| Merkez İlcesi)/gi, "").trim();
-}
-
-function coordsFromGeometryLocal(geom: any): number[][] {
-  if (!geom) return [];
-  const out: number[][] = [];
-  const walk = (arr: any) => {
-    if (!Array.isArray(arr)) return;
-    if (arr.length >= 2 && typeof arr[0] === "number" && typeof arr[1] === "number") {
-      out.push([Number(arr[0]), Number(arr[1])]);
-      return;
-    }
-    for (const x of arr) walk(x);
-  };
-  walk(geom.coordinates);
-  return out;
-}
-
-function bboxFromGeometryLocal(geom: any) {
-  const pts = coordsFromGeometryLocal(geom);
-  if (!pts.length) return null;
-  let minLng = pts[0][0],
-    minLat = pts[0][1],
-    maxLng = pts[0][0],
-    maxLat = pts[0][1];
-  for (const [lng, lat] of pts) {
-    minLng = Math.min(minLng, lng);
-    minLat = Math.min(minLat, lat);
-    maxLng = Math.max(maxLng, lng);
-    maxLat = Math.max(maxLat, lat);
-  }
-  return { minLng, minLat, maxLng, maxLat };
-}
-
-function centroidFromGeometryLocal(geom: any): [number, number] | null {
-  const pts = coordsFromGeometryLocal(geom);
-  if (!pts.length) return null;
-  let sx = 0,
-    sy = 0;
-  for (const [lng, lat] of pts) {
-    sx += lng;
-    sy += lat;
-  }
-  return [sx / pts.length, sy / pts.length];
-}
-
-function geometryAreaApprox(geom: any) {
-  const bbox = bboxFromGeometryLocal(geom);
-  if (!bbox) return 0;
-  return Math.max(0, bbox.maxLng - bbox.minLng) * Math.max(0, bbox.maxLat - bbox.minLat);
-}
-
-function computeMinDistanceKm(areaApprox: number, count: number) {
-  const base = Math.sqrt(Math.max(areaApprox, 0.0005)) * 111;
-  const scaled = base / Math.max(1.8, Math.sqrt(count));
-  return clamp(scaled * 0.28, 0.35, 4.2);
-}
-
-function randomPointInGeometryWithMinDistance(
-  geom: any,
-  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
-  usedPoints: Array<[number, number]>,
-  minDistanceKm: number,
-  rng: () => number
-): [number, number] | null {
-  for (let i = 0; i < 160; i++) {
-    const point = randomPointInGeometry(geom, bbox, rng);
-    if (!point) continue;
-    const okay = usedPoints.every((p) => haversineKm(p[1], p[0], point[1], point[0]) >= minDistanceKm);
-    if (okay) return point;
-  }
-  return null;
-}
-
-function randomPointInGeometry(
-  geom: any,
-  bbox: { minLng: number; minLat: number; maxLng: number; maxLat: number },
-  rng: () => number
-): [number, number] | null {
-  for (let i = 0; i < 80; i++) {
-    const lng = bbox.minLng + rng() * (bbox.maxLng - bbox.minLng);
-    const lat = bbox.minLat + rng() * (bbox.maxLat - bbox.minLat);
-    if (pointInGeometry([lng, lat], geom)) return [lng, lat];
-  }
-  return null;
-}
-
-function pointInGeometry(point: [number, number], geom: any) {
-  if (!geom) return false;
-  if (geom.type === "Polygon") return pointInPolygon(point, geom.coordinates);
-  if (geom.type === "MultiPolygon") return geom.coordinates.some((poly: any) => pointInPolygon(point, poly));
-  return false;
-}
-
-function pointInPolygon(point: [number, number], polygonCoords: any[]) {
-  if (!Array.isArray(polygonCoords) || polygonCoords.length === 0) return false;
-  const outerRing = polygonCoords[0];
-  let inside = rayCast(point, outerRing);
-  if (!inside) return false;
-  for (let i = 1; i < polygonCoords.length; i++) {
-    if (rayCast(point, polygonCoords[i])) return false;
-  }
-  return true;
-}
-
-function rayCast(point: [number, number], ring: any[]) {
-  let inside = false;
-  const x = point[0],
-    y = point[1];
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0],
-      yi = ring[i][1],
-      xj = ring[j][0],
-      yj = ring[j][1];
-    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1),
-    dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function normalizeApprox(x: number, min: number, max: number) {
-  if (max <= min) return 0;
-  return clamp((x - min) / (max - min), 0, 1);
-}
-
-function getDistrictCenterityScore(city: string, district: string) {
-  let score = 0.45;
-  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(city)) score += 0.08;
-  if (containsAnyNormalized(district, ["merkez", "çankaya", "kadıköy", "beşiktaş", "şişli", "konak", "bornova", "karşıyaka", "nilüfer", "muratpaşa", "seyhan", "odunpazarı"])) {
-    score += 0.32;
-  }
-  if (containsAnyNormalized(district, ["esenyurt", "sancaktepe", "keçiören", "toroslar", "pamukkale", "selçuklu", "tezcan"])) {
-    score += 0.06;
-  }
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "çiftlik", "saray", "pazaryeri", "karaisalı"])) {
-    score -= 0.16;
-  }
-  return clamp(score, 0.12, 0.95);
-}
-
-function getDistrictUrbanityScore(city: string, district: string) {
-  let score = 0.42;
-  if (["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya", "Adana", "Gaziantep", "Mersin"].includes(city)) {
-    score += 0.12;
-  }
-  if (containsAnyNormalized(district, ["organize", "sanayi", "merkez", "şehir", "kent"])) score += 0.06;
-  if (containsAnyNormalized(district, ["yayla", "köy", "ova", "göl", "dağ", "yayladagi"])) score -= 0.12;
-  return clamp(score, 0.08, 0.92);
-}
-
-function containsAnyNormalized(text: string, needles: string[]) {
-  const t = normalizeTR(text);
-  return needles.some((n) => t.includes(normalizeTR(n)));
-}
-
-function normalizeTR(s: string) {
-  return s
-    .toLowerCase()
-    .replaceAll("ı", "i")
-    .replaceAll("ğ", "g")
-    .replaceAll("ü", "u")
-    .replaceAll("ş", "s")
-    .replaceAll("ö", "o")
-    .replaceAll("ç", "c");
-}
-
-function roundStep(value: number, step: number) {
-  return Math.round(value / step) * step;
-}
-
-function clampInt(x: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, Math.round(x)));
-}
-
-function slug(s: string) {
-  return normalizeTR(s)
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}

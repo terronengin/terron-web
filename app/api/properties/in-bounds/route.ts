@@ -15,7 +15,10 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from("properties")
-    .select("id,title,city,district,latitude,longitude,risk_score,development_score,total_area_m2")
+    .select(
+      "id,title,city,district,latitude,longitude,risk_score,development_score,total_area_m2,listing_status,is_real"
+    )
+    .in("listing_status", ["approved"])
     .gte("latitude", south)
     .lte("latitude", north)
     .gte("longitude", west)

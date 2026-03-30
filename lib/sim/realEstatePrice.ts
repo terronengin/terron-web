@@ -18,8 +18,7 @@ export type SimProperty = {
   };
 
   /**
-   * Demo / piyasa baskı alanları
-   * Bunlar db'de yoksa da sistem çalışır
+   * Piyasa baskı alanları (opsiyonel; DB'de yoksa da sistem çalışır)
    */
   demand_score?: number; // 0..1
   buy_pressure_count?: number; // toplam alım adedi
@@ -111,16 +110,60 @@ export function getSellPressureStepRate(m2: number): number {
 }
 
 /**
+ * Parsel payı (alınan m² / toplam m²) — birim fiyat çarpanı.
+ * - Pay yüzde 20'den az: küçük dilim primi +%35
+ * - Yüzde 20–50: orta dilim −%15
+ * - Yüzde 50 üstü: liste (tek sefer üst sınır seed tarafında toplamın ~%55’i ile uyumlu)
+ */
+export function getParcelSharePriceMultiplier(share: number): {
+  multiplier: number;
+  label: string;
+} {
+  const s = Math.max(0, Math.min(1, share));
+  if (s < 0.2) {
+    return { multiplier: 1.35, label: "Küçük pay (yüzde 20'den az): birim +%35" };
+  }
+  if (s <= 0.5) {
+    return { multiplier: 0.85, label: "Orta pay (yüzde 20–50): birim −%15" };
+  }
+  return { multiplier: 1, label: "Büyük pay (yüzde 50 üstü): birim liste" };
+}
+
+/**
  * Kullanıcının alım anında göreceği indirimli birim fiyat
+ * (önce parsel payı çarpanı, sonra toplu m² indirimi)
  */
 export function getBuyUnitPriceTRY(property: SimProperty, marketPricePerM2: number, buyM2: number) {
-  const bulkDiscountRate = getBulkDiscountRate(buyM2);
-  const discountedPricePerM2 = marketPricePerM2 * (1 - bulkDiscountRate);
+  const qty = Math.max(0, safeNum(buyM2, 0));
+  const totalArea = Math.max(1, safeNum(property.area_m2, 1));
+  if (qty <= 0) {
+    const list = safeNum(marketPricePerM2, 0);
+    return {
+      listPricePerM2: list,
+      bulkDiscountRate: 0,
+      discountedPricePerM2: list,
+      shareOfParcel: 0,
+      parcelShareMultiplier: 1,
+      parcelShareLabel: "",
+      adjustedListPricePerM2: list,
+    };
+  }
+  const shareOfParcel = qty / totalArea;
+  const { multiplier: parcelShareMultiplier, label: parcelShareLabel } =
+    getParcelSharePriceMultiplier(shareOfParcel);
+
+  const adjustedListPerM2 = marketPricePerM2 * parcelShareMultiplier;
+  const bulkDiscountRate = getBulkDiscountRate(qty);
+  const discountedPricePerM2 = adjustedListPerM2 * (1 - bulkDiscountRate);
 
   return {
     listPricePerM2: marketPricePerM2,
     bulkDiscountRate,
     discountedPricePerM2,
+    shareOfParcel,
+    parcelShareMultiplier,
+    parcelShareLabel,
+    adjustedListPricePerM2: adjustedListPerM2,
   };
 }
 
@@ -128,9 +171,32 @@ export function getBuyUnitPriceTRY(property: SimProperty, marketPricePerM2: numb
  * Alış ödeme özeti
  */
 export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: number, buyM2: number) {
-  const qty = Math.max(1, safeNum(buyM2, 1));
-  const { listPricePerM2, bulkDiscountRate, discountedPricePerM2 } =
-    getBuyUnitPriceTRY(property, marketPricePerM2, qty);
+  const qty = Math.max(0, safeNum(buyM2, 0));
+  const {
+    listPricePerM2,
+    bulkDiscountRate,
+    discountedPricePerM2,
+    shareOfParcel,
+    parcelShareMultiplier,
+    parcelShareLabel,
+    adjustedListPricePerM2,
+  } = getBuyUnitPriceTRY(property, marketPricePerM2, qty);
+
+  if (qty <= 0) {
+    return {
+      listPricePerM2,
+      bulkDiscountRate,
+      discountedPricePerM2,
+      grossAssetValue: 0,
+      buyFeeRate: BUY_FEE_RATE,
+      buyFee: 0,
+      totalCost: 0,
+      shareOfParcel,
+      parcelShareMultiplier,
+      parcelShareLabel,
+      adjustedListPricePerM2,
+    };
+  }
 
   const grossAssetValue = discountedPricePerM2 * qty;
   const buyFee = grossAssetValue * BUY_FEE_RATE;
@@ -144,6 +210,10 @@ export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: nu
     buyFeeRate: BUY_FEE_RATE,
     buyFee,
     totalCost,
+    shareOfParcel,
+    parcelShareMultiplier,
+    parcelShareLabel,
+    adjustedListPricePerM2,
   };
 }
 
@@ -151,13 +221,23 @@ export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: nu
  * Satış ödeme özeti
  */
 export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) {
-  const qty = Math.max(1, safeNum(sellM2, 1));
-  const grossSaleValue = marketPricePerM2 * qty;
+  const qty = Math.max(0, safeNum(sellM2, 0));
+  const px = safeNum(marketPricePerM2, 0);
+  if (qty <= 0 || !Number.isFinite(px) || px <= 0) {
+    return {
+      marketPricePerM2: px,
+      grossSaleValue: 0,
+      sellFeeRate: SELL_FEE_RATE,
+      sellFee: 0,
+      netProceeds: 0,
+    };
+  }
+  const grossSaleValue = px * qty;
   const sellFee = grossSaleValue * SELL_FEE_RATE;
   const netProceeds = grossSaleValue - sellFee;
 
   return {
-    marketPricePerM2,
+    marketPricePerM2: px,
     grossSaleValue,
     sellFeeRate: SELL_FEE_RATE,
     sellFee,
