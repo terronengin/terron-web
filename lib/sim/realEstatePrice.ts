@@ -33,15 +33,31 @@ export type BulkDiscountTier = {
   discountRate: number; // 0.005 = %0.5
 };
 
-export const BUY_FEE_RATE = 0.005; // binde 5 = %0.5
-export const SELL_FEE_RATE = 0.01; // %1
+/** Alım: komisyon arsa brütünün %0,5’i, cüzdandan düşen = brüt + bu komisyon */
+export const BUY_FEE_RATE = 0.005;
+/** Satış: komisyon brüt satışın %1’i, hesaba net = brüt − bu komisyon */
+export const SELL_FEE_RATE = 0.01;
 
-/** total_paid = arsa brütü × (1 + BUY_FEE_RATE) iken brüt arsa tutarı */
+/** grossPropertyAmount = m2 × currentPricePerM2 (TL, yuvarlanmış) */
+export function buyFeeFromGrossProperty(grossPropertyAmount: number): number {
+  const g = Math.max(0, Number(grossPropertyAmount) || 0);
+  if (!Number.isFinite(g)) return 0;
+  return Math.round(g * BUY_FEE_RATE);
+}
+
+/** totalPayable = grossPropertyAmount + buyFee */
+export function totalPayableForBuy(grossPropertyAmount: number): number {
+  const g = Math.max(0, Number(grossPropertyAmount) || 0);
+  if (!Number.isFinite(g)) return 0;
+  return g + buyFeeFromGrossProperty(g);
+}
+
+/** total_paid = brüt + alım komisyonu iken brüt arsa (ters çözüm) */
 export function grossAssetFromTotalPaid(totalPaid: number): number {
   const n = Number(totalPaid);
   const tp = Math.max(0, Number.isFinite(n) ? n : 0);
   if (tp <= 0) return 0;
-  return tp / (1 + BUY_FEE_RATE);
+  return Math.round(tp / (1 + BUY_FEE_RATE));
 }
 
 export const BULK_DISCOUNT_TIERS: BulkDiscountTier[] = [
@@ -206,8 +222,8 @@ export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: nu
     };
   }
 
-  const grossAssetValue = discountedPricePerM2 * qty;
-  const buyFee = grossAssetValue * BUY_FEE_RATE;
+  const grossAssetValue = Math.round(discountedPricePerM2 * qty);
+  const buyFee = buyFeeFromGrossProperty(grossAssetValue);
   const totalCost = grossAssetValue + buyFee;
 
   return {
@@ -252,8 +268,8 @@ export function calculateSimpleBuyQuoteTRY(
       adjustedListPricePerM2: list,
     };
   }
-  const grossAssetValue = list * qty;
-  const buyFee = grossAssetValue * BUY_FEE_RATE;
+  const grossAssetValue = Math.round(list * qty);
+  const buyFee = buyFeeFromGrossProperty(grossAssetValue);
   const totalCost = grossAssetValue + buyFee;
   const shareOfParcel = parcelTotal != null ? qty / parcelTotal : 0;
   return {
@@ -286,8 +302,8 @@ export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) 
       netProceeds: 0,
     };
   }
-  const grossSaleValue = px * qty;
-  const sellFee = grossSaleValue * SELL_FEE_RATE;
+  const grossSaleValue = Math.round(px * qty);
+  const sellFee = Math.round(grossSaleValue * SELL_FEE_RATE);
   const netProceeds = grossSaleValue - sellFee;
 
   return {
@@ -298,6 +314,13 @@ export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) 
     netProceeds,
   };
 }
+
+/*
+ * Terron fee model — sanity (örnekler):
+ * - Alış: gross 100_000 → buyFee 500 → totalPayable 100_500
+ * - Satış: gross 100_000 → sellFee 1_000 → net 99_000
+ * - Satış: gross 150_000 → sellFee 1_500 → net 148_500
+ */
 
 /**
  * Alım sonrası property fiyatını baskılamak için kullanılabilir.

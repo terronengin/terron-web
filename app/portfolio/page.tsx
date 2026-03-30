@@ -259,11 +259,35 @@ export default function PortfolioPage() {
         </div>
         <h1 style={{ margin: "12px 0 8px", fontSize: 26, fontWeight: 950, lineHeight: 1.2 }}>Portföy</h1>
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55, opacity: 0.88 }}>
-          <strong>Arsa tutarı</strong>, liste fiyatı × m² (komisyon hariç). Alırken cüzdandan düşen{" "}
-          <strong>toplam ödeme</strong> arsa + %0,5 alım komisyonudur. Satışta brüt tutar üzerinden %1 kesilir; hesaba geçen
-          net = brüt − satış komisyonu. <strong>Brüt K/Z</strong> güncel liste değeri ile giriş arsa tutarını karşılaştırır;{" "}
-          <strong>Nakit K/Z</strong> tahmini net satış ile toplam ödeneni (komisyonlar dahil) karşılaştırır.
+          <strong>Alım:</strong> arsa tutarı (liste × m²) + %0,5 alım komisyonu = cüzdandan düşen toplam.{" "}
+          <strong>Satış:</strong> brüt satış − %1 satış komisyonu = hesaba geçen net. K/Z sütunları tahmini net üzerinden
+          hesaplanır.
         </p>
+
+        <div
+          style={{
+            marginTop: 16,
+            padding: "14px 16px",
+            borderRadius: 14,
+            background: "rgba(245,215,110,0.08)",
+            border: "1px solid rgba(245,215,110,0.25)",
+            fontSize: 12,
+            lineHeight: 1.55,
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 8, color: "#fef9c3" }}>Satış hesap özeti (örnek)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 4, maxWidth: 420, opacity: 0.95 }}>
+            <span>Brüt satış tutarı</span>
+            <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>100.000 ₺</span>
+            <span>Satış komisyonu (%1)</span>
+            <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>− 1.000 ₺</span>
+            <span style={{ fontWeight: 800 }}>Hesaba geçecek net</span>
+            <span style={{ textAlign: "right", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>99.000 ₺</span>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 11, opacity: 0.75 }}>
+            150.000 ₺ brüt → 1.500 ₺ komisyon → 148.500 ₺ net. Sat butonunda onay penceresinde güncel rakamlar gösterilir.
+          </div>
+        </div>
 
         <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
           <Link

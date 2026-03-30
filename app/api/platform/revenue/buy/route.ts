@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { buyFeeFromTotalPaid } from "@/lib/admin/analytics";
 import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
-import { BUY_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import { BUY_FEE_RATE, buyFeeFromGrossProperty, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
 
 export const runtime = "nodejs";
 
@@ -12,7 +11,7 @@ function bad(msg: string, status = 400) {
 
 /**
  * Alım sonrası komisyon defteri (service role).
- * total_paid = brüt varlık + alım komisyonu; kullanıcı cüzdandan zaten düşülmüştür.
+ * totalPaid = grossPropertyAmount + buyFee; fee_amount = grossPropertyAmount × 0,005
  */
 export async function POST(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -48,7 +47,8 @@ export async function POST(req: Request) {
   if (!propertyId) return bad("propertyId gerekli", 400);
   if (!Number.isFinite(totalPaid) || totalPaid <= 0) return bad("totalPaid geçersiz", 400);
 
-  const fee = Math.round(buyFeeFromTotalPaid(totalPaid));
+  const grossProperty = grossAssetFromTotalPaid(totalPaid);
+  const fee = buyFeeFromGrossProperty(grossProperty);
 
   const sb = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     user_id: user.id,
     property_id: propertyId,
     type: "buy_fee",
-    gross_amount: Math.round(totalPaid),
+    gross_amount: grossProperty,
     fee_rate: BUY_FEE_RATE,
     fee_amount: fee,
   });

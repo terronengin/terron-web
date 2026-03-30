@@ -2661,51 +2661,37 @@ export default function DashboardPage() {
                       border: "1px solid rgba(255,255,255,0.08)",
                     }}
                   >
-                    <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Hesap özeti</div>
+                    <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Alım özeti</div>
+                    <div style={{ fontSize: 9, opacity: 0.55, marginBottom: 6 }}>
+                      Liste ₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}/m² × {formatDecimal(buyM2 || selectedMinBuyM2)} m²
+                    </div>
                     <div
                       style={{
                         display: "grid",
                         gridTemplateColumns: "1fr 1fr",
-                        gap: 4,
-                        fontSize: 10,
-                        opacity: 0.88,
-                        lineHeight: 1.35,
+                        gap: 6,
+                        fontSize: 11,
+                        opacity: 0.92,
+                        lineHeight: 1.4,
                       }}
                     >
-                      <span>Liste / m²</span>
-                      <span style={{ textAlign: "right" }}>₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}</span>
-                      <span>Parsel payı</span>
-                      <span style={{ textAlign: "right" }}>
-                        %{((selectedQuote?.shareOfParcel ?? 0) * 100).toFixed(1)}
-                      </span>
-                      <span>Parsel birim çarpanı</span>
-                      <span style={{ textAlign: "right" }}>
-                        ×{(selectedQuote?.parcelShareMultiplier ?? 1).toFixed(2)}
-                      </span>
-                      <span>Liste (pay sonrası) / m²</span>
-                      <span style={{ textAlign: "right" }}>
-                        ₺{formatTRY(selectedQuote?.adjustedListPricePerM2 ?? selectedQuote?.listPricePerM2 ?? 0)}
-                      </span>
-                      <span>Toplu m² indirimi</span>
-                      <span style={{ textAlign: "right" }}>
-                        %{((selectedQuote?.bulkDiscountRate ?? 0) * 100).toFixed(1)}
-                      </span>
-                      <span>Arsa tutarı (liste × m²)</span>
-                      <span style={{ textAlign: "right" }}>
+                      <span>Arsa tutarı</span>
+                      <span style={{ textAlign: "right", fontWeight: 800 }}>
                         ₺{formatTRY(Math.round(selectedQuote?.grossAssetValue ?? 0))}
                       </span>
                       <span>Alım komisyonu (%0,5)</span>
-                      <span style={{ textAlign: "right" }}>
+                      <span style={{ textAlign: "right", fontWeight: 800 }}>
                         ₺{formatTRY(Math.round(selectedQuote?.buyFee ?? 0))}
                       </span>
-                    </div>
-                    <div style={{ fontSize: 9, opacity: 0.65, marginTop: 5, lineHeight: 1.35 }}>
-                      {selectedQuote?.parcelShareLabel ?? ""}
+                      <span>Toplam ödenecek</span>
+                      <span style={{ textAlign: "right", fontWeight: 950 }}>
+                        ₺{formatTRY(Math.round(selectedTotalCost))}
+                      </span>
                     </div>
                     <div
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
+                        justifyContent: "flex-end",
                         alignItems: "flex-end",
                         marginTop: 8,
                         paddingTop: 8,
@@ -2713,12 +2699,6 @@ export default function DashboardPage() {
                         gap: 8,
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: 9, opacity: 0.65 }}>Toplam ödenecek (arsa + komisyon)</div>
-                        <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>
-                          ₺{formatTRY(Math.round(selectedTotalCost))}
-                        </div>
-                      </div>
                       <div style={{ textAlign: "right" }}>
                         <div style={{ fontSize: 9, opacity: 0.65 }}>m²</div>
                         <div style={{ fontSize: 15, fontWeight: 1000, marginTop: 2 }}>{formatDecimal(buyM2)}</div>
@@ -2814,11 +2794,12 @@ export default function DashboardPage() {
                               {it.property.district ? ` / ${it.property.district}` : ""}
                             </div>
                             <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
-                              {formatDecimal(it.m2)} m² · Arsa ₺{formatNumber(Math.round(it.grossAssetValue))} · Kom. ₺
+                              Arsa ₺{formatNumber(Math.round(it.grossAssetValue))} + kom. %0,5 ₺
                               {formatNumber(Math.round(it.buyFee))}
                             </div>
                           </div>
-                          <div style={{ fontWeight: 900, fontSize: 10, whiteSpace: "nowrap" }}>
+                          <div style={{ fontWeight: 900, fontSize: 10, whiteSpace: "nowrap", textAlign: "right" }}>
+                            <div style={{ fontSize: 8, opacity: 0.6 }}>Toplam</div>
                             ₺{formatNumber(Math.round(it.totalPaid))}
                           </div>
                           <button type="button" onClick={() => removeFromCart(it.key)} style={{ ...smallGhostBtn, padding: "4px 6px" }} title="Çıkar">

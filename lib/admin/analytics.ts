@@ -1,10 +1,9 @@
-import { BUY_FEE_RATE, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import { buyFeeFromGrossProperty, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
 
-/** total_paid = brüt + alım komisyonu olduğundan komisyon = tp * r / (1+r) */
+/** total_paid = brüt arsa + alım komisyonu → komisyon = brüt × BUY_FEE_RATE */
 export function buyFeeFromTotalPaid(totalPaid: number): number {
-  const tp = Math.max(0, Number(totalPaid) || 0);
-  if (tp <= 0) return 0;
-  return (tp * BUY_FEE_RATE) / (1 + BUY_FEE_RATE);
+  const g = grossAssetFromTotalPaid(totalPaid);
+  return buyFeeFromGrossProperty(g);
 }
 
 export type AdminAnalyticsDailyRow = {
@@ -41,7 +40,7 @@ export type AdminAnalyticsPayload = {
     ledgerSellFees: number;
     /** Terron toplam komisyon geliri (alış + satış) */
     ledgerTotalFees: number;
-    /** Alış işlem hacmi: ödenen toplamlar (Σ gross_amount, buy_fee) */
+    /** Alış işlem hacmi: brüt arsa tutarı (Σ gross_amount, buy_fee) */
     ledgerBuyVolume: number;
     /** Satış işlem hacmi: brüt satış (Σ gross_amount, sell_fee) */
     ledgerSellVolume: number;
