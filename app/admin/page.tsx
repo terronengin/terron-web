@@ -564,7 +564,7 @@ export default function AdminPage() {
           onClick={() => router.replace("/dashboard")}
           style={{ marginTop: 12, padding: "10px 18px", borderRadius: 12, cursor: "pointer" }}
         >
-          Dashboard
+          Ana Sayfa
         </button>
       </div>
     );
@@ -614,22 +614,9 @@ export default function AdminPage() {
               fontWeight: 700,
             }}
           >
-            ← Dashboard
+            ← Ana Sayfa
           </button>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <h1 style={{ fontSize: 32, fontWeight: 950, margin: 0 }}>Admin • İlanlar ve portföy</h1>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                opacity: 0.72,
-                letterSpacing: "0.04em",
-                color: "#e2e8f0",
-              }}
-            >
-              (YÖNETİCİ ADMİN - ENGİN CİVİL)
-            </div>
-          </div>
+          <h1 style={{ fontSize: 32, fontWeight: 950, margin: 0, minWidth: 0 }}>Admin • İlanlar ve portföy</h1>
           <button
             type="button"
             onClick={() => void loadAnalytics()}
@@ -662,11 +649,50 @@ export default function AdminPage() {
           }}
         >
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", opacity: 0.75, color: "#c9a227" }}>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  letterSpacing: "0.2em",
+                  color: "#eab308",
+                  textTransform: "uppercase",
+                  textShadow: "0 0 28px rgba(234,179,8,0.35)",
+                }}
+              >
                 OPERASYONEL ÖZET
               </div>
-              <div style={{ fontSize: 18, fontWeight: 950, marginTop: 4 }}>Piyasa ve kasa (yalnızca yönetici)</div>
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 28,
+                  fontWeight: 950,
+                  lineHeight: 1.2,
+                  letterSpacing: "-0.02em",
+                  color: "#f8fafc",
+                  textShadow: "0 2px 24px rgba(0,0,0,0.45)",
+                }}
+              >
+                Piyasa ve Kasa{" "}
+                <span
+                  style={{
+                    display: "inline-block",
+                    marginLeft: 6,
+                    padding: "4px 12px",
+                    borderRadius: 10,
+                    fontSize: "0.62em",
+                    fontWeight: 900,
+                    letterSpacing: "0.08em",
+                    verticalAlign: "middle",
+                    color: "#fef9c3",
+                    background: "linear-gradient(135deg, rgba(234,179,8,0.22), rgba(15,23,42,0.85))",
+                    border: "1px solid rgba(245,215,110,0.45)",
+                    boxShadow: "0 0 0 1px rgba(0,0,0,0.2), 0 8px 28px rgba(234,179,8,0.12)",
+                  }}
+                >
+                  (YÖNETİCİ — ENGİN CİVİL)
+                </span>
+              </div>
             </div>
             {analytics?.generatedAt ? (
               <div style={{ fontSize: 11, opacity: 0.65, alignSelf: "center" }}>
