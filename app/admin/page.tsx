@@ -49,6 +49,13 @@ function fmtTRY(value: number | null | undefined) {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(value));
 }
 
+/** TL — tabular rakam, taşmayı azaltır */
+function fmtTRYTL(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const n = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(value));
+  return `₺\u00A0${n}`;
+}
+
 type AdminFilterTab = "all" | "seeded" | "user_uploaded" | "pending" | "approved" | "rejected";
 type MainTab = "listings" | "inquiries";
 
@@ -676,118 +683,311 @@ export default function AdminPage() {
             </div>
           ) : null}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {[
-              {
-                k: "Toplam ilan alanı (m²)",
-                v: analytics ? fmtNumber(analytics.properties.totalAreaM2) : analyticsLoading ? "…" : "—",
-                sub: "Kayıtlı parsellerin toplam m²",
-              },
-              {
-                k: "Liste değeri (₺)",
-                v: analytics ? `₺${fmtTRY(analytics.properties.listValueAtPrice)}` : analyticsLoading ? "…" : "—",
-                sub: "Σ (m² × liste ₺/m²)",
-              },
-              {
-                k: "Platformda satılan m²",
-                v: analytics ? fmtNumber(analytics.properties.soldM2) : analyticsLoading ? "…" : "—",
-                sub: "İlanlarda işaretli satılan miktar",
-              },
-              {
-                k: "Satışa kalan m²",
-                v: analytics ? fmtNumber(analytics.properties.availableM2) : analyticsLoading ? "…" : "—",
-                sub: "Şu an satışa açık stok",
-              },
-              {
-                k: "Açık pozisyon / yatırımcı",
-                v: analytics
-                  ? `${fmtNumber(analytics.positions.openCount)} / ${fmtNumber(analytics.positions.uniqueInvestors)}`
-                  : analyticsLoading
-                    ? "…"
-                    : "—",
-                sub: "Aktif işlem adedi • benzersiz kullanıcı",
-              },
-              {
-                k: "Alış işlem hacmi (defter, ₺)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerBuyVolume)}` : analyticsLoading ? "…" : "—",
-                sub: "Kullanıcıların alımda ödediği toplam (komisyon dahil)",
-              },
-              {
-                k: "Satış işlem hacmi — brüt (defter, ₺)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerSellVolume)}` : analyticsLoading ? "…" : "—",
-                sub: "Satışta işlem gören brüt tutarlar (liste × m²)",
-              },
-              {
-                k: "Pozisyon ödemeleri (referans, ₺)",
-                v: analytics ? `₺${fmtTRY(analytics.positions.totalPaidVolume)}` : analyticsLoading ? "…" : "—",
-                sub: "Açık/kapanmış pozisyon total_paid toplamı",
-              },
-              {
-                k: "Alıştan gelir — komisyon (defter)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerBuyFees)}` : analyticsLoading ? "…" : "—",
-                sub: "platform_revenue (buy_fee) birikimi",
-              },
-              {
-                k: "Satıştan gelir — komisyon (defter)",
-                v: analytics ? `₺${fmtTRY(analytics.fees.ledgerSellFees)}` : analyticsLoading ? "…" : "—",
-                sub: "platform_revenue (sell_fee) birikimi",
-              },
-            ].map((x) => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            <div>
               <div
-                key={x.k}
                 style={{
-                  borderRadius: 16,
-                  padding: 14,
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  background: "rgba(6,14,30,0.55)",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                  opacity: 0.72,
+                  color: "#94a3b8",
+                  marginBottom: 12,
                 }}
               >
-                <div style={{ fontSize: 11, opacity: 0.78, fontWeight: 800 }}>{x.k}</div>
-                <div style={{ fontSize: 22, fontWeight: 950, marginTop: 6, color: "#f8fafc" }}>{x.v}</div>
-                <div style={{ fontSize: 10, opacity: 0.58, marginTop: 6, lineHeight: 1.35 }}>{x.sub}</div>
+                KOMİSYON GELİRİ (GERÇEK İŞLEMLER)
               </div>
-            ))}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                    border: "1px solid rgba(148,163,184,0.2)",
+                    background: "rgba(6,14,30,0.65)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#cbd5e1", lineHeight: 1.35 }}>
+                    Gerçek alım komisyonu
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 26,
+                      fontWeight: 950,
+                      marginTop: 10,
+                      color: "#f8fafc",
+                      fontVariantNumeric: "tabular-nums",
+                      letterSpacing: "-0.02em",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {analytics ? fmtTRYTL(analytics.fees.ledgerBuyFees) : analyticsLoading ? "…" : "—"}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.55, marginTop: 8, lineHeight: 1.4 }}>
+                    Alım yapıldıkça birikir (%0,5 modeli, ödenen tutar üzerinden).
+                  </div>
+                </div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                    border: "1px solid rgba(148,163,184,0.2)",
+                    background: "rgba(6,14,30,0.65)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#cbd5e1", lineHeight: 1.35 }}>
+                    Gerçek satış komisyonu
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 26,
+                      fontWeight: 950,
+                      marginTop: 10,
+                      color: "#f8fafc",
+                      fontVariantNumeric: "tabular-nums",
+                      letterSpacing: "-0.02em",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {analytics ? fmtTRYTL(analytics.fees.ledgerSellFees) : analyticsLoading ? "…" : "—"}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.55, marginTop: 8, lineHeight: 1.4 }}>
+                    Satış yapıldıkça birikir (brüt satış üzerinden %1).
+                  </div>
+                </div>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => setTreasuryModalOpen(true)}
-              disabled={!analytics || analyticsLoading}
+              <div
+                style={{
+                  marginTop: 14,
+                  borderRadius: 18,
+                  padding: "20px 22px",
+                  border: "1px solid rgba(245,215,110,0.42)",
+                  background: "linear-gradient(145deg, rgba(201,162,39,0.14), rgba(15,28,52,0.85))",
+                  minWidth: 0,
+                }}
+              >
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: "#fef9c3", letterSpacing: "0.04em" }}>
+                      Terron kasası
+                    </div>
+                    <div style={{ fontSize: 11, opacity: 0.72, marginTop: 4, color: "#e7e5e4" }}>
+                      Gerçek alım + gerçek satış komisyonu toplamı
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 32,
+                      fontWeight: 950,
+                      color: "#fff",
+                      fontVariantNumeric: "tabular-nums",
+                      letterSpacing: "-0.03em",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {analytics ? fmtTRYTL(analytics.fees.ledgerTotalFees) : analyticsLoading ? "…" : "—"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTreasuryModalOpen(true)}
+                  disabled={!analytics || analyticsLoading}
+                  style={{
+                    marginTop: 16,
+                    width: "100%",
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#fef3c7",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: !analytics || analyticsLoading ? "not-allowed" : "pointer",
+                    opacity: !analytics || analyticsLoading ? 0.55 : 1,
+                  }}
+                >
+                  Günlük dökümü aç
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                  opacity: 0.72,
+                  color: "#94a3b8",
+                  marginBottom: 12,
+                }}
+              >
+                İŞLEM HACMİ (GERÇEK, TL)
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "rgba(6,14,30,0.55)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.75 }}>Alışta ödenen toplam</div>
+                  <div
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 950,
+                      marginTop: 8,
+                      fontVariantNumeric: "tabular-nums",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {analytics ? fmtTRYTL(analytics.fees.ledgerBuyVolume) : analyticsLoading ? "…" : "—"}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "14px 16px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "rgba(6,14,30,0.55)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.75 }}>Satışta brüt işlem tutarı</div>
+                  <div
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 950,
+                      marginTop: 8,
+                      fontVariantNumeric: "tabular-nums",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {analytics ? fmtTRYTL(analytics.fees.ledgerSellVolume) : analyticsLoading ? "…" : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                  opacity: 0.72,
+                  color: "#94a3b8",
+                  marginBottom: 12,
+                }}
+              >
+                PİYASA ÖZETİ
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                {[
+                  {
+                    k: "Toplam ilan alanı",
+                    v: analytics ? `${fmtNumber(analytics.properties.totalAreaM2)} m²` : analyticsLoading ? "…" : "—",
+                    sub: "Kayıtlı parseller",
+                  },
+                  {
+                    k: "Liste değeri",
+                    v: analytics ? fmtTRYTL(analytics.properties.listValueAtPrice) : analyticsLoading ? "…" : "—",
+                    sub: "Σ (m² × liste)",
+                  },
+                  {
+                    k: "Platformda satılan m²",
+                    v: analytics ? fmtNumber(analytics.properties.soldM2) : analyticsLoading ? "…" : "—",
+                    sub: "İlan stok kaydı",
+                  },
+                  {
+                    k: "Satışa kalan m²",
+                    v: analytics ? fmtNumber(analytics.properties.availableM2) : analyticsLoading ? "…" : "—",
+                    sub: "Açık stok",
+                  },
+                  {
+                    k: "Açık pozisyon / yatırımcı",
+                    v: analytics
+                      ? `${fmtNumber(analytics.positions.openCount)} / ${fmtNumber(analytics.positions.uniqueInvestors)}`
+                      : analyticsLoading
+                        ? "…"
+                        : "—",
+                    sub: "Aktif işlem • kullanıcı",
+                  },
+                ].map((x) => (
+                  <div
+                    key={x.k}
+                    style={{
+                      borderRadius: 16,
+                      padding: "14px 16px",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "rgba(6,14,30,0.55)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, opacity: 0.78, fontWeight: 800 }}>{x.k}</div>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 950,
+                        marginTop: 8,
+                        color: "#f8fafc",
+                        fontVariantNumeric: "tabular-nums",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {x.v}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.55, marginTop: 6, lineHeight: 1.35 }}>{x.sub}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
               style={{
-                borderRadius: 16,
-                padding: 14,
-                border: "1px solid rgba(245,215,110,0.45)",
-                background: "linear-gradient(145deg, rgba(201,162,39,0.22), rgba(15,28,52,0.7))",
-                textAlign: "left",
-                cursor: !analytics || analyticsLoading ? "not-allowed" : "pointer",
-                opacity: !analytics || analyticsLoading ? 0.55 : 1,
+                fontSize: 12,
+                opacity: 0.65,
+                padding: "12px 14px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                lineHeight: 1.5,
               }}
             >
-              <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 900, color: "#fef9c3" }}>Terron komisyon kasası (defter)</div>
-              <div style={{ fontSize: 26, fontWeight: 950, marginTop: 6, color: "#fff" }}>
-                {analytics ? `₺${fmtTRY(analytics.fees.ledgerTotalFees)}` : analyticsLoading ? "…" : "—"}
-              </div>
-              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 8, lineHeight: 1.4, color: "#e7e5e4" }}>
-                Her alım/satışta kaydedilen komisyonların toplamı. Tıklayınca günlük döküm (alış + satış komisyonu).
-              </div>
-              <div style={{ fontSize: 10, marginTop: 10, opacity: 0.65 }}>
-                Kullanıcı cüzdanları toplamı:{" "}
-                {analytics ? `₺${fmtTRY(analytics.wallets.totalUserBalances)}` : "—"} ({analytics?.wallets.walletRows ?? 0}{" "}
-                cüzdan) — dolaşımdaki bakiye, platform karı değildir.
-              </div>
-            </button>
+              Kullanıcı cüzdanları (bilgi):{" "}
+              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>
+                {analytics ? fmtTRYTL(analytics.wallets.totalUserBalances) : "—"}
+              </span>{" "}
+              · {analytics?.wallets.walletRows ?? 0} cüzdan — kullanıcı bakiyesi platform karı değildir.
+            </div>
           </div>
 
-          <div style={{ fontSize: 11, opacity: 0.55, marginTop: 14, lineHeight: 1.45 }}>
-            <b>Defter:</b> Alım ve satış komisyonları <code>platform_revenue</code> tablosunda işlem bazında kayıt altına
-            alınır; üstteki tutarlar bu kayıtların toplamıdır. Referans tahminleri (ilan satılan m² × fiyat) eski
-            yöntemdir. Arsa fiyatı işlemle otomatik değişmez; kullanıcıdan kesilen komisyon net satış / ödeme akışına
-            göre hesaplanır.
+          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 16, lineHeight: 1.45 }}>
+            Komisyon tutarları yalnızca gerçekleşen alım ve satışlarda <code>platform_revenue</code> defterine yazılır;
+            tahmin kullanılmaz. Terron kasası, bu defterdeki alış ve satış komisyonlarının toplamıdır.
           </div>
         </div>
 
@@ -1938,7 +2138,7 @@ export default function AdminPage() {
                   </div>
                   <h2 style={{ fontSize: 22, fontWeight: 950, margin: "8px 0 0" }}>Günlük komisyon dökümü</h2>
                   <p style={{ margin: "8px 0 0", fontSize: 13, opacity: 0.75, lineHeight: 1.55 }}>
-                    <code>platform_revenue</code> kayıtlarına göre günlük alış ve satış komisyonları ile kümülatif toplam.
+                    Gerçek işlem kayıtları: günlük alış / satış komisyonu ve kümülatif Terron toplamı.
                   </p>
                 </div>
                 <button
@@ -1958,93 +2158,127 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
                 <div
                   style={{
-                    padding: 12,
+                    padding: 14,
                     borderRadius: 14,
                     background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.08)",
+                    minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Toplam komisyon (defter)</div>
-                  <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.ledgerTotalFees)}
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Terron kasası (toplam)</div>
+                  <div
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 950,
+                      marginTop: 6,
+                      fontVariantNumeric: "tabular-nums",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {fmtTRYTL(analytics.fees.ledgerTotalFees)}
                   </div>
                 </div>
                 <div
                   style={{
-                    padding: 12,
+                    padding: 14,
                     borderRadius: 14,
                     background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.08)",
+                    minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Alıştan gelir</div>
-                  <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.ledgerBuyFees)}
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Gerçek alım komisyonu</div>
+                  <div
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 950,
+                      marginTop: 6,
+                      fontVariantNumeric: "tabular-nums",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {fmtTRYTL(analytics.fees.ledgerBuyFees)}
                   </div>
                 </div>
                 <div
                   style={{
-                    padding: 12,
+                    padding: 14,
                     borderRadius: 14,
                     background: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.08)",
+                    minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Satıştan gelir</div>
-                  <div style={{ fontSize: 20, fontWeight: 950, marginTop: 4 }}>
-                    ₺{fmtTRY(analytics.fees.ledgerSellFees)}
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>Gerçek satış komisyonu</div>
+                  <div
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 950,
+                      marginTop: 6,
+                      fontVariantNumeric: "tabular-nums",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {fmtTRYTL(analytics.fees.ledgerSellFees)}
                   </div>
                 </div>
               </div>
 
-              <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "0.9fr 1fr 1fr 1fr 1fr 1fr 1.1fr",
-                    gap: 0,
-                    padding: "10px 12px",
-                    background: "rgba(255,255,255,0.05)",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    opacity: 0.75,
-                  }}
-                >
-                  <div>Tarih</div>
-                  <div style={{ textAlign: "right" }}>Alış kom.</div>
-                  <div style={{ textAlign: "right" }}>Satış kom.</div>
-                  <div style={{ textAlign: "right" }}>Alış hacmi</div>
-                  <div style={{ textAlign: "right" }}>Satış hacmi</div>
-                  <div style={{ textAlign: "right" }}>Poz. aç.</div>
-                  <div style={{ textAlign: "right" }}>Küm. kom.</div>
-                </div>
-                {treasuryDailyDisplay.map((d) => (
+              <div style={{ overflowX: "auto", borderRadius: 14, border: "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ minWidth: 720 }}>
                   <div
-                    key={d.date}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "0.9fr 1fr 1fr 1fr 1fr 1fr 1.1fr",
-                      gap: 0,
-                      padding: "10px 12px",
-                      fontSize: 13,
-                      borderTop: "1px solid rgba(255,255,255,0.06)",
-                      alignItems: "center",
+                      gridTemplateColumns: "88px repeat(6, minmax(96px, 1fr))",
+                      gap: 8,
+                      padding: "12px 14px",
+                      background: "rgba(255,255,255,0.05)",
+                      fontSize: 10,
+                      fontWeight: 900,
+                      opacity: 0.8,
                     }}
                   >
-                    <div>{d.date}</div>
-                    <div style={{ textAlign: "right" }}>₺{fmtTRY(d.buyFee)}</div>
-                    <div style={{ textAlign: "right" }}>₺{fmtTRY(d.sellFee ?? 0)}</div>
-                    <div style={{ textAlign: "right", opacity: 0.9 }}>₺{fmtTRY(d.buyVolume ?? d.volumePaid)}</div>
-                    <div style={{ textAlign: "right", opacity: 0.9 }}>₺{fmtTRY(d.sellVolume ?? 0)}</div>
-                    <div style={{ textAlign: "right" }}>{fmtNumber(d.positionOpens)}</div>
-                    <div style={{ textAlign: "right", fontWeight: 800, color: "#a7f3d0" }}>
-                      ₺{fmtTRY(d.cumulativeTotalFee)}
-                    </div>
+                    <div>Tarih</div>
+                    <div style={{ textAlign: "right" }}>Alış kom.</div>
+                    <div style={{ textAlign: "right" }}>Satış kom.</div>
+                    <div style={{ textAlign: "right" }}>Alış hacmi</div>
+                    <div style={{ textAlign: "right" }}>Satış hacmi</div>
+                    <div style={{ textAlign: "right" }}>Poz.</div>
+                    <div style={{ textAlign: "right" }}>Küm. Terron</div>
                   </div>
-                ))}
+                  {treasuryDailyDisplay.map((d) => (
+                    <div
+                      key={d.date}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "88px repeat(6, minmax(96px, 1fr))",
+                        gap: 8,
+                        padding: "12px 14px",
+                        fontSize: 12,
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        alignItems: "center",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      <div style={{ whiteSpace: "nowrap" }}>{d.date}</div>
+                      <div style={{ textAlign: "right", wordBreak: "break-all" }}>{fmtTRYTL(d.buyFee)}</div>
+                      <div style={{ textAlign: "right", wordBreak: "break-all" }}>{fmtTRYTL(d.sellFee ?? 0)}</div>
+                      <div style={{ textAlign: "right", wordBreak: "break-all", opacity: 0.92 }}>
+                        {fmtTRYTL(d.buyVolume ?? d.volumePaid)}
+                      </div>
+                      <div style={{ textAlign: "right", wordBreak: "break-all", opacity: 0.92 }}>
+                        {fmtTRYTL(d.sellVolume ?? 0)}
+                      </div>
+                      <div style={{ textAlign: "right" }}>{fmtNumber(d.positionOpens)}</div>
+                      <div style={{ textAlign: "right", fontWeight: 800, color: "#a7f3d0", wordBreak: "break-all" }}>
+                        {fmtTRYTL(d.cumulativeTotalFee)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 {treasuryDailyDisplay.length === 0 ? (
                   <div style={{ padding: 16, fontSize: 13, opacity: 0.65 }}>
                     Henüz defter kaydı yok. Alım/satış yaptıkça satırlar oluşur.
