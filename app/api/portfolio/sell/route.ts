@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
 import { calculateSellQuoteTRY, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import { getTerronSalePricePerM2, type TerronPropertyPricingInput } from "@/lib/propertySalePrice";
 
 export const runtime = "nodejs";
 
@@ -61,14 +62,16 @@ export async function POST(req: Request) {
 
   const { data: prop, error: pErr } = await sb
     .from("properties")
-    .select("id,price_per_m2,available_m2,sold_m2")
+    .select(
+      "id,price_per_m2,available_m2,sold_m2,total_area_m2,development_score,last_30d_change,quality_score,risk_score,rental_yield_annual,min_buy_m2,total_shares"
+    )
     .eq("id", pos.property_id)
     .maybeSingle();
 
   if (pErr || !prop) return bad("İlan bulunamadı", 404);
 
-  const px = Number(prop.price_per_m2 ?? 0);
-  if (!Number.isFinite(px) || px <= 0) return bad("Geçersiz liste fiyatı", 400);
+  const px = getTerronSalePricePerM2(prop as TerronPropertyPricingInput, user.id);
+  if (!Number.isFinite(px) || px <= 0) return bad("Geçersiz satış tutarı", 400);
 
   const quote = calculateSellQuoteTRY(px, m2);
   const net = Math.round(quote.netProceeds);

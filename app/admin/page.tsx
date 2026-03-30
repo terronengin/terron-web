@@ -952,9 +952,9 @@ export default function AdminPage() {
                     sub: "Kayıtlı parseller",
                   },
                   {
-                    k: "Liste değeri",
+                    k: "Satış tutarı (tahmini)",
                     v: analytics ? fmtTRYTL(analytics.properties.listValueAtPrice) : analyticsLoading ? "…" : "—",
-                    sub: "Σ (m² × liste)",
+                    sub: "Σ (m² × kayıtlı fiyat)",
                   },
                   {
                     k: "Platformda satılan m²",

@@ -5,11 +5,8 @@ import { useRouter } from "next/navigation";
 import MapView from "../components/MapView";
 import { supabase } from "../../lib/supabaseClient";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
-import {
-  simulatePropertyPriceTRY,
-  calculateSimpleBuyQuoteTRY,
-  getPostBuyPriceMultiplier,
-} from "@/lib/sim/realEstatePrice";
+import { calculateSimpleBuyQuoteTRY, getPostBuyPriceMultiplier, BUY_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import { getTerronSalePricePerM2, getDemandPressure } from "@/lib/propertySalePrice";
 import { normalizePropertyForPanel } from "@/lib/normalizePropertyForPanel";
 import { normalizeExplorerLatLng } from "@/lib/dashboard/explorerCoords";
 import { isAdminEmail } from "@/lib/admin/isAdmin";
@@ -43,7 +40,7 @@ type CartItem = {
   key: string;
   property: Property;
   m2: number;
-  listPricePerM2: number;
+  salePricePerM2: number;
   discountedPricePerM2: number;
   bulkDiscountRate: number;
   grossAssetValue: number;
@@ -116,11 +113,6 @@ export default function DashboardPage() {
     return Math.max(0, Math.min(1, x));
   }
 
-  function getListingPricePerM2(p: Property | null) {
-    if (!p) return 0;
-    return Math.max(0, Number(p.price_per_m2 ?? 0));
-  }
-
   function getPropertyAvailableM2(p: Property | null) {
     if (!p) return 0;
     const total = Number(p.total_area_m2 ?? 0);
@@ -136,77 +128,10 @@ export default function DashboardPage() {
     return Math.max(0, total - getPropertyAvailableM2(p));
   }
 
-  function getDemandPressure(p: Property | null) {
-    if (!p) return 0;
-    const sold = getPropertySoldM2(p);
-    const total = Math.max(1, Number(p.total_area_m2 ?? 1));
-    const soldRatio = sold / total;
-    const demandFromSold = soldRatio * 0.65;
-    const demandFromDev = clamp01(Number(p.development_score ?? 50) / 100) * 0.22;
-    const demandFromTrend = clamp01((Number(p.last_30d_change ?? 0) + 12) / 24) * 0.13;
-    return clamp01(demandFromSold + demandFromDev + demandFromTrend);
-  }
-
-  function getDemandAdjustedPricePerM2(p: Property | null) {
-    if (!p) return 0;
-    const baseSim =
-      getRealEstateSim(p)?.pricePerM2 ||
-      Number(p.price_per_m2 ?? 0) ||
-      Number(p.area?.base_m2_price ?? 0) ||
-      1;
-    const pressure = getDemandPressure(p);
-    const demandPremium = 1 + pressure * 0.16;
-    const lowDemandPenalty = pressure < 0.22 ? 1 - (0.22 - pressure) * 0.1 : 1;
-    return Math.max(1, baseSim * demandPremium * lowDemandPenalty);
-  }
-
-  function getPositionVisiblePricePerM2(p: Property | null) {
-    return getDemandAdjustedPricePerM2(p);
-  }
-
-  function getRealEstateSim(p: Property) {
-    if (!p.area || !p.total_area_m2 || p.total_area_m2 <= 0) return null;
-    const seedScope = userId ?? "global";
-    const risk01 = clamp01((p.risk_score ?? 50) / 100);
-    const dev01 = clamp01((p.development_score ?? 50) / 100);
-    const quality01 =
-      p.quality_score != null
-        ? clamp01(Number(p.quality_score))
-        : clamp01(0.55 + dev01 * 0.2 - risk01 * 0.1);
-    const rentalYield = p.rental_yield_annual != null ? clamp01(Number(p.rental_yield_annual)) : 0.05;
-    const propertyForSim = {
-      id: p.id,
-      area_m2: Number(p.total_area_m2),
-      quality_score: quality01,
-      development_score: dev01,
-      risk_score: risk01,
-      rental_yield_annual: rentalYield,
-      demand_score: getDemandPressure(p),
-      buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
-      buy_pressure_m2: Number(p.sold_m2 ?? 0),
-      sell_pressure_count: 0,
-      sell_pressure_m2: 0,
-      area: {
-        id: p.area.id,
-        base_m2_price: Number(p.area.base_m2_price),
-        expected_real_return_annual: Number(p.area.expected_real_return_annual ?? 0.03),
-        inflation_annual: Number(p.area.inflation_annual ?? 0.0),
-        vol_annual: Number(p.area.vol_annual ?? 0.12),
-        cycle_strength: Number(p.area.cycle_strength ?? 0.6),
-        shock_prob_annual: Number(p.area.shock_prob_annual ?? 0.06),
-        shock_size: Number(p.area.shock_size ?? -0.08),
-      },
-    };
-    const out = simulatePropertyPriceTRY(propertyForSim as Parameters<typeof simulatePropertyPriceTRY>[0], 0, seedScope);
-    const totalShares = Number(p.total_shares ?? 100000);
-    const sharePrice = out.price / Math.max(1, totalShares);
-    return { ...out, sharePrice, totalShares };
-  }
-
   function getBuyQuoteForProperty(p: Property | null, m2: number) {
     if (!p) {
       return {
-        listPricePerM2: 0,
+        salePricePerM2: 0,
         discountedPricePerM2: 0,
         bulkDiscountRate: 0,
         grossAssetValue: 0,
@@ -218,10 +143,10 @@ export default function DashboardPage() {
         adjustedListPricePerM2: 0,
       };
     }
-    const listPx = getListingPricePerM2(p);
+    const salePx = getTerronSalePricePerM2(p, userId ?? "global");
     const totalParcel = Math.max(1, Number(p.total_area_m2 ?? 1));
     const qty = Math.max(0, Number(m2) || 0);
-    return calculateSimpleBuyQuoteTRY(listPx, qty, { totalParcelM2: totalParcel });
+    return calculateSimpleBuyQuoteTRY(salePx, qty, { totalParcelM2: totalParcel });
   }
 
   function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {
@@ -265,8 +190,8 @@ export default function DashboardPage() {
   function syncBuyFromBudget(nextBudget: number, p: Property | null) {
     const safeBudget = Math.max(0, nextBudget || 0);
     setBuyBudget(safeBudget);
-    const listPrice = Math.max(1, getPositionVisiblePricePerM2(p));
-    const calcM2 = safeBudget / listPrice;
+    const salePx = Math.max(1, getTerronSalePricePerM2(p, userId ?? "global"));
+    const calcM2 = safeBudget / (salePx * (1 + BUY_FEE_RATE));
     setBuyM2(Number(calcM2.toFixed(2)));
   }
 
@@ -305,7 +230,7 @@ export default function DashboardPage() {
         key: `${selected.id}_${Date.now()}`,
         property: selected,
         m2,
-        listPricePerM2: quote.listPricePerM2,
+        salePricePerM2: quote.salePricePerM2,
         discountedPricePerM2: quote.discountedPricePerM2,
         bulkDiscountRate: quote.bulkDiscountRate,
         grossAssetValue: quote.grossAssetValue,
@@ -424,7 +349,7 @@ export default function DashboardPage() {
         return;
       }
       const quote = getBuyQuoteForProperty(selected, m2);
-      const entryPriceM2 = quote.listPricePerM2;
+      const entryPriceM2 = quote.salePricePerM2;
       const totalPaid = quote.totalCost;
 
       setBuyInProgress(true);
@@ -635,9 +560,9 @@ export default function DashboardPage() {
           property_id: it.property.id,
           m2: it.m2,
           total_paid: it.totalPaid,
-          entry_price_m2: it.listPricePerM2,
+          entry_price_m2: it.salePricePerM2,
           amount: it.totalPaid,
-          entry_price: it.listPricePerM2,
+          entry_price: it.salePricePerM2,
           units: it.m2,
         };
         const { data: ins, error: posErr } = await supabase
@@ -1435,8 +1360,9 @@ export default function DashboardPage() {
       };
     }
 
+    const scope = userId ?? "global";
     const avgPricePerM2 =
-      arr.reduce((s, x) => s + Number(getPositionVisiblePricePerM2(x)), 0) / Math.max(1, count);
+      arr.reduce((s, x) => s + Number(getTerronSalePricePerM2(x, scope)), 0) / Math.max(1, count);
     const avgRisk = arr.reduce((s, x) => s + Number(x.risk_score ?? 0), 0) / Math.max(1, count);
     const avgDevelopment =
       arr.reduce((s, x) => s + Number(x.development_score ?? 0), 0) / Math.max(1, count);
@@ -1457,7 +1383,7 @@ export default function DashboardPage() {
       availableArea,
       soldArea,
     };
-  }, [visibleItems]);
+  }, [visibleItems, userId]);
 
   const selectedAreaLabel = useMemo(() => {
     if (city && district && neighborhood) return `${city} / ${district} / ${neighborhood}`;
@@ -1471,7 +1397,7 @@ export default function DashboardPage() {
     router.replace("/login");
   }
 
-  const selectedPricePerM2 = selected ? getListingPricePerM2(selected) : 0;
+  const selectedPricePerM2 = selected ? getTerronSalePricePerM2(selected, userId ?? "global") : 0;
   const selectedAvailableM2 = getPropertyAvailableM2(selected);
   const selectedSoldM2 = getPropertySoldM2(selected);
   const selectedMinBuyM2 = Math.max(1, Number(selected?.min_buy_m2 ?? 1));
@@ -1719,7 +1645,7 @@ export default function DashboardPage() {
         </div>
 
         <div style={{ marginTop: 14 }}>
-          <div style={labelStyle}>₺/m² Fiyat</div>
+          <div style={labelStyle}>Satış ₺/m² (filtre)</div>
           <select value={priceBand} onChange={(e) => setPriceBand(e.target.value as PriceBand)} style={selectStyle}>
             <option value="">Tümü</option>
             <option value="0-10000">0 – 10.000 ₺/m²</option>
@@ -1777,7 +1703,7 @@ export default function DashboardPage() {
         <div style={{ marginTop: 18, fontSize: 12, opacity: 0.75 }}>Öne Çıkan Arsalar</div>
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
           {regionList.map((p) => {
-            const pPrice = getListingPricePerM2(p);
+            const pPrice = getTerronSalePricePerM2(p, userId ?? "global");
             const pAvailable = getPropertyAvailableM2(p);
 
             return (
@@ -2619,8 +2545,7 @@ export default function DashboardPage() {
                     <b>₺{formatTRY(Math.round(walletBalance ?? 0))}</b>
                   </div>
                   <div style={{ fontSize: 10, opacity: 0.72, marginTop: 4, lineHeight: 1.45 }}>
-                    Liste <b>₺{formatTRY(selectedPricePerM2)}</b> /m² · Görünen{" "}
-                    <b>₺{formatTRY(getPositionVisiblePricePerM2(selected))}</b> /m²
+                    Satış tutarı <b>₺{formatTRY(selectedPricePerM2)}</b> /m²
                   </div>
                   <div style={{ fontSize: 10, opacity: 0.72, marginTop: 2 }}>
                     Min {formatNumber(selectedMinBuyM2)} m² · Max{" "}
@@ -2663,7 +2588,7 @@ export default function DashboardPage() {
                   >
                     <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Alım özeti</div>
                     <div style={{ fontSize: 9, opacity: 0.55, marginBottom: 6 }}>
-                      Liste ₺{formatTRY(selectedQuote?.listPricePerM2 ?? 0)}/m² × {formatDecimal(buyM2 || selectedMinBuyM2)} m²
+                      Satış tutarı ₺{formatTRY(selectedQuote?.salePricePerM2 ?? 0)}/m² × {formatDecimal(buyM2 || selectedMinBuyM2)} m²
                     </div>
                     <div
                       style={{

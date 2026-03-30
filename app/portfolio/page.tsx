@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatM2 } from "@/lib/formatM2";
 import { calculateSellQuoteTRY, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
+import { getTerronSalePricePerM2, type TerronPropertyPricingInput } from "@/lib/propertySalePrice";
 
 type RealPositionRow = {
   id: string;
@@ -111,7 +112,9 @@ export default function PortfolioPage() {
 
       const { data: propData, error: propErr } = await supabase
         .from("properties")
-        .select("id,title,city,price_per_m2,available_m2,sold_m2")
+        .select(
+          "id,title,city,price_per_m2,total_area_m2,available_m2,sold_m2,development_score,last_30d_change,quality_score,risk_score,rental_yield_annual,min_buy_m2,total_shares"
+        )
         .in("id", ids);
 
       if (cancelled) return;
@@ -133,6 +136,7 @@ export default function PortfolioPage() {
   }, [refresh]);
 
   const unified = useMemo(() => {
+    const scope = userId ?? "global";
     return realRows.map((r) => {
       const prop = propById[r.property_id];
       const title = prop?.title?.trim() || `İlan ${r.property_id.slice(0, 8)}…`;
@@ -140,14 +144,14 @@ export default function PortfolioPage() {
       const m2 = Number(r.m2 ?? 0);
       const paid = Number(r.total_paid ?? 0);
       const entryGross = paid > 0 ? Math.round(grossAssetFromTotalPaid(paid)) : null;
-      const px = prop?.price_per_m2 != null ? Number(prop.price_per_m2) : NaN;
+      const salePx = prop ? getTerronSalePricePerM2(prop, scope) : 0;
       let brutKz: number | null = null;
       let sellNetTry: number | null = null;
       let sellFeeTry: number | null = null;
       let currentGross: number | null = null;
       let netVsPaid: number | null = null;
-      if (Number.isFinite(px) && px > 0 && m2 > 0) {
-        const q = calculateSellQuoteTRY(px, m2);
+      if (prop && salePx > 0 && m2 > 0) {
+        const q = calculateSellQuoteTRY(salePx, m2);
         sellNetTry = Math.round(q.netProceeds);
         sellFeeTry = Math.round(q.sellFee);
         currentGross = Math.round(q.grossSaleValue);
@@ -176,7 +180,7 @@ export default function PortfolioPage() {
         netVsPaid,
       } satisfies UnifiedRow;
     });
-  }, [realRows, propById]);
+  }, [realRows, propById, userId]);
 
   async function sellRealPosition(row: UnifiedRow) {
     const r = realRows.find((x) => x.id === row.positionId);
@@ -185,18 +189,18 @@ export default function PortfolioPage() {
       return;
     }
     const prop = propById[r.property_id];
-    const px = prop?.price_per_m2 != null ? Number(prop.price_per_m2) : NaN;
+    const salePx = prop ? getTerronSalePricePerM2(prop, userId ?? "global") : 0;
     const m2 = Number(r.m2 ?? 0);
-    if (!Number.isFinite(px) || px <= 0 || m2 <= 0) {
-      alert("Satış için güncel fiyat veya m² bilgisi eksik.");
+    if (!prop || salePx <= 0 || m2 <= 0) {
+      alert("Satış için güncel satış tutarı veya m² bilgisi eksik.");
       return;
     }
-    const quote = calculateSellQuoteTRY(px, m2);
+    const quote = calculateSellQuoteTRY(salePx, m2);
     const paid = Number(r.total_paid ?? 0);
     const entry = paid > 0 ? Math.round(grossAssetFromTotalPaid(paid)) : null;
     const ok = window.confirm(
       `Satış özeti\n` +
-        `• Güncel liste değeri (brüt): ₺${formatTRY(Math.round(quote.grossSaleValue))}\n` +
+        `• Brüt satış tutarı: ₺${formatTRY(Math.round(quote.grossSaleValue))}\n` +
         `• Satış komisyonu (%1): ₺${formatTRY(Math.round(quote.sellFee))}\n` +
         `• Hesaba geçecek net: ₺${formatTRY(Math.round(quote.netProceeds))}\n\n` +
         (entry != null
@@ -259,7 +263,7 @@ export default function PortfolioPage() {
         </div>
         <h1 style={{ margin: "12px 0 8px", fontSize: 26, fontWeight: 950, lineHeight: 1.2 }}>Portföy</h1>
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55, opacity: 0.88 }}>
-          <strong>Alım:</strong> arsa tutarı (liste × m²) + %0,5 alım komisyonu = cüzdandan düşen toplam.{" "}
+          <strong>Alım:</strong> arsa tutarı (satış tutarı × m²) + %0,5 alım komisyonu = cüzdandan düşen toplam.{" "}
           <strong>Satış:</strong> brüt satış − %1 satış komisyonu = hesaba geçen net. K/Z sütunları tahmini net üzerinden
           hesaplanır.
         </p>
