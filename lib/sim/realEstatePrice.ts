@@ -218,6 +218,52 @@ export function calculateBuyQuoteTRY(property: SimProperty, marketPricePerM2: nu
 }
 
 /**
+ * Anlık alım: brüt = liste m² fiyatı × m²; komisyon sabit %0,5 (parsel / toplu indirim yok).
+ * `totalParcelM2` verilirse sadece gösterim için parsel payı hesaplanır; fiyatı etkilemez.
+ */
+export function calculateSimpleBuyQuoteTRY(
+  listPricePerM2: number,
+  buyM2: number,
+  opts?: { totalParcelM2?: number }
+) {
+  const qty = Math.max(0, safeNum(buyM2, 0));
+  const list = safeNum(listPricePerM2, 0);
+  const parcelTotal = opts?.totalParcelM2 != null ? Math.max(1, safeNum(opts.totalParcelM2, 1)) : null;
+  if (qty <= 0 || !Number.isFinite(list) || list <= 0) {
+    return {
+      listPricePerM2: list,
+      bulkDiscountRate: 0,
+      discountedPricePerM2: list,
+      grossAssetValue: 0,
+      buyFeeRate: BUY_FEE_RATE,
+      buyFee: 0,
+      totalCost: 0,
+      shareOfParcel: 0,
+      parcelShareMultiplier: 1,
+      parcelShareLabel: "",
+      adjustedListPricePerM2: list,
+    };
+  }
+  const grossAssetValue = list * qty;
+  const buyFee = grossAssetValue * BUY_FEE_RATE;
+  const totalCost = grossAssetValue + buyFee;
+  const shareOfParcel = parcelTotal != null ? qty / parcelTotal : 0;
+  return {
+    listPricePerM2: list,
+    bulkDiscountRate: 0,
+    discountedPricePerM2: list,
+    grossAssetValue,
+    buyFeeRate: BUY_FEE_RATE,
+    buyFee,
+    totalCost,
+    shareOfParcel,
+    parcelShareMultiplier: 1,
+    parcelShareLabel: "",
+    adjustedListPricePerM2: list,
+  };
+}
+
+/**
  * Satış ödeme özeti
  */
 export function calculateSellQuoteTRY(marketPricePerM2: number, sellM2: number) {

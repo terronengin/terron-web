@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
 import {
   simulatePropertyPriceTRY,
-  calculateBuyQuoteTRY,
+  calculateSimpleBuyQuoteTRY,
   getPostBuyPriceMultiplier,
 } from "@/lib/sim/realEstatePrice";
 import { normalizePropertyForPanel } from "@/lib/normalizePropertyForPanel";
@@ -218,41 +218,10 @@ export default function DashboardPage() {
         adjustedListPricePerM2: 0,
       };
     }
-    const marketPricePerM2 = getPositionVisiblePricePerM2(p);
-    return calculateBuyQuoteTRY(
-      {
-        id: p.id,
-        area_m2: Number(p.total_area_m2 ?? 1),
-        quality_score:
-          p.quality_score != null
-            ? clamp01(Number(p.quality_score))
-            : clamp01(
-                0.55 +
-                  (Number(p.development_score ?? 50) / 100) * 0.2 -
-                  (Number(p.risk_score ?? 50) / 100) * 0.1
-              ),
-        development_score: clamp01(Number(p.development_score ?? 50) / 100),
-        risk_score: clamp01(Number(p.risk_score ?? 50) / 100),
-        rental_yield_annual: clamp01(Number(p.rental_yield_annual ?? 0.05)),
-        demand_score: getDemandPressure(p),
-        buy_pressure_count: Math.round(Number(p.sold_m2 ?? 0) / Math.max(1, Number(p.min_buy_m2 ?? 1))),
-        buy_pressure_m2: Number(p.sold_m2 ?? 0),
-        sell_pressure_count: 0,
-        sell_pressure_m2: 0,
-        area: {
-          id: p.area?.id,
-          base_m2_price: Number(p.area?.base_m2_price ?? p.price_per_m2 ?? 1),
-          expected_real_return_annual: Number(p.area?.expected_real_return_annual ?? 0.03),
-          inflation_annual: Number(p.area?.inflation_annual ?? 0),
-          vol_annual: Number(p.area?.vol_annual ?? 0.12),
-          cycle_strength: Number(p.area?.cycle_strength ?? 0.6),
-          shock_prob_annual: Number(p.area?.shock_prob_annual ?? 0.06),
-          shock_size: Number(p.area?.shock_size ?? -0.08),
-        },
-      } as Parameters<typeof calculateBuyQuoteTRY>[0],
-      marketPricePerM2,
-      Math.max(1, Number(m2 || 1))
-    );
+    const listPx = getListingPricePerM2(p);
+    const totalParcel = Math.max(1, Number(p.total_area_m2 ?? 1));
+    const qty = Math.max(0, Number(m2) || 0);
+    return calculateSimpleBuyQuoteTRY(listPx, qty, { totalParcelM2: totalParcel });
   }
 
   function updateLocalPropertyM2(propertyId: string, purchasedM2: number) {

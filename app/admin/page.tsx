@@ -616,7 +616,20 @@ export default function AdminPage() {
           >
             ← Dashboard
           </button>
-          <h1 style={{ fontSize: 32, fontWeight: 950, margin: 0 }}>Admin • İlanlar ve portföy</h1>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+            <h1 style={{ fontSize: 32, fontWeight: 950, margin: 0 }}>Admin • İlanlar ve portföy</h1>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                opacity: 0.72,
+                letterSpacing: "0.04em",
+                color: "#e2e8f0",
+              }}
+            >
+              (YÖNETİCİ ADMİN - ENGİN CİVİL)
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => void loadAnalytics()}
@@ -714,7 +727,7 @@ export default function AdminPage() {
                   }}
                 >
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#cbd5e1", lineHeight: 1.35 }}>
-                    Gerçek alım komisyonu
+                    ALIM KOMİSYONU
                   </div>
                   <div
                     style={{
@@ -743,7 +756,7 @@ export default function AdminPage() {
                   }}
                 >
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#cbd5e1", lineHeight: 1.35 }}>
-                    Gerçek satış komisyonu
+                    SATIŞ KOMİSYONU
                   </div>
                   <div
                     style={{
@@ -777,7 +790,7 @@ export default function AdminPage() {
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: "#fef9c3", letterSpacing: "0.04em" }}>
-                      Terron kasası
+                      TERRON KASASI
                     </div>
                     <div style={{ fontSize: 11, opacity: 0.72, marginTop: 4, color: "#e7e5e4" }}>
                       Gerçek alım + gerçek satış komisyonu toplamı
@@ -987,7 +1000,7 @@ export default function AdminPage() {
 
           <div style={{ fontSize: 11, opacity: 0.5, marginTop: 16, lineHeight: 1.45 }}>
             Komisyon tutarları yalnızca gerçekleşen alım ve satışlarda <code>platform_revenue</code> defterine yazılır;
-            tahmin kullanılmaz. Terron kasası, bu defterdeki alış ve satış komisyonlarının toplamıdır.
+            tahmin kullanılmaz. TERRON KASASI, bu defterdeki alış ve satış komisyonlarının toplamıdır.
           </div>
         </div>
 
@@ -2168,7 +2181,7 @@ export default function AdminPage() {
                     minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Terron kasası (toplam)</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>TERRON KASASI</div>
                   <div
                     style={{
                       fontSize: 22,
@@ -2190,7 +2203,7 @@ export default function AdminPage() {
                     minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Gerçek alım komisyonu</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>ALIM KOMİSYONU</div>
                   <div
                     style={{
                       fontSize: 22,
@@ -2212,7 +2225,7 @@ export default function AdminPage() {
                     minWidth: 0,
                   }}
                 >
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>Gerçek satış komisyonu</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>SATIŞ KOMİSYONU</div>
                   <div
                     style={{
                       fontSize: 22,
