@@ -1,25 +1,42 @@
 import { parseTurkeyLatLng } from "@/lib/map/normalizeCoordinates";
+import { syntheticDistrictIndexFromLabel } from "@/lib/regions/trRegions";
 
-/** Altın açı ile disk üzerinde yayılma — tekrarlayan index çarpanı yok */
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+function hashString32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
 /**
- * Sentetik ilan koordinatı: şehir merkezine yakın, maksimum yarıçap içinde (denize savrulmayı azaltır).
- * Eski applyCoordJitter + büyük spread + (index%7) ile km'lerce sapma oluşuyordu.
+ * Paneldeki şehir / sentetik ilçe / mahalle ile uyumlu: aynı adres metni → aynı bölgeye yakın nokta.
+ * İlçe indeksine göre sektör (8 dilim), mahalle metnine göre ince açı; "Sahil" daha sıkı yarıçap (kıyıya savrulmayı azaltır).
  */
-export function seedCoordsNearCityCenter(
+export function seedCoordsFromSyntheticAddress(
   baseLat: number,
   baseLng: number,
+  city: string,
+  district: string,
+  neighborhood: string,
   idx: number,
-  rng: () => number,
-  opts?: { maxRadiusDeg?: number }
+  rng: () => number
 ): { lat: number; lng: number } {
-  const maxR = opts?.maxRadiusDeg ?? 0.014;
-  const t = Math.sqrt((idx % 997) / 997 + rng() * 0.001);
-  const r = maxR * t;
-  const th = idx * GOLDEN_ANGLE + rng() * 0.4;
-  let lat = baseLat + r * Math.cos(th);
-  let lng = baseLng + r * Math.sin(th);
+  const dIdx = syntheticDistrictIndexFromLabel(district, city);
+  const nh = neighborhood.trim();
+  const nhPart = hashString32(`${city}|${district}|${nh}`);
+  const nhAngle = ((nhPart % 6283) / 6283) * Math.PI * 2;
+
+  const sectorAngle = (dIdx / 8) * Math.PI * 2 + nhAngle * 0.12;
+  let r = 0.0038 + (idx % 13) * 0.00018 + (nhPart % 7) * 0.00012;
+  if (dIdx === 6) r *= 0.58;
+
+  let lat = baseLat + Math.cos(sectorAngle) * r * 0.92;
+  let lng = baseLng + Math.sin(sectorAngle) * r * 0.92;
+  lat += (rng() - 0.5) * 0.00055;
+  lng += (rng() - 0.5) * 0.00055;
+
   const parsed = parseTurkeyLatLng(lat, lng);
   if (parsed) {
     lat = parsed.lat;

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { seedCoordsNearCityCenter } from "@/lib/map/seedCoords";
+import { seedCoordsFromSyntheticAddress } from "@/lib/map/seedCoords";
 import {
   findCitySeedByName,
   listDistrictOptionsForCity,
@@ -68,8 +68,15 @@ function buildRow(
   const [biLat, biLng] = citySeed.inlandBias ?? [0, 0];
   const baseLat = cLat + biLat;
   const baseLng = cLng + biLng;
-  /** Şehir merkezine ~1–1.5 km içinde kalır; eski büyük jitter denize savuruyordu */
-  const { lat, lng } = seedCoordsNearCityCenter(baseLat, baseLng, idx, rng, { maxRadiusDeg: 0.013 });
+  const { lat, lng } = seedCoordsFromSyntheticAddress(
+    baseLat,
+    baseLng,
+    citySeed.city,
+    district,
+    neighborhood,
+    idx,
+    rng
+  );
 
   const zoning = rng() < 0.62 ? "imarli" : "imarsiz";
   const total = Math.round(400 + rng() * 9200);

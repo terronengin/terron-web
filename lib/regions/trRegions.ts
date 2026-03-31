@@ -87,7 +87,7 @@ export const TR_CITY_SEEDS: CitySeed[] = [
   { city: "Kütahya", region: "Ege", center: [39.42, 29.98], weight: 4 },
 ];
 
-const DISTRICT_SUFFIXES = [
+export const DISTRICT_SUFFIXES = [
   "Merkez",
   "Kuzey",
   "Sanayi",
@@ -97,6 +97,15 @@ const DISTRICT_SUFFIXES = [
   "Sahil",
   "Yukarı",
 ];
+
+/** Sentetik ilçe adından (örn. "İstanbul Merkez") ek indeksi — harita/seed ile hizalı */
+export function syntheticDistrictIndexFromLabel(district: string, city: string): number {
+  const prefix = `${city.trim()} `;
+  if (!district.startsWith(prefix)) return 0;
+  const suf = district.slice(prefix.length);
+  const i = DISTRICT_SUFFIXES.indexOf(suf);
+  return i >= 0 ? i : 0;
+}
 const NH_SUFFIXES = [
   "Mah.",
   "Yolu",

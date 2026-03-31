@@ -1236,6 +1236,9 @@ export default function MapView(props: {
   }, [level, pickedDistrict, activeDistrictGeo]);
 
   const activePoly = useMemo(() => {
+    if (level === "region") {
+      return { src: SRC_PROV, fill: L_PROV_FILL, glow: L_PROV_GLOW, out: L_PROV_OUT };
+    }
     if (level === "city") {
       return { src: SRC_PROV, fill: L_PROV_FILL, glow: L_PROV_GLOW, out: L_PROV_OUT };
     }
@@ -1303,6 +1306,48 @@ export default function MapView(props: {
     mergedItems,
     pickedRegion,
   ]);
+
+  /** Bölge adımı: iller `properties.region` ile 7+1 renk */
+  function fillPaintRegionView() {
+    return {
+      "fill-color": [
+        "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        "rgba(245,215,110,0.16)",
+        ["boolean", ["feature-state", "hover"], false],
+        "rgba(245,215,110,0.11)",
+        [
+          "match",
+          ["get", "region"],
+          "Marmara",
+          "rgba(93,173,226,0.11)",
+          "Ege",
+          "rgba(46,204,113,0.10)",
+          "Akdeniz",
+          "rgba(241,196,15,0.11)",
+          "İç Anadolu",
+          "rgba(155,89,182,0.10)",
+          "Karadeniz",
+          "rgba(52,152,219,0.11)",
+          "Doğu Anadolu",
+          "rgba(231,76,60,0.10)",
+          "Güneydoğu Anadolu",
+          "rgba(230,126,34,0.11)",
+          "Diğer",
+          "rgba(149,165,166,0.09)",
+          "rgba(245,215,110,0.06)",
+        ],
+      ],
+      "fill-opacity": [
+        "case",
+        ["==", ["get", "id"], selectedPolyId ?? ""],
+        0.26,
+        ["boolean", ["feature-state", "hover"], false],
+        0.18,
+        0.12,
+      ],
+    } as any;
+  }
 
   function fillPaintDefault() {
     return {
@@ -1921,8 +1966,11 @@ export default function MapView(props: {
     const map = mapRef.current;
     if (!map) return;
 
-    // 0) İlan noktası — tüm zoom/ seviye (count / poly öncesi)
-    const pointLayerIds = filterPropertyPointLayerIds(map);
+    // 0) Toplu ilan noktaları yalnızca parselde; seçili ilan her adımda tıklanabilir
+    const pointLayerIds =
+      level === "parcel" || (props.selected && selectedGeo.features.length > 0)
+        ? filterPropertyPointLayerIds(map)
+        : [];
     if (pointLayerIds.length > 0) {
       const hits = queryPropertyPointFeatures(map, e, pointLayerIds);
       if (hits.length > 0) {
@@ -1989,6 +2037,26 @@ export default function MapView(props: {
         const p = f.properties || {};
         const id = String(p.id || f.id || "");
         if (id) setSelectedPolyId(id);
+
+        if (level === "region") {
+          const regionName = String(p.region || "").trim();
+          if (regionName) {
+            setPickedRegion(regionName);
+            setPickedCity("");
+            setPickedDistrict("");
+            setPickedNeighborhood("");
+            props.onSetCity?.("");
+            props.onSetDistrict?.("");
+            props.onSetNeighborhood?.("");
+            setLevel("city");
+            const regionItems = mergedItems.filter((it) => getItemRegionName(it) === regionName);
+            if (!tryZoomToClickedFeature(map, featForZoom)) {
+              if (geom) zoomToGeometry(geom, 7);
+              else if (regionItems.length > 0) zoomToItems(regionItems, 6.4);
+            }
+          }
+          return;
+        }
 
         if (level === "city") {
           const cityNameRaw = String(p.name || p.NAME_1 || "").trim();
@@ -2129,8 +2197,11 @@ export default function MapView(props: {
     const map = mapRef.current;
     if (!map) return;
 
-    // 1) İlan noktaları — önce (count’tan önce)
-    if (pointsMapItems.length > 0) {
+    // 1) İlan noktaları — toplu veya yalnız seçili (parsel dışında seçili pin görünür)
+    if (
+      (level === "parcel" && pointsMapItems.length > 0) ||
+      (props.selected && selectedGeo.features.length > 0)
+    ) {
       const pointLayerIds = filterExistingLayerIds(map, [
         L_SELECTED_GLOW,
         L_SELECTED_POINT,
@@ -2269,7 +2340,8 @@ export default function MapView(props: {
   }, [mergedItems, pickedCity, pickedDistrict]);
 
   const summaryText = useMemo(() => {
-    if (level === "region") return `${mergedItems.length} arsa • bölgesel görünüm`;
+    if (level === "region")
+      return `${mergedItems.length} arsa • bölgeye tıklayın → il → ilçe → parsel`;
     if (level === "city") {
       const count = mergedItems.filter((x) => (!pickedRegion ? true : getItemRegionName(x) === pickedRegion)).length;
       return `${count} arsa • il görünümü`;
@@ -2303,14 +2375,16 @@ export default function MapView(props: {
     if (level !== "parcel") {
       arr.push(L_COUNT_GLOW, L_COUNT_HEAD, L_COUNT_TEXT);
     }
-    if (pointsMapItems.length > 0) {
+    if (level === "parcel" && pointsMapItems.length > 0) {
       arr.push(L_POINT_HIT, L_POINT_GLOW, L_POINT, L_SELECTED_GLOW, L_SELECTED_POINT);
+    } else if (props.selected && selectedGeo.features.length > 0) {
+      arr.push(L_SELECTED_GLOW, L_SELECTED_POINT);
     }
     if (level === "parcel") {
       arr.push(L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT);
     }
     return arr;
-  }, [activePoly, level, pointsMapItems.length]);
+  }, [activePoly, level, pointsMapItems.length, props.selected?.id, selectedGeo.features.length]);
 
   if (!MAPBOX_TOKEN) {
     return (
@@ -2470,8 +2544,15 @@ export default function MapView(props: {
       >
         <NavigationControl position="bottom-right" />
 
+        {level === "region" && (
+          <Source key="prov-all" id={SRC_PROV} type="geojson" data={provGeo} promoteId="id">
+            <Layer id={L_PROV_FILL} type="fill" paint={fillPaintRegionView()} />
+            <Layer id={L_PROV_GLOW} type="line" paint={lineGlowPaint()} />
+            <Layer id={L_PROV_OUT} type="line" paint={lineOutPaint()} />
+          </Source>
+        )}
         {level === "city" && (
-          <Source id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
+          <Source key="prov-filtered" id={SRC_PROV} type="geojson" data={activeProvinceGeo} promoteId="id">
             <Layer id={L_PROV_FILL} type="fill" paint={fillPaintDefault()} />
             <Layer id={L_PROV_GLOW} type="line" paint={lineGlowPaint()} />
             <Layer id={L_PROV_OUT} type="line" paint={lineOutPaint()} />
@@ -2526,7 +2607,7 @@ export default function MapView(props: {
           </Source>
         )}
 
-        {pointsMapItems.length > 0 && (
+        {level === "parcel" && pointsMapItems.length > 0 && (
           <Source
             id={SRC_POINTS}
             type="geojson"
@@ -2540,7 +2621,7 @@ export default function MapView(props: {
           </Source>
         )}
 
-        {pointsMapItems.length > 0 && selectedGeo.features.length > 0 && (
+        {selectedGeo.features.length > 0 && (
           <Source id={SRC_SELECTED} type="geojson" data={selectedGeo}>
             <Layer
               id={L_SELECTED_GLOW}
