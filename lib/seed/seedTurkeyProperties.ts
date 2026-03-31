@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { seedCoordsFromSyntheticAddress } from "@/lib/map/seedCoords";
+import { demoCoordsOrFallback } from "@/lib/seed/gadmDistrictSampler";
 import {
   findCitySeedByName,
   listDistrictOptionsForCity,
@@ -64,19 +64,7 @@ function buildRow(
   rng: () => number
 ): Record<string, unknown> {
   const rb = regionalBase(citySeed.region);
-  const [cLat, cLng] = citySeed.center;
-  const [biLat, biLng] = citySeed.inlandBias ?? [0, 0];
-  const baseLat = cLat + biLat;
-  const baseLng = cLng + biLng;
-  const { lat, lng } = seedCoordsFromSyntheticAddress(
-    baseLat,
-    baseLng,
-    citySeed.city,
-    district,
-    neighborhood,
-    idx,
-    rng
-  );
+  const { lat, lng } = demoCoordsOrFallback(citySeed, district, neighborhood, idx, rng);
 
   const zoning = rng() < 0.62 ? "imarli" : "imarsiz";
   const total = Math.round(400 + rng() * 9200);

@@ -828,16 +828,19 @@ export default function MapView(props: {
     return null;
   }
 
-  /** Seçili ilan değişince haritayı o konuma getir ([lng, lat]). */
+  /** Seçili ilan değişince haritayı o konuma getir ([lng, lat]). Drill-down zoom düşürülmez. */
   useEffect(() => {
     if (!mapReady) return;
     const map = getNativeMap();
     if (!map || !props.selected) return;
     const c = parsePropertyCoords(props.selected as unknown as MapItem);
     if (!c) return;
+    const zBefore = map.getZoom();
+    const z = Math.max(zBefore, 14);
+    console.debug(`[MapView:zoom] selected-property zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
     map.flyTo({
       center: [c.lng, c.lat],
-      zoom: 14,
+      zoom: z,
       duration: 1200,
     });
   }, [mapReady, props.selected?.id, props.selected?.latitude, props.selected?.longitude]);
@@ -857,9 +860,12 @@ export default function MapView(props: {
     const key = String(it.id ?? "");
     if (singleListingFitKeyRef.current === key) return;
     singleListingFitKeyRef.current = key;
+    const zBefore = map.getZoom();
+    const z = Math.max(zBefore, 14);
+    console.debug(`[MapView:zoom] single-listing zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
     map.flyTo({
       center: [c.lng, c.lat],
-      zoom: 14,
+      zoom: z,
       duration: 1200,
     });
   }, [mapReady, mergedItems]);
@@ -1441,6 +1447,95 @@ export default function MapView(props: {
     setHoveredPointId(null);
   }
 
+  function getMapboxInstance(map: MapRef | null): {
+    fitBounds: (b: [[number, number], [number, number]], o: object) => void;
+    flyTo: (o: object) => void;
+    easeTo: (o: object) => void;
+    getZoom: () => number;
+    getCenter: () => { lng: number; lat: number };
+    once: (ev: string, fn: () => void) => void;
+  } | null {
+    if (!map) return null;
+    const inner = (map as unknown as { getMap?: () => unknown }).getMap?.() ?? map;
+    const m = inner as {
+      fitBounds?: (b: [[number, number], [number, number]], o: object) => void;
+      flyTo?: (o: object) => void;
+      easeTo?: (o: object) => void;
+      getZoom?: () => number;
+      getCenter?: () => { lng: number; lat: number };
+      once?: (ev: string, fn: () => void) => void;
+    };
+    if (typeof m?.fitBounds !== "function") return null;
+    return m as any;
+  }
+
+  /** Drill-down: fitBounds sonrası zoom üst seviyeye göre düşerse geri alınır (yanlış parent bbox). */
+  function fitBoundsDrilldown(
+    map: MapRef | null,
+    bounds: [[number, number], [number, number]],
+    opts: { padding?: number; duration?: number; maxZoom?: number },
+    stage: string
+  ) {
+    const inner = getMapboxInstance(map);
+    if (!inner) return;
+    const zBefore = inner.getZoom?.() ?? 5;
+    console.debug(`[MapView:zoom] ${stage} fitBounds bbox=${JSON.stringify(bounds)} zoomBefore=${zBefore.toFixed(3)}`);
+    inner.fitBounds(bounds, { padding: 72, duration: 800, ...opts });
+    inner.once("moveend", () => {
+      const zAfter = inner.getZoom?.() ?? zBefore;
+      console.debug(`[MapView:zoom] ${stage} moveend zoomAfter=${zAfter.toFixed(3)}`);
+      if (zAfter < zBefore - 0.12) {
+        console.debug(`[MapView:zoom] ${stage} prevent zoom-out → restore ~${zBefore.toFixed(3)}`);
+        inner.easeTo({
+          zoom: Math.min(opts.maxZoom ?? 16, zBefore),
+          center: inner.getCenter?.() ?? { lng: 0, lat: 0 },
+          duration: 400,
+        });
+      }
+    });
+  }
+
+  function flyToDrilldown(map: MapRef | null, center: [number, number], zoom: number, stage: string) {
+    const inner = getMapboxInstance(map);
+    if (!inner?.flyTo) return;
+    const zBefore = inner.getZoom?.() ?? 5;
+    const z = Math.max(zBefore, zoom);
+    console.debug(
+      `[MapView:zoom] ${stage} flyTo center=${JSON.stringify(center)} zoomBefore=${zBefore.toFixed(3)} zoomTarget=${z.toFixed(3)}`
+    );
+    inner.flyTo({ center, zoom: z, duration: 820 });
+  }
+
+  /** Bölge balonu: il poligonlarının birleşik bbox’ı (ilan noktalarına göre değil). */
+  function zoomToRegionProvinceBounds(regionName: string): boolean {
+    const map = mapRef.current;
+    const feats = (provGeo.features || []).filter((f: any) => safeStr(f?.properties?.region) === regionName);
+    if (!feats.length) return false;
+    let minLng = Infinity;
+    let minLat = Infinity;
+    let maxLng = -Infinity;
+    let maxLat = -Infinity;
+    for (const f of feats) {
+      const bb = bboxFromGeometry((f as any).geometry);
+      if (!bb) continue;
+      minLng = Math.min(minLng, bb.minLng);
+      minLat = Math.min(minLat, bb.minLat);
+      maxLng = Math.max(maxLng, bb.maxLng);
+      maxLat = Math.max(maxLat, bb.maxLat);
+    }
+    if (!Number.isFinite(minLng) || minLng === Infinity) return false;
+    fitBoundsDrilldown(
+      map,
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 68, duration: 900, maxZoom: 7.85 },
+      `region:${regionName}`
+    );
+    return true;
+  }
+
   /**
    * Sadece çokgen/çizgi: bbox fitBounds. Damlacık (Point) için false döner — zoom her zaman
    * ilgili arsa listesine göre zoomToItems ile yapılır (bölge/il görünümü bozulmasın).
@@ -1462,30 +1557,34 @@ export default function MapView(props: {
       if (spanLng < 1e-8 && spanLat < 1e-8) return false;
       const span = Math.max(spanLng, spanLat);
       const maxZoom = span > 0.8 ? 7.8 : span > 0.25 ? 9.8 : span > 0.08 ? 11.8 : 13.2;
-      map.fitBounds(
+      fitBoundsDrilldown(
+        map,
         [
           [bb.minLng, bb.minLat],
           [bb.maxLng, bb.maxLat],
         ],
-        { padding: 110, duration: 800, maxZoom }
+        { padding: 110, duration: 800, maxZoom },
+        "clicked-feature"
       );
       return true;
     }
     return false;
   }
 
-  function zoomToGeometry(geom: any, maxZoom = 13) {
+  function zoomToGeometry(geom: any, maxZoom = 13, stage = "geometry") {
     const map = mapRef.current;
     if (!map) return;
     const bb = bboxFromGeometry(geom);
     if (!bb) return;
 
-    map.fitBounds(
+    fitBoundsDrilldown(
+      map,
       [
         [bb.minLng, bb.minLat],
         [bb.maxLng, bb.maxLat],
       ],
-      { padding: 72, duration: 800, maxZoom }
+      { padding: 72, duration: 800, maxZoom },
+      stage
     );
   }
 
@@ -1500,12 +1599,14 @@ export default function MapView(props: {
     if (!feat?.geometry) return false;
     const bb = bboxFromGeometry(feat.geometry);
     if (!bb) return false;
-    map.fitBounds(
+    fitBoundsDrilldown(
+      map,
       [
         [bb.minLng, bb.minLat],
         [bb.maxLng, bb.maxLat],
       ],
-      { padding: 52, duration: 800, maxZoom: 12.2 }
+      { padding: 52, duration: 800, maxZoom: 12.2 },
+      `province:${cityName}`
     );
     return true;
   }
@@ -1544,19 +1645,21 @@ export default function MapView(props: {
         const spanLng = bb.maxLng - bb.minLng;
         const spanLat = bb.maxLat - bb.minLat;
         if (spanLng > 1e-8 || spanLat > 1e-8) {
-          map.fitBounds(
+          fitBoundsDrilldown(
+            map,
             [
               [bb.minLng, bb.minLat],
               [bb.maxLng, bb.maxLat],
             ],
-            { padding: 120, duration: 900, maxZoom: 12.5 }
+            { padding: 120, duration: 900, maxZoom: 12.5 },
+            `district-camera:${cityName}/${districtName}`
           );
           return true;
         }
       }
       const c = centroidFromGeometry(geom);
       if (c && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
-        map.flyTo({ center: [c[0], c[1]], zoom: 11.8, duration: 900 });
+        flyToDrilldown(map, [c[0], c[1]], 11.8, `district-camera-centroid:${cityName}/${districtName}`);
         return true;
       }
     }
@@ -1569,21 +1672,26 @@ export default function MapView(props: {
   }
 
   /**
-   * Arsa noktalarına göre kadraj. Mapbox'ta fitBounds'taki maxZoom = üst sınır (yakınlaşma tavanı);
-   * düşük değer (ör. 8.7) küçük alanlarda haritayı gereğinden uzak tutuyordu → 16 kullanıyoruz.
-   * minZoomHint: bbox küçükse moveend sonrası minimum zoom ile okunabilirlik.
+   * Arsa noktalarına göre kadraj. Drill-down sırasında zoom seviyesi düşürülmez (üst bbox yok).
    */
-  function zoomToItems(list: MapItem[], minZoomHint: number) {
+  function zoomToItems(list: MapItem[], minZoomHint: number, stage = "zoomToItems") {
     const map = mapRef.current;
     if (!map || !list.length) return;
 
     const pts = list.map(mapItemWithParsedCoords).filter((x): x is MapItem => x !== null);
     if (!pts.length) return;
 
+    const inner = getMapboxInstance(map);
+    if (!inner) return;
+
     if (pts.length === 1) {
-      map.flyTo({
+      const zBefore = inner.getZoom?.() ?? 5;
+      const targetZ = Math.min(16, Math.max(minZoomHint, 11));
+      const z = Math.max(zBefore, targetZ);
+      console.debug(`[MapView:zoom] ${stage}:single zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
+      inner.flyTo({
         center: [pts[0].longitude, pts[0].latitude],
-        zoom: Math.min(16, Math.max(minZoomHint, 11)),
+        zoom: z,
         duration: 800,
       });
       return;
@@ -1615,15 +1723,23 @@ export default function MapView(props: {
       }
       cx /= pts.length;
       cy /= pts.length;
-      map.flyTo({
+      const zBefore = inner.getZoom?.() ?? 5;
+      const targetZ = Math.min(16, Math.max(minZoomHint, 5.4));
+      const z = Math.max(zBefore, targetZ);
+      console.debug(`[MapView:zoom] ${stage}:wide-span zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
+      inner.flyTo({
         center: [cx, cy],
-        zoom: Math.min(16, Math.max(minZoomHint, 5.4)),
+        zoom: z,
         duration: 800,
       });
       return;
     }
 
-    map.fitBounds(
+    const zBefore = inner.getZoom?.() ?? 5;
+    console.debug(
+      `[MapView:zoom] ${stage}:multi n=${pts.length} bbox=[[${minLng.toFixed(4)},${minLat.toFixed(4)}],[${maxLng.toFixed(4)},${maxLat.toFixed(4)}]] zoomBefore=${zBefore.toFixed(3)}`
+    );
+    inner.fitBounds(
       [
         [minLng, minLat],
         [maxLng, maxLat],
@@ -1631,19 +1747,22 @@ export default function MapView(props: {
       { padding: 72, duration: 800, maxZoom: 16 }
     );
 
-    const onDone = () => {
-      const z = map.getZoom();
+    inner.once("moveend", () => {
+      let z = inner.getZoom?.() ?? zBefore;
+      if (z < zBefore - 0.01) {
+        console.debug(`[MapView:zoom] ${stage}:multi prevent zoom-out`);
+        inner.easeTo({ zoom: Math.min(16, zBefore), center: inner.getCenter(), duration: 400 });
+        z = inner.getZoom?.() ?? zBefore;
+      }
       let floor = 0;
       if (spanDeg < 0.12) floor = Math.max(minZoomHint, 12.2);
       else if (spanDeg < 0.28) floor = Math.max(minZoomHint, 11);
       else if (spanDeg < 0.55) floor = Math.max(minZoomHint, 9.8);
       else if (spanDeg < 1.1) floor = Math.max(minZoomHint, 8.6);
       if (floor > 0 && z < floor) {
-        map.easeTo({ zoom: floor, center: map.getCenter(), duration: 520 });
+        inner.easeTo({ zoom: floor, center: inner.getCenter(), duration: 520 });
       }
-    };
-
-    map.once("moveend", onDone);
+    });
   }
 
   function zoomHome() {
@@ -1726,8 +1845,10 @@ export default function MapView(props: {
       props.onSetNeighborhood?.("");
       setLevel("city");
 
-      const regionItems = mergedItems.filter((it) => getItemRegionName(it) === nameRaw);
-      zoomToItems(regionItems, 6.4);
+      if (!zoomToRegionProvinceBounds(nameRaw)) {
+        const regionItems = mergedItems.filter((it) => getItemRegionName(it) === nameRaw);
+        zoomToItems(regionItems, 6.4, `count:region-fallback:${nameRaw}`);
+      }
       return;
     }
 
@@ -1926,9 +2047,12 @@ export default function MapView(props: {
       const map = getNativeMap();
       const c = parsePropertyCoords(found);
       if (map && c) {
+        const zBefore = map.getZoom();
+        const z = Math.max(zBefore, 14);
+        console.debug(`[MapView:zoom] emitPropertySelected zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
         map.flyTo({
           center: [c.lng, c.lat],
-          zoom: 14,
+          zoom: z,
           duration: 1200,
         });
       }
@@ -1947,9 +2071,12 @@ export default function MapView(props: {
     const map = getNativeMap();
     const c = parsePropertyCoords(item);
     if (map && c) {
+      const zBefore = map.getZoom();
+      const z = Math.max(zBefore, 14);
+      console.debug(`[MapView:zoom] emitPropertyFromMapItem zoomBefore=${zBefore.toFixed(3)} target=${z.toFixed(3)}`);
       map.flyTo({
         center: [c.lng, c.lat],
-        zoom: 14,
+        zoom: z,
         duration: 1200,
       });
     }
@@ -2049,10 +2176,14 @@ export default function MapView(props: {
             props.onSetDistrict?.("");
             props.onSetNeighborhood?.("");
             setLevel("city");
-            const regionItems = mergedItems.filter((it) => getItemRegionName(it) === regionName);
             if (!tryZoomToClickedFeature(map, featForZoom)) {
-              if (geom) zoomToGeometry(geom, 7);
-              else if (regionItems.length > 0) zoomToItems(regionItems, 6.4);
+              if (!zoomToRegionProvinceBounds(regionName)) {
+                if (geom) zoomToGeometry(geom, 7, "region-polygon-fallback");
+                else {
+                  const regionItems = mergedItems.filter((it) => getItemRegionName(it) === regionName);
+                  if (regionItems.length > 0) zoomToItems(regionItems, 6.4, `map:region-items:${regionName}`);
+                }
+              }
             }
           }
           return;
@@ -2071,7 +2202,8 @@ export default function MapView(props: {
           props.onSetDistrict?.("");
           props.onSetNeighborhood?.("");
           setLevel("district");
-          if (!tryZoomToClickedFeature(map, featForZoom) && geom) zoomToGeometry(geom, 13);
+          if (!tryZoomToClickedFeature(map, featForZoom) && geom)
+            zoomToGeometry(geom, 13, `city-polygon:${cityNameRaw}`);
           return;
         }
 
