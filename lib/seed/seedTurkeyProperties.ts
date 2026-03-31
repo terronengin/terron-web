@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { applyCoordJitter, parseTurkeyLatLng } from "@/lib/map/normalizeCoordinates";
+import { seedCoordsNearCityCenter } from "@/lib/map/seedCoords";
 import {
   findCitySeedByName,
   listDistrictOptionsForCity,
@@ -64,15 +64,12 @@ function buildRow(
   rng: () => number
 ): Record<string, unknown> {
   const rb = regionalBase(citySeed.region);
-  const [baseLat, baseLng] = citySeed.center;
-  const jitter = applyCoordJitter(baseLat, baseLng, idx, 0.045 + rng() * 0.04);
-  let lat = jitter.lat + (rng() - 0.5) * 0.08;
-  let lng = jitter.lng + (rng() - 0.5) * 0.08;
-  const parsed = parseTurkeyLatLng(lat, lng);
-  if (parsed) {
-    lat = parsed.lat;
-    lng = parsed.lng;
-  }
+  const [cLat, cLng] = citySeed.center;
+  const [biLat, biLng] = citySeed.inlandBias ?? [0, 0];
+  const baseLat = cLat + biLat;
+  const baseLng = cLng + biLng;
+  /** Şehir merkezine ~1–1.5 km içinde kalır; eski büyük jitter denize savuruyordu */
+  const { lat, lng } = seedCoordsNearCityCenter(baseLat, baseLng, idx, rng, { maxRadiusDeg: 0.013 });
 
   const zoning = rng() < 0.62 ? "imarli" : "imarsiz";
   const total = Math.round(400 + rng() * 9200);
