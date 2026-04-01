@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import MapView from "../components/MapView";
+import MapViewV2 from "../components/map/MapViewV2";
 import { supabase } from "../../lib/supabaseClient";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
 import {
@@ -57,8 +57,6 @@ type FetchClientPaginatedResult = {
   error?: Error | null;
   strategy?: string;
 };
-
-const MapViewAny = MapView as any;
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -1319,22 +1317,6 @@ export default function DashboardPage() {
     return out;
   }, [filteredItems]);
 
-  /** Harita flyTo / marker için normalize [lng,lat]; geçersizse marker yok, panel yine açık kalabilir. */
-  const selectedForMap = useMemo(() => {
-    if (!selected) return null;
-    const n = normalizeExplorerLatLng(selected.latitude, selected.longitude);
-    if (!n) return null;
-    return {
-      id: selected.id,
-      title: selected.title,
-      city: selected.city,
-      district: selected.district ?? null,
-      neighborhood: selected.neighborhood ?? null,
-      latitude: n.latitude,
-      longitude: n.longitude,
-    };
-  }, [selected]);
-
   const visibleItems = useMemo(() => {
     let arr = [...filteredItems];
     if (city) arr = arr.filter((x) => x.city === city);
@@ -2113,30 +2095,8 @@ export default function DashboardPage() {
         )}
 
         <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
-          <MapViewAny
+          <MapViewV2
             items={mapItemsForView}
-            selected={selectedForMap}
-            filters={{
-              city,
-              district,
-              neighborhood,
-              searchText,
-            }}
-            onSetCity={(c: string) => {
-              setCity(c);
-              setDistrict("");
-              setNeighborhood("");
-              setSelected(null);
-            }}
-            onSetDistrict={(d: string) => {
-              setDistrict(d);
-              setNeighborhood("");
-              setSelected(null);
-            }}
-            onSetNeighborhood={(n: string) => {
-              setNeighborhood(n);
-              setSelected(null);
-            }}
             onSelectPropertyId={(id: string) => {
               const k = String(id).trim();
               let found =

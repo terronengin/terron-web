@@ -1,7 +1,17 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { demoCoordsOrFallback } from "@/lib/seed/gadmDistrictSampler";
+import { allocateCountsByWeight } from "@/lib/seed/allocateCountsByWeight";
 import {
+  compositeCityWeight,
+  districtSlotWeights,
+  hashString32,
+  logAllocatedSummary,
+  logSampleWeights,
+  neighborhoodSlotWeights,
+} from "@/lib/seed/seedWeights";
+import {
+  DISTRICT_SUFFIXES,
   findCitySeedByName,
   listDistrictOptionsForCity,
   syntheticDistrict,
@@ -13,8 +23,11 @@ import {
 import { LISTING_STATUS_PUBLISHED } from "@/lib/propertyListingStatus";
 import { validateSeedRowForInsert } from "@/lib/seed/propertyInsertWhitelist";
 
-/** Tüm illerde dengeli dağılım; ilçe/mahalle varyasyonu syntheticDistrict / syntheticNeighborhood ile */
+/** Sentetik ilanlar: şehir/ilçe/mahalle ağırlıklı dağılım (`allocateCountsByWeight` + `seedWeights`). */
 export const DEFAULT_SEED_TARGET = 15000;
+
+/** Deterministik kök — aynı seed ile aynı coğrafi dağılım. */
+const REGION_SEED_ROOT = 0x7e5eed01;
 
 function mulberry32(a: number) {
   return function () {
@@ -129,28 +142,93 @@ export function generateTurkeySeedRows(
     if (!allowed.has(dNorm)) {
       throw new Error(`İlçe bu il için tanımlı değil: ${dNorm}`);
     }
+    const nhW = neighborhoodSlotWeights(citySeed, dNorm, REGION_SEED_ROOT);
+    const minNh = targetCount >= 28 ? 0 : targetCount >= 12 ? 1 : 0;
+    const nhCounts = allocateCountsByWeight(targetCount, nhW, { minPer: minNh });
+    const nhLabels = Array.from({ length: 12 }, (_, ni) => syntheticNeighborhood(dNorm, ni));
+    logAllocatedSummary(
+      `allocated neighborhood counts ${citySeed.city}/${dNorm}`,
+      nhCounts,
+      nhLabels
+    );
+
     const rows: Record<string, unknown>[] = [];
-    for (let idx = 0; idx < targetCount; idx++) {
-      const nhIdx = idx % 12;
-      const nh = syntheticNeighborhood(dNorm, nhIdx);
-      const rngSeed = (idx + 1) * 0x9e3779b9 + citySeed.city.charCodeAt(0) * 1315423911 + dNorm.length * 97;
-      const rng2 = mulberry32(rngSeed >>> 0);
-      rows.push(buildRow(citySeed, dNorm, nh, idx, rng2));
+    let idx = 0;
+    for (let ni = 0; ni < 12; ni++) {
+      const nhCnt = nhCounts[ni] ?? 0;
+      if (nhCnt === 0) continue;
+      const nh = syntheticNeighborhood(dNorm, ni);
+      for (let k = 0; k < nhCnt; k++) {
+        const rng2 = mulberry32(
+          ((idx + 1) * 0x9e3779b9) ^ hashString32(`${citySeed.city}|${dNorm}|${ni}|${k}`)
+        );
+        rows.push(buildRow(citySeed, dNorm, nh, idx, rng2));
+        idx++;
+      }
+    }
+    if (rows.length !== targetCount) {
+      console.warn("[seed] region seed row count mismatch", { targetCount, actual: rows.length });
     }
     return rows;
   }
 
+  const cityWeights = TR_CITY_SEEDS.map((c, i) => compositeCityWeight(c, i, REGION_SEED_ROOT));
+  logSampleWeights(TR_CITY_SEEDS, cityWeights, REGION_SEED_ROOT);
+
+  const minCity = targetCount >= TR_CITY_SEEDS.length * 2 ? 2 : 0;
+  const cityCounts = allocateCountsByWeight(targetCount, cityWeights, { minPer: minCity });
+  logAllocatedSummary("allocated city counts", cityCounts, TR_CITY_SEEDS.map((c) => c.city));
+
+  for (const sampleCity of ["Ankara", "İstanbul"] as const) {
+    const ci = TR_CITY_SEEDS.findIndex((c) => c.city === sampleCity);
+    if (ci < 0) continue;
+    const cs = TR_CITY_SEEDS[ci]!;
+    const ct = cityCounts[ci] ?? 0;
+    if (ct === 0) continue;
+    const dW = districtSlotWeights(cs, REGION_SEED_ROOT);
+    const dCounts = allocateCountsByWeight(ct, dW, {
+      minPer: ct >= 40 ? 0 : ct >= DISTRICT_SUFFIXES.length ? 1 : 0,
+    });
+    logAllocatedSummary(
+      `allocated district counts ${sampleCity}`,
+      dCounts,
+      DISTRICT_SUFFIXES.map((s) => `${cs.city} ${s}`)
+    );
+  }
+
   const rows: Record<string, unknown>[] = [];
-  const nCities = TR_CITY_SEEDS.length;
-  for (let idx = 0; idx < targetCount; idx++) {
-    const city = TR_CITY_SEEDS[idx % nCities]!;
-    const wave = Math.floor(idx / nCities);
-    const dIdx = wave % 8;
-    const nhIdx = Math.floor(wave / 8) % 12;
-    const district = syntheticDistrict(city.city, dIdx);
-    const nh = syntheticNeighborhood(district, nhIdx);
-    const rng2 = mulberry32((idx + 1) * 0x9e3779b9);
-    rows.push(buildRow(city, district, nh, idx, rng2));
+  let idx = 0;
+  for (let ci = 0; ci < TR_CITY_SEEDS.length; ci++) {
+    const citySeed = TR_CITY_SEEDS[ci]!;
+    const cityTotal = cityCounts[ci] ?? 0;
+    if (cityTotal === 0) continue;
+    const dW = districtSlotWeights(citySeed, REGION_SEED_ROOT);
+    const minD = cityTotal >= 40 ? 0 : cityTotal >= DISTRICT_SUFFIXES.length ? 1 : 0;
+    const dCounts = allocateCountsByWeight(cityTotal, dW, { minPer: minD });
+    for (let di = 0; di < DISTRICT_SUFFIXES.length; di++) {
+      const dCnt = dCounts[di] ?? 0;
+      if (dCnt === 0) continue;
+      const district = syntheticDistrict(citySeed.city, di);
+      const nhW = neighborhoodSlotWeights(citySeed, district, REGION_SEED_ROOT);
+      const minNh = dCnt >= 28 ? 0 : dCnt >= 12 ? 1 : 0;
+      const nhCounts = allocateCountsByWeight(dCnt, nhW, { minPer: minNh });
+      for (let ni = 0; ni < 12; ni++) {
+        const nhCnt = nhCounts[ni] ?? 0;
+        if (nhCnt === 0) continue;
+        const nh = syntheticNeighborhood(district, ni);
+        for (let k = 0; k < nhCnt; k++) {
+          const rng2 = mulberry32(
+            ((idx + 1) * 0x9e3779b9) ^ hashString32(`${citySeed.city}|${di}|${ni}|${k}`)
+          );
+          rows.push(buildRow(citySeed, district, nh, idx, rng2));
+          idx++;
+        }
+      }
+    }
+  }
+
+  if (rows.length !== targetCount) {
+    console.warn("[seed] national seed row count mismatch", { targetCount, actual: rows.length });
   }
   return rows;
 }

@@ -4,6 +4,7 @@ import { bbox, booleanPointInPolygon, pointOnFeature } from "@turf/turf";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { parseTurkeyLatLng } from "@/lib/map/normalizeCoordinates";
 import { seedCoordsFromSyntheticAddress } from "@/lib/map/seedCoords";
+import { hashString32 } from "@/lib/seed/seedWeights";
 import { syntheticDistrictIndexFromLabel } from "@/lib/regions/trRegions";
 
 function normTR(s: string): string {
@@ -56,7 +57,8 @@ export function getDistrictsForCityNormalized(cityName: string): Feature<Polygon
 function sampleLngLatInPolygonFeature(
   feature: Feature<Polygon | MultiPolygon>,
   rng: () => number,
-  maxAttempts = 120
+  maxAttempts = 120,
+  opts?: { stratumGrid?: number; stratumSlot?: number }
 ): [number, number] | null {
   const geom = feature.geometry;
   const fb: Feature<Polygon | MultiPolygon> = { type: "Feature", properties: {}, geometry: geom };
@@ -69,9 +71,23 @@ function sampleLngLatInPolygonFeature(
   const h = maxLat - minLat;
   if (w <= 0 || h <= 0) return null;
 
+  const grid = Math.max(1, Math.min(8, opts?.stratumGrid ?? 1));
+  const cells = grid * grid;
+  const slot = ((opts?.stratumSlot ?? 0) >>> 0) % cells;
+  const col = slot % grid;
+  const row = Math.floor(slot / grid);
+  const inv = 1 / grid;
+  const u0 = col * inv;
+  const u1 = (col + 1) * inv;
+  const v0 = row * inv;
+  const v1 = (row + 1) * inv;
+
   const pt: { type: "Point"; coordinates: [number, number] } = { type: "Point", coordinates: [0, 0] };
   for (let i = 0; i < maxAttempts; i++) {
-    pt.coordinates = [minLng + rng() * w, minLat + rng() * h];
+    pt.coordinates = [
+      minLng + (u0 + rng() * (u1 - u0)) * w,
+      minLat + (v0 + rng() * (v1 - v0)) * h,
+    ];
     if (booleanPointInPolygon(pt, fb)) {
       return pt.coordinates;
     }
@@ -99,14 +115,16 @@ export function sampleDemoPropertyLngLat(
   const feat = districts[dIdx];
   if (!feat?.geometry) return null;
 
-  const pair = sampleLngLatInPolygonFeature(feat, rng, 140);
+  const stratumSlot =
+    (hashString32(`${cityName}|${districtSynthetic}|${neighborhood}|${idx}`) ^
+      (idx * 0x9e3779b9) ^
+      neighborhood.length * 1315423911) >>>
+    0;
+  const pair = sampleLngLatInPolygonFeature(feat, rng, 140, { stratumGrid: 7, stratumSlot });
   if (!pair) return null;
 
   let lng = pair[0];
   let lat = pair[1];
-  const nh = (idx + neighborhood.length * 17) % 997;
-  lat += ((nh % 17) - 8) * 1.1e-6;
-  lng += ((nh % 13) - 6) * 1.1e-6;
 
   const parsed = parseTurkeyLatLng(lat, lng);
   if (!parsed) return null;
@@ -116,7 +134,7 @@ export function sampleDemoPropertyLngLat(
     { type: "Feature", properties: {}, geometry: feat.geometry }
   );
   if (!inside) {
-    const again = sampleLngLatInPolygonFeature(feat, rng, 80);
+    const again = sampleLngLatInPolygonFeature(feat, rng, 80, { stratumGrid: 7, stratumSlot: stratumSlot ^ 0xdeadbeef });
     if (!again) return { lat: parsed.lat, lng: parsed.lng };
     const p2 = parseTurkeyLatLng(again[1], again[0]);
     return p2 ? { lat: p2.lat, lng: p2.lng } : { lat: parsed.lat, lng: parsed.lng };
