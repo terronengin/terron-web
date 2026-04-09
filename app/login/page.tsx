@@ -10,10 +10,10 @@ const TerronHeroGlobe = dynamic(() => import("../components/login/TerronHeroGlob
 });
 
 type ViewMode = "login" | "register" | "forgot";
-
+ 
 type MarketResponse = {
   usdtry?: string | number | null;
-  eurtry?: string | number | null;
+  eurtry?: string | number | null; 
   gbptry?: string | number | null;
   USDTRY?: string | number | null;
   EURTRY?: string | number | null;
@@ -23,7 +23,7 @@ type MarketResponse = {
   error?: string;
 };
 
-const TOTAL_USERS = 841;
+const TOTAL_USERS = 24618;
 
 export default function LoginPage() {
   const router = useRouter();
