@@ -23,7 +23,7 @@ type MarketResponse = {
   error?: string;
 };
 
-const TOTAL_USERS = 24618;
+const TOTAL_USERS = 28377;
 
 export default function LoginPage() {
   const router = useRouter();
