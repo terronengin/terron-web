@@ -139,6 +139,11 @@ export default function AdminPage() {
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [treasuryModalOpen, setTreasuryModalOpen] = useState(false);
 
+  const [displayUserCountDraft, setDisplayUserCountDraft] = useState("");
+  const [displayUserCountLoading, setDisplayUserCountLoading] = useState(false);
+  const [displayUserCountBusy, setDisplayUserCountBusy] = useState(false);
+  const [displayUserCountNote, setDisplayUserCountNote] = useState<string | null>(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setEmail(data.session?.user?.email ?? null);
@@ -279,6 +284,67 @@ export default function AdminPage() {
     if (!authChecked || !allowed) return;
     loadAnalytics();
   }, [authChecked, allowed, loadAnalytics]);
+
+  useEffect(() => {
+    if (!authChecked || !allowed) return;
+    let cancelled = false;
+    (async () => {
+      setDisplayUserCountLoading(true);
+      setDisplayUserCountNote(null);
+      try {
+        const res = await fetch("/api/public/display-user-count", { cache: "no-store" });
+        const j = (await res.json()) as { ok?: boolean; value?: unknown };
+        if (cancelled) return;
+        if (j?.ok && typeof j.value === "number" && Number.isFinite(j.value)) {
+          setDisplayUserCountDraft(String(Math.max(0, Math.floor(j.value))));
+        }
+      } catch {
+        if (!cancelled) setDisplayUserCountNote("Sayı yüklenemedi.");
+      } finally {
+        if (!cancelled) setDisplayUserCountLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, allowed]);
+
+  const saveDisplayUserCount = useCallback(async () => {
+    setDisplayUserCountNote(null);
+    const raw = String(displayUserCountDraft).trim().replace(/\s/g, "").replace(/\./g, "");
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 0 || n > 999_999_999) {
+      setDisplayUserCountNote("0 ile 999.999.999 arasında bir tam sayı girin.");
+      return;
+    }
+    try {
+      setDisplayUserCountBusy(true);
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setDisplayUserCountNote("Oturum bulunamadı.");
+        return;
+      }
+      const res = await fetch("/api/admin/display-user-count", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ value: n }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: unknown };
+      if (!res.ok || !json.ok) {
+        throw new Error(formatApiErrorPayload(json));
+      }
+      setDisplayUserCountDraft(String(n));
+      setDisplayUserCountNote("Giriş sayfasındaki sayı güncellendi.");
+    } catch (e: unknown) {
+      setDisplayUserCountNote(formatErrorForUi(e));
+    } finally {
+      setDisplayUserCountBusy(false);
+    }
+  }, [displayUserCountDraft]);
 
   const visible = useMemo(() => {
     return properties.filter((p) => matchesAdminFilter(p, filter));
@@ -1028,6 +1094,79 @@ export default function AdminPage() {
             Komisyon tutarları yalnızca gerçekleşen alım ve satışlarda <code>platform_revenue</code> defterine yazılır;
             tahmin kullanılmaz. TERRON KASASI, bu defterdeki alış ve satış komisyonlarının toplamıdır.
           </div>
+        </div>
+
+        <div
+          style={{
+            marginBottom: 18,
+            padding: 16,
+            borderRadius: 18,
+            border: "1px solid rgba(147,197,253,0.22)",
+            background: "rgba(12,24,48,0.55)",
+            maxWidth: 520,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 900, marginBottom: 6, opacity: 0.95 }}>
+            Giriş sayfası — gösterilen kullanıcı sayısı
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.72, marginBottom: 12, lineHeight: 1.45 }}>
+            Giriş ekranındaki «Toplam Kullanıcı» rozetinde görünen sayıyı günceller. Veritabanındaki gerçek
+            kullanıcı sayısını değiştirmez.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, opacity: 0.88 }}>
+              Kullanıcı sayısı
+              <input
+                type="number"
+                min={0}
+                max={999999999}
+                value={displayUserCountDraft}
+                onChange={(e) => setDisplayUserCountDraft(e.target.value)}
+                disabled={displayUserCountLoading || displayUserCountBusy}
+                placeholder={displayUserCountLoading ? "…" : undefined}
+                style={{
+                  width: 160,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(0,0,0,0.25)",
+                  color: "white",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={displayUserCountBusy || displayUserCountLoading}
+              onClick={() => void saveDisplayUserCount()}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "1px solid rgba(147,197,253,0.45)",
+                background: "rgba(59,130,246,0.2)",
+                color: "#e0f2fe",
+                fontWeight: 900,
+                cursor: displayUserCountBusy || displayUserCountLoading ? "not-allowed" : "pointer",
+                opacity: displayUserCountBusy || displayUserCountLoading ? 0.55 : 1,
+              }}
+            >
+              {displayUserCountBusy ? "Kaydediliyor…" : "Kaydet"}
+            </button>
+          </div>
+          {displayUserCountNote ? (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: displayUserCountNote.includes("güncellendi") ? "#b9ffd1" : "#fecaca",
+                opacity: 0.95,
+              }}
+            >
+              {displayUserCountNote}
+            </div>
+          ) : null}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>

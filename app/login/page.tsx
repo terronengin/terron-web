@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "../../lib/supabaseClient";
+import { DEFAULT_DISPLAY_USER_COUNT } from "@/lib/site/displayUserCount";
 
 const TerronHeroGlobe = dynamic(() => import("../components/login/TerronHeroGlobe"), {
   ssr: false,
@@ -22,8 +23,6 @@ type MarketResponse = {
   ETH?: number | null;
   error?: string;
 };
-
-const TOTAL_USERS = 28377;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,6 +47,28 @@ export default function LoginPage() {
   const [district, setDistrict] = useState("");
 
   const [marketData, setMarketData] = useState<MarketResponse | null>(null);
+  const [displayUserCount, setDisplayUserCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/public/display-user-count", { cache: "no-store" });
+        const j = (await res.json()) as { ok?: boolean; value?: unknown };
+        if (!mounted) return;
+        if (j?.ok && typeof j.value === "number" && Number.isFinite(j.value)) {
+          setDisplayUserCount(Math.max(0, Math.floor(j.value)));
+        } else {
+          setDisplayUserCount(DEFAULT_DISPLAY_USER_COUNT);
+        }
+      } catch {
+        if (mounted) setDisplayUserCount(DEFAULT_DISPLAY_USER_COUNT);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const remembered =
@@ -599,7 +620,7 @@ export default function LoginPage() {
                     lineHeight: 1,
                   }}
                 >
-                  {TOTAL_USERS.toLocaleString("tr-TR")}
+                  {(displayUserCount ?? DEFAULT_DISPLAY_USER_COUNT).toLocaleString("tr-TR")}
                 </span>
               </div>
             </div>
