@@ -12,6 +12,7 @@ import {
 } from "@/lib/sim/realEstatePrice";
 import { getTerronSalePricePerM2, getDemandPressure } from "@/lib/propertySalePrice";
 import { normalizePropertyForPanel } from "@/lib/normalizePropertyForPanel";
+import { deriveZoningBandFromLabel } from "@/lib/investment/propertyInvestmentModel";
 import { normalizeExplorerLatLng } from "@/lib/dashboard/explorerCoords";
 import { isAdminEmail } from "@/lib/admin/isAdmin";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
@@ -36,7 +37,7 @@ type Property = PropertyRow & { area?: MarketArea | null };
 type RiskBand = "" | "low" | "mid" | "high";
 type TrendBand = "" | "rising" | "flat" | "falling";
 type PriceBand = "" | "0-10000" | "10001-25000" | "25001-50000" | "50001-100000" | "100001+";
-type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor";
+type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor" | "mixed";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
 type InsightTab = "arsa" | "gelisim" | "risk";
 
@@ -701,17 +702,15 @@ export default function DashboardPage() {
         if (riskBand === "high") qq = qq.gt("risk_score", 70);
       }
 
-      if (trendBand === "rising") qq = qq.gte("last_30d_change", 10);
-      if (trendBand === "flat") qq = qq.gte("last_30d_change", -3).lte("last_30d_change", 10);
-      if (trendBand === "falling") qq = qq.lte("last_30d_change", -3);
+      if (trendBand === "rising") qq = qq.gte("last_30d_change", 2.5);
+      if (trendBand === "flat") qq = qq.gte("last_30d_change", -2).lte("last_30d_change", 2.5);
+      if (trendBand === "falling") qq = qq.lte("last_30d_change", -2);
 
       if (priceBand === "0-10000") qq = qq.gte("price_per_m2", 0).lte("price_per_m2", 10000);
       if (priceBand === "10001-25000") qq = qq.gte("price_per_m2", 10001).lte("price_per_m2", 25000);
       if (priceBand === "25001-50000") qq = qq.gte("price_per_m2", 25001).lte("price_per_m2", 50000);
       if (priceBand === "50001-100000") qq = qq.gte("price_per_m2", 50001).lte("price_per_m2", 100000);
       if (priceBand === "100001+") qq = qq.gte("price_per_m2", 100001);
-
-      if (zoning) qq = qq.eq("zoning_status", zoning);
 
       if (areaBand === "0-500") qq = qq.gte("total_area_m2", 0).lte("total_area_m2", 500);
       if (areaBand === "501-2000") qq = qq.gte("total_area_m2", 501).lte("total_area_m2", 2000);
@@ -722,9 +721,24 @@ export default function DashboardPage() {
     };
 
     async function fetchClientPaginated(): Promise<FetchClientPaginatedResult> {
+      /** Yalnızca çekirdek kolonlar — şemada olmayan alan sorguyu düşürür. */
+      const CLIENT_PROPERTIES_SELECT_MAIN =
+        "id,title,city,district,neighborhood,price_per_m2,total_area_m2,available_m2,sold_m2,min_buy_m2,max_buy_m2,risk_score,development_score,expected_annual_return,last_30d_change,zoning_status,latitude,longitude,created_at";
+      const CLIENT_PROPERTIES_SELECT_FALLBACK =
+        "id,title,city,district,price_per_m2,available_m2,sold_m2,latitude,longitude";
+
       const PAGE = 1000;
       let from = 0;
       const acc: Property[] = [];
+
+      const logSupabaseError = (label: string, err: unknown) => {
+        console.error(`[dashboard] ${label} (raw)`, err);
+        try {
+          console.error(`[dashboard] ${label} (json)`, JSON.stringify(err, null, 2));
+        } catch {
+          console.error(`[dashboard] ${label} (json fallback)`, String(err));
+        }
+      };
 
       const normalizeRow = (row: Record<string, unknown>): Property | null => {
         const rawLat = Number(row?.latitude);
@@ -743,10 +757,15 @@ export default function DashboardPage() {
 
         if (lat < 35 || lat > 43 || lng < 25 || lng > 45) return null;
 
+        const lsRaw = row.listing_status;
+        const listing_status =
+          typeof lsRaw === "string" && lsRaw.trim() !== "" ? lsRaw.trim() : "approved";
+
         return {
           ...row,
           latitude: lat,
           longitude: lng,
+          listing_status,
         } as Property;
       };
 
@@ -758,37 +777,12 @@ export default function DashboardPage() {
         let pageStrategy = "server_filters";
 
         try {
-          let q = supabase.from("properties").select(`
-            id,
-            title,
-            country,
-            city,
-            district,
-            neighborhood,
-            latitude,
-            longitude,
-            price_per_m2,
-            total_area_m2,
-            available_m2,
-            sold_m2,
-            min_buy_m2,
-            max_buy_m2,
-            zoning_status,
-            risk_score,
-            development_score,
-            expected_annual_return,
-            last_30d_change,
-            rental_yield_annual,
-            quality_score,
-            created_at,
-            listing_status,
-            is_real
-          `);
+          let q = supabase.from("properties").select(CLIENT_PROPERTIES_SELECT_MAIN);
 
           try {
             q = typeof applyExplorerFilters === "function" ? applyExplorerFilters(q) : q.order("created_at", { ascending: false });
           } catch (filterBuildError) {
-            console.error("[dashboard] applyExplorerFilters build failed", filterBuildError);
+            logSupabaseError("applyExplorerFilters build failed", filterBuildError);
             q = q.order("created_at", { ascending: false });
             pageStrategy = "filter_build_failed_fallback";
           }
@@ -799,67 +793,28 @@ export default function DashboardPage() {
             ? (res.error as { message?: string; details?: string; hint?: string; code?: string })
             : null;
         } catch (e) {
-          console.error("[dashboard] filtered query threw", e);
+          logSupabaseError("filtered query threw", e);
           queryError = { message: String(e) };
         }
 
         if (queryError) {
-          const err = queryError;
-          console.error("[dashboard] fetchClientPaginated query error", {
-            message: err?.message,
-            details: err?.details,
-            hint: err?.hint,
-            code: err?.code,
-            from,
-            pageSize: PAGE,
-          });
+          logSupabaseError("fetchClientPaginated primary query error", queryError);
 
           pageStrategy = "minimal_fallback";
 
           try {
             const fallback = await supabase
               .from("properties")
-              .select(`
-            id,
-            title,
-            country,
-            city,
-            district,
-            neighborhood,
-            latitude,
-            longitude,
-            price_per_m2,
-            total_area_m2,
-            available_m2,
-            sold_m2,
-            min_buy_m2,
-            max_buy_m2,
-            zoning_status,
-            risk_score,
-            development_score,
-            expected_annual_return,
-            last_30d_change,
-            rental_yield_annual,
-            quality_score,
-            created_at,
-            listing_status,
-            is_real
-          `)
+              .select(CLIENT_PROPERTIES_SELECT_FALLBACK)
+              .in("listing_status", ["approved"])
               .order("created_at", { ascending: false })
               .range(from, from + PAGE - 1);
 
             data = (fallback.data as unknown[]) ?? null;
-            const fbErr = fallback.error as { message?: string; details?: string; hint?: string; code?: string } | null;
+            const fbErr = fallback.error;
 
             if (fbErr) {
-              console.error("[dashboard] fallback query failed but page will continue", {
-                message: fbErr?.message,
-                details: fbErr?.details,
-                hint: fbErr?.hint,
-                code: fbErr?.code,
-                from,
-                pageSize: PAGE,
-              });
+              logSupabaseError("fetchClientPaginated fallback query error", fbErr);
 
               return {
                 rows: acc,
@@ -868,7 +823,7 @@ export default function DashboardPage() {
               };
             }
           } catch (fallbackThrown) {
-            console.error("[dashboard] fallback query threw but page will continue", fallbackThrown);
+            logSupabaseError("fallback query threw", fallbackThrown);
             return {
               rows: acc,
               error: null,
@@ -880,7 +835,10 @@ export default function DashboardPage() {
         const chunk = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
         console.log("[dashboard] fetched raw chunk:", chunk.length);
 
-        let normalized = chunk.map(normalizeRow).filter((x): x is Property => x !== null);
+        let normalized = chunk
+          .map(normalizeRow)
+          .filter((x): x is Property => x !== null)
+          .map((p) => normalizePropertyForPanel(p as any) as Property);
 
         // Haritada yalnızca normalizeRow ile TR içi geçerli koordinatlı kayıtlar kalır; mapItemsForView ek süzüm yapar.
         // Haritada yine yalnızca normalizeRow ile TR içi geçerli koordinatlı kayıtlar kalır; mapItemsForView ek süzüm yapar.
@@ -946,7 +904,7 @@ export default function DashboardPage() {
       loadSource,
     });
 
-    setItems(all);
+    setItems(all.map((p) => normalizePropertyForPanel(p as any) as Property));
     console.log("[dashboard] map properties count:", all.length);
   }
 
@@ -976,7 +934,7 @@ export default function DashboardPage() {
         window.removeEventListener("terron:properties:refresh", onRefresh);
       }
     };
-  }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, zoning, areaBand]);
+  }, [email, city, district, neighborhood, riskBand, trendBand, priceBand, areaBand]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -1016,6 +974,17 @@ export default function DashboardPage() {
     const q = searchText.trim().toLowerCase();
     let arr = [...items];
 
+    if (zoning) {
+      arr = arr.filter((p) => {
+        const raw = String(p.zoning_band ?? "").trim();
+        const band =
+          raw === "imarli" || raw === "imarsiz" || raw === "bilinmiyor" || raw === "mixed"
+            ? raw
+            : deriveZoningBandFromLabel(String(p.zoning_status ?? ""));
+        return band === zoning;
+      });
+    }
+
     if (q) {
       arr = arr.filter((p) => {
         const blob = [
@@ -1026,6 +995,7 @@ export default function DashboardPage() {
           p.district ?? "",
           p.neighborhood ?? "",
           p.zoning_status ?? "",
+          p.land_type ?? "",
         ]
           .join(" ")
           .toLowerCase();
@@ -1035,7 +1005,7 @@ export default function DashboardPage() {
     }
 
     return arr;
-  }, [items, searchText]);
+  }, [items, searchText, zoning]);
 
   /** UUID / string id farkları (yeni kayıtlar bazen farklı casing) */
   function samePropertyId(a: unknown, b: unknown): boolean {
@@ -1681,6 +1651,7 @@ export default function DashboardPage() {
             <option value="imarli">İmarlı</option>
             <option value="imarsiz">İmarsız</option>
             <option value="bilinmiyor">Bilinmiyor</option>
+            <option value="mixed">Karma / çeşitli</option>
           </select>
         </div>
 
@@ -2316,8 +2287,8 @@ export default function DashboardPage() {
                     <div style={{ fontSize: 10, opacity: 0.65 }}>
                       Toplam <b>{formatNumber(selected.total_area_m2)}</b> m²
                       {selected.zoning_status ? (
-                        <span style={{ marginLeft: 6, opacity: 0.55 }}>
-                          · {String(selected.zoning_status).toUpperCase()}
+                        <span style={{ marginLeft: 6, opacity: 0.55, fontSize: 9 }} title={String(selected.zoning_status)}>
+                          · {String(selected.zoning_status)}
                         </span>
                       ) : null}
                     </div>
@@ -2343,6 +2314,21 @@ export default function DashboardPage() {
                       ["Beklenti", `%${Number(selected.expected_annual_return ?? 0).toFixed(1)}`],
                       ["₺/m²", `₺${formatTRY(selectedPricePerM2)}`],
                       ["Doluluk", `%${Math.round(listingDemandRatio * 100)}`],
+                      [
+                        "Likidite",
+                        typeof selected.liquidity_score === "number" && Number.isFinite(selected.liquidity_score)
+                          ? `%${formatInt(selected.liquidity_score)}`
+                          : "—",
+                      ],
+                      [
+                        "İmar",
+                        selected.zoning_status
+                          ? String(selected.zoning_status).length > 28
+                            ? `${String(selected.zoning_status).slice(0, 26)}…`
+                            : String(selected.zoning_status)
+                          : "—",
+                      ],
+                      ["Arazi", selected.land_type?.trim() ? String(selected.land_type) : "—"],
                     ] as const
                   ).map(([label, val]) => (
                     <div
@@ -2355,10 +2341,38 @@ export default function DashboardPage() {
                       }}
                     >
                       <div style={{ fontSize: 9, opacity: 0.62, fontWeight: 700, letterSpacing: 0.2 }}>{label}</div>
-                      <div style={{ fontSize: 12, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>{val}</div>
+                      <div
+                        style={{
+                          fontSize: label === "İmar" ? 10 : 12,
+                          fontWeight: 900,
+                          marginTop: 2,
+                          lineHeight: 1.25,
+                          wordBreak: "break-word",
+                        }}
+                        title={label === "İmar" && selected.zoning_status ? String(selected.zoning_status) : undefined}
+                      >
+                        {val}
+                      </div>
                     </div>
                   ))}
                 </div>
+
+                {selected.investment_thesis ? (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: "8px 8px",
+                      borderRadius: 12,
+                      background: "rgba(201,162,39,0.07)",
+                      border: "1px solid rgba(245,215,110,0.22)",
+                    }}
+                  >
+                    <div style={{ fontSize: 9, opacity: 0.72, fontWeight: 800, letterSpacing: 0.3 }}>Yatırım tezi</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, lineHeight: 1.4, opacity: 0.92 }}>
+                      {selected.investment_thesis}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 8 }}>
                   <button
@@ -2426,13 +2440,13 @@ export default function DashboardPage() {
                         <div style={{ ...miniInfoCard, padding: 8 }}>
                           <div style={{ ...miniInfoLabel, fontSize: 9 }}>Etrafında</div>
                           <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
-                            {inferNearbyText(selected)}
+                            {selected.around_text?.trim() ? selected.around_text : inferNearbyText(selected)}
                           </div>
                         </div>
                         <div style={{ ...miniInfoCard, padding: 8 }}>
                           <div style={{ ...miniInfoLabel, fontSize: 9 }}>Özet</div>
                           <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
-                            {inferLandSummary(selected)}
+                            {selected.summary_line?.trim() ? selected.summary_line : inferLandSummary(selected)}
                           </div>
                         </div>
                       </div>
@@ -2797,20 +2811,40 @@ function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
   );
 }
 
+function panelZoningBand(p: Property): ReturnType<typeof deriveZoningBandFromLabel> {
+  const raw = String(p.zoning_band ?? "").trim();
+  if (raw === "imarli" || raw === "imarsiz" || raw === "bilinmiyor" || raw === "mixed") {
+    return raw;
+  }
+  return deriveZoningBandFromLabel(String(p.zoning_status ?? ""));
+}
+
 function inferNearbyText(p: Property) {
+  const band = panelZoningBand(p);
   const isMetroCity = ["İstanbul", "Ankara", "İzmir", "Bursa", "Kocaeli", "Antalya"].includes(p.city);
-  if (p.zoning_status === "imarli") {
+  if (band === "imarli") {
     return isMetroCity
       ? "Ana yol bağlantısı, yerleşim aksı, ticaret alanı ve toplu ulaşım etkisi"
       : "Yerleşim genişleme yönü, yol bağlantısı ve orta yoğunluklu yapılaşma etkisi";
   }
+  if (band === "imarsiz") {
+    return isMetroCity
+      ? "Açık tarım / düşük yoğunluklu çevre; imar açılımı ve plan değişikliği belirleyici olabilir"
+      : "Kırsal çevre hattı; yerleşim ve ulaşım bağlantısı potansiyeli ile birlikte imar belirsizliği yüksek";
+  }
+  if (band === "mixed") {
+    return "Karma kullanım veya kademeli dönüşüm bölgesi; çevrede konut, tarım veya ticaret etkisi birlikte görülebilir.";
+  }
   return isMetroCity
-    ? "Gelişen çevre yol aksı, yeni konut baskısı ve ilerleyen planlama potansiyeli"
-    : "Tarla-arsa dönüşüm hattı, büyüyen yerleşim ve ulaşım bağlantısı potansiyeli";
+    ? "Konum ve imar bilgisini tapu ve mevcut plan ile teyit etmek gerekir."
+    : "İmar ve planlama durumu yerinde netleştirilmelidir.";
 }
 
 function inferLandSummary(p: Property) {
-  if (p.zoning_status === "imarli") return "İmarlı yapılaşma hakkı olan parsellerde işlem süreçleri genelde daha öngörülebilirdir.";
+  const band = panelZoningBand(p);
+  if (band === "imarli") return "İmarlı yapılaşma hakkı olan parsellerde işlem süreçleri genelde daha öngörülebilirdir.";
+  if (band === "imarsiz") return "İmar ve planlama belirsizliği daha yüksek; süreç ve maliyet yerinde netleştirilmelidir.";
+  if (band === "mixed") return "Karma veya geçiş bölgesi; mevzuat ve çevre projeleri fiyatı belirler.";
   if ((p.development_score ?? 0) > 70) return "Bölgesel gelişim göstergeleri güçlü; detaylar için yerinde keşif önerilir.";
   return "İmar ve planlama durumu yerinde kontrol edilmelidir.";
 }
@@ -2822,18 +2856,29 @@ function inferGrowthReason(p: Property) {
 }
 
 function inferZoningImpact(p: Property) {
-  if (p.zoning_status === "imarli") return "İmarlı yapılaşma hakkı nedeniyle fiyat keşfi daha hızlı olur";
-  return "İmar açılımı gerçekleşirse fiyat çarpanı belirgin yükseliş gösterebilir";
+  const band = panelZoningBand(p);
+  if (band === "imarli") return "İmarlı yapılaşma hakkı nedeniyle fiyat keşfi genelde daha hızlı olur";
+  if (band === "imarsiz") return "İmar açılımı gerçekleşirse fiyat çarpanı belirgin yükseliş gösterebilir; süre belirsiz.";
+  if (band === "mixed") return "Karma sınıflarda plan değişiklikleri ve çevre projeleri fiyatı belirler.";
+  return "İmar sınıfı netleştikçe değerleme güveni artar.";
 }
 
 function inferLiquidityText(p: Property) {
-  if (p.zoning_status === "imarli" && (p.risk_score ?? 0) < 45) return "Parçalı satış kolaylığı yüksek";
+  const liq = p.liquidity_score;
+  if (typeof liq === "number" && Number.isFinite(liq)) {
+    if (liq >= 72) return `Likidite skoru yüksek (${liq}); parçalı satış ve alıcı derinliği genelde daha iyi.`;
+    if (liq >= 45) return `Likidite skoru orta (${liq}); işlem süresi bölge ortalamasına yakın olabilir.`;
+    return `Likidite skoru düşük (${liq}); alıcı profili dar ve işlem süresi uzayabilir.`;
+  }
+  if (panelZoningBand(p) === "imarli" && (p.risk_score ?? 0) < 45) return "Parçalı satış kolaylığı yüksek";
   if ((p.risk_score ?? 0) < 65) return "Parçalı satış kolaylığı orta seviyede";
   return "Talep döngüsüne daha duyarlı, likidite daha yavaş olabilir";
 }
 
 function inferRiskText(p: Property) {
-  if (p.zoning_status === "imarsiz") return "İmar ve planlama belirsizliği daha yüksek izlenmeli";
+  const band = panelZoningBand(p);
+  if (band === "imarsiz") return "İmar ve planlama belirsizliği daha yüksek izlenmeli";
+  if (band === "mixed") return "Karma sınıflarda mevzuat ve çevre etkileri riski artırabilir.";
   if ((p.risk_score ?? 0) > 70) return "Piyasa döngüsü ve fiyat dalgalanması dikkatle takip edilmeli";
   return "Genel piyasa oynaklığı dışında kontrollü risk profili";
 }

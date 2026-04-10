@@ -8,6 +8,7 @@ import { isVisibleOnExplorer } from "../../lib/propertyListing";
 import type { InquiryStatus, PropertyInquiryRow } from "../../lib/propertyInquiry";
 import { INQUIRY_STATUS_LABELS } from "../../lib/propertyInquiry";
 import type { AdminAnalyticsPayload } from "@/lib/admin/analytics";
+import type { AdminUserRow } from "@/lib/admin/adminUsers";
 import { formatApiErrorPayload, formatErrorForUi } from "@/lib/formatErrorForUi";
 import { listDistrictOptionsForCity, TR_CITY_SEEDS } from "@/lib/regions/trRegions";
 
@@ -144,6 +145,40 @@ export default function AdminPage() {
   const [displayUserCountBusy, setDisplayUserCountBusy] = useState(false);
   const [displayUserCountNote, setDisplayUserCountNote] = useState<string | null>(null);
 
+  const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersError, setAdminUsersError] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [creditAmountDraft, setCreditAmountDraft] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+  const [creditNote, setCreditNote] = useState<string | null>(null);
+
+  const loadAdminUsers = useCallback(async () => {
+    setAdminUsersError(null);
+    try {
+      setAdminUsersLoading(true);
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setAdminUsersError("Oturum bulunamadı.");
+        return;
+      }
+      const res = await fetch("/api/admin/users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = (await res.json()) as { ok?: boolean; users?: AdminUserRow[]; error?: unknown };
+      if (!res.ok || !json.ok || !Array.isArray(json.users)) {
+        throw new Error(formatApiErrorPayload(json));
+      }
+      setAdminUsers(json.users);
+      setSelectedMemberId((prev) => (prev && json.users!.some((u) => u.id === prev) ? prev : null));
+    } catch (e: unknown) {
+      setAdminUsersError(formatErrorForUi(e));
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setEmail(data.session?.user?.email ?? null);
@@ -156,6 +191,11 @@ export default function AdminPage() {
   }, []);
 
   const allowed = isAdminEmail(email);
+
+  useEffect(() => {
+    if (!authChecked || !allowed) return;
+    void loadAdminUsers();
+  }, [authChecked, allowed, loadAdminUsers]);
 
   const loadAnalytics = useCallback(async () => {
     try {
@@ -345,6 +385,56 @@ export default function AdminPage() {
       setDisplayUserCountBusy(false);
     }
   }, [displayUserCountDraft]);
+
+  const creditMemberWallet = useCallback(
+    async (direction: "add" | "subtract") => {
+      if (!selectedMemberId) {
+        setCreditNote("Önce listeden bir kullanıcı seçin.");
+        return;
+      }
+      const raw = String(creditAmountDraft).trim().replace(/\s/g, "").replace(/\./g, "");
+      const n = Math.round(Number(raw));
+      if (!Number.isFinite(n) || n <= 0) {
+        setCreditNote("Geçerli pozitif bir tam sayı girin (₺).");
+        return;
+      }
+      setCreditNote(null);
+      try {
+        setCreditBusy(true);
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) {
+          setCreditNote("Oturum bulunamadı.");
+          return;
+        }
+        const res = await fetch("/api/admin/users/credit", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ userId: selectedMemberId, amountTry: n, direction }),
+        });
+        const json = (await res.json()) as { ok?: boolean; balance?: number; error?: unknown };
+        if (!res.ok || !json.ok) {
+          throw new Error(formatApiErrorPayload(json));
+        }
+        setCreditAmountDraft("");
+        setCreditNote(`İşlem tamam. Güncel bakiye: ${fmtTRY(json.balance ?? 0)} ₺`);
+        await loadAdminUsers();
+      } catch (e: unknown) {
+        setCreditNote(formatErrorForUi(e));
+      } finally {
+        setCreditBusy(false);
+      }
+    },
+    [selectedMemberId, creditAmountDraft, loadAdminUsers]
+  );
+
+  const selectedAdminMember = useMemo(
+    () => (selectedMemberId ? adminUsers.find((u) => u.id === selectedMemberId) ?? null : null),
+    [adminUsers, selectedMemberId]
+  );
 
   const visible = useMemo(() => {
     return properties.filter((p) => matchesAdminFilter(p, filter));
@@ -1167,6 +1257,191 @@ export default function AdminPage() {
               {displayUserCountNote}
             </div>
           ) : null}
+        </div>
+
+        <div
+          style={{
+            marginBottom: 22,
+            padding: 18,
+            borderRadius: 20,
+            border: "1px solid rgba(52,211,153,0.28)",
+            background: "rgba(8,28,32,0.55)",
+            maxWidth: "min(960px, 100%)",
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 6, color: "#ecfdf5" }}>
+            Kayıtlı üyeler ve cüzdan
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.78, marginBottom: 14, lineHeight: 1.5, maxWidth: 720 }}>
+            Gerçek kayıtlı kullanıcılar (Supabase Auth). E-posta, güncel bakiye; satır seçip tutarı yazarak bakiyeye para
+            ekleyebilir veya düşürebilirsiniz.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={() => void loadAdminUsers()}
+              disabled={adminUsersLoading}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(147,197,253,0.45)",
+                background: "rgba(59,130,246,0.15)",
+                color: "#e0f2fe",
+                fontWeight: 800,
+                cursor: adminUsersLoading ? "not-allowed" : "pointer",
+                opacity: adminUsersLoading ? 0.65 : 1,
+              }}
+            >
+              {adminUsersLoading ? "Yükleniyor…" : "Listeyi yenile"}
+            </button>
+            <span style={{ fontSize: 12, opacity: 0.75 }}>
+              Toplam: {adminUsersLoading ? "…" : adminUsers.length.toLocaleString("tr-TR")} kullanıcı
+            </span>
+            {adminUsersError ? <span style={{ fontSize: 12, color: "#fecaca" }}>{adminUsersError}</span> : null}
+          </div>
+
+          {adminUsersLoading && adminUsers.length === 0 ? (
+            <div style={{ opacity: 0.75, padding: 18 }}>Üyeler yükleniyor…</div>
+          ) : adminUsers.length === 0 ? (
+            <div style={{ opacity: 0.75, padding: 18, borderRadius: 14, background: "rgba(255,255,255,0.03)" }}>
+              Kayıtlı kullanıcı bulunamadı.
+            </div>
+          ) : (
+            <div
+              style={{
+                maxHeight: 380,
+                overflow: "auto",
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.1)",
+                marginBottom: 14,
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "rgba(255,255,255,0.06)", textAlign: "left" }}>
+                    <th style={{ padding: 10 }}>Ad</th>
+                    <th style={{ padding: 10 }}>E-posta</th>
+                    <th style={{ padding: 10, textAlign: "right" }}>Bakiye (₺)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminUsers.map((u) => {
+                    const sel = selectedMemberId === u.id;
+                    return (
+                      <tr
+                        key={u.id}
+                        onClick={() => {
+                          setSelectedMemberId(u.id);
+                          setCreditNote(null);
+                        }}
+                        style={{
+                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          cursor: "pointer",
+                          background: sel ? "rgba(59,130,246,0.2)" : undefined,
+                        }}
+                      >
+                        <td style={{ padding: 10 }}>{u.full_name || "—"}</td>
+                        <td style={{ padding: 10 }}>{u.email || "—"}</td>
+                        <td style={{ padding: 10, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {fmtTRY(u.balance)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selectedAdminMember ? (
+            <div
+              style={{
+                borderRadius: 16,
+                padding: 16,
+                border: "1px solid rgba(245,215,110,0.35)",
+                background: "rgba(20,35,55,0.85)",
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 4 }}>
+                {selectedAdminMember.full_name || "İsimsiz üye"}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 10 }}>{selectedAdminMember.email || "—"}</div>
+              <div style={{ fontSize: 20, fontWeight: 950, marginBottom: 14, fontVariantNumeric: "tabular-nums" }}>
+                Güncel bakiye: {fmtTRY(selectedAdminMember.balance)} ₺
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, opacity: 0.88 }}>
+                  Tutar (₺)
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={creditAmountDraft}
+                    onChange={(e) => setCreditAmountDraft(e.target.value)}
+                    disabled={creditBusy}
+                    placeholder="Örn. 25000"
+                    style={{
+                      width: 200,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(0,0,0,0.28)",
+                      color: "white",
+                      fontSize: 15,
+                      fontWeight: 700,
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={creditBusy}
+                  onClick={() => void creditMemberWallet("add")}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(52,211,153,0.55)",
+                    background: "rgba(52,211,153,0.2)",
+                    color: "#ecfdf5",
+                    fontWeight: 900,
+                    cursor: creditBusy ? "not-allowed" : "pointer",
+                    opacity: creditBusy ? 0.65 : 1,
+                  }}
+                >
+                  {creditBusy ? "…" : "Parayı yükle"}
+                </button>
+                <button
+                  type="button"
+                  disabled={creditBusy}
+                  onClick={() => void creditMemberWallet("subtract")}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(248,113,113,0.45)",
+                    background: "rgba(248,113,113,0.12)",
+                    color: "#fecaca",
+                    fontWeight: 900,
+                    cursor: creditBusy ? "not-allowed" : "pointer",
+                    opacity: creditBusy ? 0.65 : 1,
+                  }}
+                >
+                  {creditBusy ? "…" : "Parayı düş"}
+                </button>
+              </div>
+              {creditNote ? (
+                <div
+                  style={{
+                    marginTop: 12,
+                    fontSize: 12,
+                    color: creditNote.startsWith("İşlem tamam") ? "#b9ffd1" : "#fecaca",
+                  }}
+                >
+                  {creditNote}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, opacity: 0.72 }}>Tablodan bir üye seçin; bakiye işlemi burada yapılır.</div>
+          )}
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>

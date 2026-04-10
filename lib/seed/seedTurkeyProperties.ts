@@ -21,6 +21,7 @@ import {
   type TurkeyRegionName,
 } from "@/lib/regions/trRegions";
 import { LISTING_STATUS_PUBLISHED } from "@/lib/propertyListingStatus";
+import { derivePropertyInvestment } from "@/lib/investment/propertyInvestmentModel";
 import { validateSeedRowForInsert } from "@/lib/seed/propertyInsertWhitelist";
 
 /** Sentetik ilanlar: şehir/ilçe/mahalle ağırlıklı dağılım (`allocateCountsByWeight` + `seedWeights`). */
@@ -79,7 +80,6 @@ function buildRow(
   const rb = regionalBase(citySeed.region);
   const { lat, lng } = demoCoordsOrFallback(citySeed, district, neighborhood, idx, rng);
 
-  const zoning = rng() < 0.62 ? "imarli" : "imarsiz";
   const total = Math.round(400 + rng() * 9200);
   const liq01 = rb.liq / 100;
   const dev01 = rb.dev / 100;
@@ -87,9 +87,13 @@ function buildRow(
     0.04 + rng() * 0.2 * (0.45 + liq01 * 0.55) + rng() * 0.12 * (0.4 + dev01 * 0.6);
   let sold = Math.round(total * Math.min(0.44, soldRatio));
   sold = Math.min(sold, Math.max(0, total - 1));
+  if (sold === 0 && total > 500) {
+    sold = Math.max(1, Math.round(total * (0.02 + rng() * 0.14)));
+  }
   const available = Math.max(0, total - sold);
   const priceJ = 0.85 + rng() * 0.35;
-  const price = Math.round(rb.price * priceJ * (zoning === "imarli" ? 1.12 : 0.55));
+  const zoningHint = rng() < 0.62 ? "imarli" : "imarsiz";
+  const price = Math.round(rb.price * priceJ * (zoningHint === "imarli" ? 1.12 : 0.55));
 
   const minBuy = 1;
   const maxByParcel = total * 0.55;
@@ -102,8 +106,22 @@ function buildRow(
   const ada = 100 + Math.floor(rng() * 900);
   const parsel = 1 + Math.floor(rng() * 2500);
 
+  const id = randomUUID();
+  const inv = derivePropertyInvestment({
+    id,
+    city: citySeed.city,
+    district,
+    neighborhood,
+    latitude: lat,
+    longitude: lng,
+    total_area_m2: total,
+    available_m2: available,
+    sold_m2: sold,
+    price_per_m2: price,
+  });
+
   return {
-    id: randomUUID(),
+    id,
     title: `${citySeed.city} ${district} — ${parsel} parsel arsa`,
     city: citySeed.city,
     district,
@@ -116,6 +134,17 @@ function buildRow(
     sold_m2: sold,
     min_buy_m2: minBuy,
     max_buy_m2: maxBuy,
+    risk_score: inv.risk_score,
+    development_score: inv.development_score,
+    expected_annual_return: inv.expected_annual_return,
+    last_30d_change: inv.last_30d_change,
+    zoning_status: inv.zoning_status,
+    zoning_band: inv.zoning_band,
+    liquidity_score: inv.liquidity_score,
+    ai_summary: inv.ai_summary,
+    growth_story: inv.growth_story,
+    risk_factors: inv.risk_factors,
+    land_type: inv.land_type,
     listing_status: LISTING_STATUS_PUBLISHED,
     is_real: false,
   };

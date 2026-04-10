@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { PROPERTIES_EXPLORER_SELECT } from "@/lib/dashboard/propertiesExplorerSelect";
 
 export const runtime = "nodejs";
 
 const PAGE = 1000;
-
-/**
- * Sadece kesin var olan / migrasyonlu kolonlar — geniş select’te olmayan kolon API’yi patlatmasın.
- * Panel için ek alanlar istemci tarafında ikinci istekle eklenebilir.
- */
-const SELECT_MINIMAL =
-  "id,title,country,city,district,neighborhood,latitude,longitude,price_per_m2,total_area_m2,available_m2,sold_m2,min_buy_m2,max_buy_m2,zoning_status,risk_score,development_score,expected_annual_return,last_30d_change,rental_yield_annual,quality_score,created_at,listing_status,is_real";
 
 export async function GET(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -51,7 +45,7 @@ export async function GET(req: Request) {
   while (true) {
     const { data, error } = await sb
       .from("properties")
-      .select(SELECT_MINIMAL)
+      .select(PROPERTIES_EXPLORER_SELECT)
       .in("listing_status", ["approved"])
       .order("created_at", { ascending: false })
       .range(from, from + PAGE - 1);

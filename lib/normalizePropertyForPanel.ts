@@ -3,6 +3,7 @@
  * Gerçek ilan (submit-property) kayıtlarında eksik alanlar yüzünden render kırılmasını önler.
  */
 
+import { derivePropertyInvestment, deriveZoningBandFromLabel } from "@/lib/investment/propertyInvestmentModel";
 import { normalizeLatLngPair, isValidLatLng } from "@/lib/geoCoords";
 
 export type PropertyPanelShape = {
@@ -13,6 +14,7 @@ export type PropertyPanelShape = {
   district: string | null;
   neighborhood?: string | null;
   zoning_status?: string | null;
+  zoning_band?: string | null;
   price_per_m2?: number | null;
   total_area_m2: number;
   available_m2?: number | null;
@@ -44,6 +46,10 @@ export type PropertyPanelShape = {
   risk_factors?: string | null;
   liquidity_score?: number | null;
   confidence_score?: number | null;
+  land_type?: string | null;
+  investment_thesis?: string | null;
+  around_text?: string | null;
+  summary_line?: string | null;
 };
 
 function num(x: unknown, fallback: number): number {
@@ -90,6 +96,33 @@ export function normalizePropertyForPanel(p: Partial<PropertyPanelShape> & { id:
       : null) ||
     "Açıklama yakında eklenecek.";
 
+  const inv = derivePropertyInvestment({
+    id,
+    city,
+    district,
+    neighborhood,
+    latitude,
+    longitude,
+    total_area_m2: total,
+    available_m2: available,
+    sold_m2: sold,
+    price_per_m2: p.price_per_m2 != null ? num(p.price_per_m2, 0) : 0,
+  });
+
+  const rawZoning = String(p.zoning_status ?? "").trim();
+  const keepUserZoning =
+    p.is_real === true &&
+    rawZoning.length > 0 &&
+    !/^bilinmiyor$/i.test(rawZoning) &&
+    !/^(imarli|imarsiz)$/i.test(rawZoning);
+
+  const zoningFinal = keepUserZoning ? rawZoning : inv.zoning_status;
+  const zoningBandFinal = deriveZoningBandFromLabel(zoningFinal);
+  const landFinal =
+    p.is_real === true && typeof p.land_type === "string" && p.land_type.trim().length > 0
+      ? p.land_type.trim()
+      : inv.land_type;
+
   return {
     ...p,
     id,
@@ -98,17 +131,18 @@ export function normalizePropertyForPanel(p: Partial<PropertyPanelShape> & { id:
     city,
     district,
     neighborhood: neighborhood ?? null,
-    zoning_status: (p.zoning_status as string) ?? "bilinmiyor",
+    zoning_status: zoningFinal,
+    zoning_band: zoningBandFinal,
     price_per_m2: p.price_per_m2 != null ? num(p.price_per_m2, 0) : 0,
     total_area_m2: total,
     available_m2: available,
     sold_m2: sold,
     min_buy_m2: p.min_buy_m2 != null ? Math.max(1, num(p.min_buy_m2, 1)) : 1,
     max_buy_m2: p.max_buy_m2 != null ? num(p.max_buy_m2, available) : available,
-    risk_score: num(p.risk_score, 50),
-    development_score: num(p.development_score, 50),
-    expected_annual_return: num(p.expected_annual_return, 12),
-    last_30d_change: num(p.last_30d_change, 0),
+    risk_score: inv.risk_score,
+    development_score: inv.development_score,
+    expected_annual_return: inv.expected_annual_return,
+    last_30d_change: inv.last_30d_change,
     latitude,
     longitude,
     quality_score: p.quality_score,
@@ -125,10 +159,17 @@ export function normalizePropertyForPanel(p: Partial<PropertyPanelShape> & { id:
     deed_image_url: p.deed_image_url ?? null,
     ada_no: p.ada_no ?? null,
     parcel_no: p.parcel_no ?? null,
-    ai_summary: p.ai_summary ?? null,
-    growth_story: p.growth_story ?? null,
-    risk_factors: p.risk_factors ?? null,
-    liquidity_score: p.liquidity_score != null ? num(p.liquidity_score, 50) : undefined,
+    ai_summary:
+      p.is_real === true && p.ai_summary && String(p.ai_summary).trim().length > 80
+        ? String(p.ai_summary).trim()
+        : inv.ai_summary,
+    growth_story: inv.growth_story,
+    risk_factors: inv.risk_factors,
+    liquidity_score: inv.liquidity_score,
     confidence_score: p.confidence_score != null ? num(p.confidence_score, 0.7) : undefined,
+    land_type: landFinal,
+    investment_thesis: inv.investment_thesis,
+    around_text: inv.around_text,
+    summary_line: inv.summary_line,
   };
 }
