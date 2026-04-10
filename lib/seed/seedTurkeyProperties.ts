@@ -1,6 +1,10 @@
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { demoCoordsOrFallback } from "@/lib/seed/gadmDistrictSampler";
+import {
+  applyDistrictTierToWeights,
+  distributeCountsAcrossNeighborhoods,
+} from "@/lib/seed/propertyGeoDistribution";
 import { allocateCountsByWeight } from "@/lib/seed/allocateCountsByWeight";
 import {
   compositeCityWeight,
@@ -74,11 +78,21 @@ function buildRow(
   citySeed: CitySeed,
   district: string,
   neighborhood: string,
+  neighborhoodIndex: number,
   idx: number,
-  rng: () => number
+  rng: () => number,
+  recentByCluster: Map<string, [number, number][]>
 ): Record<string, unknown> {
   const rb = regionalBase(citySeed.region);
-  const { lat, lng } = demoCoordsOrFallback(citySeed, district, neighborhood, idx, rng);
+  const { lat, lng } = demoCoordsOrFallback(
+    citySeed,
+    district,
+    neighborhood,
+    neighborhoodIndex,
+    idx,
+    rng,
+    recentByCluster
+  );
 
   const total = Math.round(400 + rng() * 9200);
   const liq01 = rb.liq / 100;
@@ -139,7 +153,6 @@ function buildRow(
     expected_annual_return: inv.expected_annual_return,
     last_30d_change: inv.last_30d_change,
     zoning_status: inv.zoning_status,
-    zoning_band: inv.zoning_band,
     liquidity_score: inv.liquidity_score,
     ai_summary: inv.ai_summary,
     growth_story: inv.growth_story,
@@ -173,7 +186,12 @@ export function generateTurkeySeedRows(
     }
     const nhW = neighborhoodSlotWeights(citySeed, dNorm, REGION_SEED_ROOT);
     const minNh = targetCount >= 28 ? 0 : targetCount >= 12 ? 1 : 0;
-    const nhCounts = allocateCountsByWeight(targetCount, nhW, { minPer: minNh });
+    const nhCounts = distributeCountsAcrossNeighborhoods(
+      targetCount,
+      nhW,
+      hashString32(`${citySeed.city}|${dNorm}|nh`),
+      { minPer: minNh }
+    );
     const nhLabels = Array.from({ length: 12 }, (_, ni) => syntheticNeighborhood(dNorm, ni));
     logAllocatedSummary(
       `allocated neighborhood counts ${citySeed.city}/${dNorm}`,
@@ -182,6 +200,7 @@ export function generateTurkeySeedRows(
     );
 
     const rows: Record<string, unknown>[] = [];
+    const recentByCluster = new Map<string, [number, number][]>();
     let idx = 0;
     for (let ni = 0; ni < 12; ni++) {
       const nhCnt = nhCounts[ni] ?? 0;
@@ -191,7 +210,7 @@ export function generateTurkeySeedRows(
         const rng2 = mulberry32(
           ((idx + 1) * 0x9e3779b9) ^ hashString32(`${citySeed.city}|${dNorm}|${ni}|${k}`)
         );
-        rows.push(buildRow(citySeed, dNorm, nh, idx, rng2));
+        rows.push(buildRow(citySeed, dNorm, nh, ni, idx, rng2, recentByCluster));
         idx++;
       }
     }
@@ -214,7 +233,7 @@ export function generateTurkeySeedRows(
     const cs = TR_CITY_SEEDS[ci]!;
     const ct = cityCounts[ci] ?? 0;
     if (ct === 0) continue;
-    const dW = districtSlotWeights(cs, REGION_SEED_ROOT);
+    const dW = applyDistrictTierToWeights(districtSlotWeights(cs, REGION_SEED_ROOT));
     const dCounts = allocateCountsByWeight(ct, dW, {
       minPer: ct >= 40 ? 0 : ct >= DISTRICT_SUFFIXES.length ? 1 : 0,
     });
@@ -226,12 +245,13 @@ export function generateTurkeySeedRows(
   }
 
   const rows: Record<string, unknown>[] = [];
+  const recentByCluster = new Map<string, [number, number][]>();
   let idx = 0;
   for (let ci = 0; ci < TR_CITY_SEEDS.length; ci++) {
     const citySeed = TR_CITY_SEEDS[ci]!;
     const cityTotal = cityCounts[ci] ?? 0;
     if (cityTotal === 0) continue;
-    const dW = districtSlotWeights(citySeed, REGION_SEED_ROOT);
+    const dW = applyDistrictTierToWeights(districtSlotWeights(citySeed, REGION_SEED_ROOT));
     const minD = cityTotal >= 40 ? 0 : cityTotal >= DISTRICT_SUFFIXES.length ? 1 : 0;
     const dCounts = allocateCountsByWeight(cityTotal, dW, { minPer: minD });
     for (let di = 0; di < DISTRICT_SUFFIXES.length; di++) {
@@ -240,7 +260,12 @@ export function generateTurkeySeedRows(
       const district = syntheticDistrict(citySeed.city, di);
       const nhW = neighborhoodSlotWeights(citySeed, district, REGION_SEED_ROOT);
       const minNh = dCnt >= 28 ? 0 : dCnt >= 12 ? 1 : 0;
-      const nhCounts = allocateCountsByWeight(dCnt, nhW, { minPer: minNh });
+      const nhCounts = distributeCountsAcrossNeighborhoods(
+        dCnt,
+        nhW,
+        hashString32(`${citySeed.city}|${district}|nh`),
+        { minPer: minNh }
+      );
       for (let ni = 0; ni < 12; ni++) {
         const nhCnt = nhCounts[ni] ?? 0;
         if (nhCnt === 0) continue;
@@ -249,7 +274,7 @@ export function generateTurkeySeedRows(
           const rng2 = mulberry32(
             ((idx + 1) * 0x9e3779b9) ^ hashString32(`${citySeed.city}|${di}|${ni}|${k}`)
           );
-          rows.push(buildRow(citySeed, district, nh, idx, rng2));
+          rows.push(buildRow(citySeed, district, nh, ni, idx, rng2, recentByCluster));
           idx++;
         }
       }

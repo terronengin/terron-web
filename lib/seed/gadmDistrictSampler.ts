@@ -1,11 +1,20 @@
 import fs from "fs";
 import path from "path";
-import { bbox, booleanPointInPolygon, pointOnFeature } from "@turf/turf";
+import { booleanPointInPolygon } from "@turf/turf";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { parseTurkeyLatLng } from "@/lib/map/normalizeCoordinates";
 import { seedCoordsFromSyntheticAddress } from "@/lib/map/seedCoords";
-import { hashString32 } from "@/lib/seed/seedWeights";
-import { syntheticDistrictIndexFromLabel } from "@/lib/regions/trRegions";
+import {
+  blendTowardCityInland,
+  buildNeighborhoodAnchors,
+  getDistrictIndexForSyntheticSlot,
+  isFarEnoughFromExistingPoints,
+  randomPointNearAnchor,
+  randomPointInPolygonStratified,
+  shouldApplyCoastalInlandBlend,
+  syntheticSlotFromDistrictLabel,
+} from "@/lib/seed/propertyGeoDistribution";
+import type { CitySeed } from "@/lib/regions/trRegions";
 
 function normTR(s: string): string {
   return String(s ?? "")
@@ -54,73 +63,73 @@ export function getDistrictsForCityNormalized(cityName: string): Feature<Polygon
   return cachedDistrictsByCity.get(normTR(cityName)) ?? [];
 }
 
-function sampleLngLatInPolygonFeature(
-  feature: Feature<Polygon | MultiPolygon>,
-  rng: () => number,
-  maxAttempts = 120,
-  opts?: { stratumGrid?: number; stratumSlot?: number }
-): [number, number] | null {
-  const geom = feature.geometry;
-  const fb: Feature<Polygon | MultiPolygon> = { type: "Feature", properties: {}, geometry: geom };
-  const box = bbox(fb);
-  const minLng = box[0];
-  const minLat = box[1];
-  const maxLng = box[2];
-  const maxLat = box[3];
-  const w = maxLng - minLng;
-  const h = maxLat - minLat;
-  if (w <= 0 || h <= 0) return null;
+const anchorCache = new Map<string, [number, number][]>();
 
-  const grid = Math.max(1, Math.min(8, opts?.stratumGrid ?? 1));
-  const cells = grid * grid;
-  const slot = ((opts?.stratumSlot ?? 0) >>> 0) % cells;
-  const col = slot % grid;
-  const row = Math.floor(slot / grid);
-  const inv = 1 / grid;
-  const u0 = col * inv;
-  const u1 = (col + 1) * inv;
-  const v0 = row * inv;
-  const v1 = (row + 1) * inv;
-
-  const pt: { type: "Point"; coordinates: [number, number] } = { type: "Point", coordinates: [0, 0] };
-  for (let i = 0; i < maxAttempts; i++) {
-    pt.coordinates = [
-      minLng + (u0 + rng() * (u1 - u0)) * w,
-      minLat + (v0 + rng() * (v1 - v0)) * h,
-    ];
-    if (booleanPointInPolygon(pt, fb)) {
-      return pt.coordinates;
-    }
-  }
-  const pon = pointOnFeature(fb);
-  const c = pon.geometry.coordinates;
-  return [c[0], c[1]];
+function anchorKey(city: string, districtIdx: number, nhSlot: number): string {
+  return `${normTR(city)}|d${districtIdx}|nh${nhSlot}`;
 }
 
 /**
- * Demo/system ilan: GADM ilçe poligonu içinde rastgele nokta (deniz / yanlış bbox önlenir).
- * Sentetik ilçe etiketi (Merkez, Kuzey, …) gerçek ilçe listesinde indekslenir.
+ * Demo ilan: doğru GADM ilçe poligonu + mahalle anchor çevresi + minimum mesafe + kıyıda içe çekiş.
  */
 export function sampleDemoPropertyLngLat(
   cityName: string,
   districtSynthetic: string,
-  neighborhood: string,
+  neighborhoodIndex: number,
   idx: number,
-  rng: () => number
+  rng: () => number,
+  citySeed: CitySeed,
+  recentByCluster: Map<string, [number, number][]>
 ): { lat: number; lng: number } | null {
   const districts = getDistrictsForCityNormalized(cityName);
   if (!districts.length) return null;
 
-  const dIdx = syntheticDistrictIndexFromLabel(districtSynthetic, cityName) % districts.length;
+  const slot = syntheticSlotFromDistrictLabel(districtSynthetic, cityName);
+  const dIdx = getDistrictIndexForSyntheticSlot(cityName, districts, slot);
   const feat = districts[dIdx];
   if (!feat?.geometry) return null;
 
-  const stratumSlot =
-    (hashString32(`${cityName}|${districtSynthetic}|${neighborhood}|${idx}`) ^
-      (idx * 0x9e3779b9) ^
-      neighborhood.length * 1315423911) >>>
-    0;
-  const pair = sampleLngLatInPolygonFeature(feat, rng, 140, { stratumGrid: 7, stratumSlot });
+  const nhSlot = Math.max(0, Math.min(11, neighborhoodIndex));
+  const ak = anchorKey(cityName, dIdx, nhSlot);
+  let anchors = anchorCache.get(ak);
+  if (!anchors || anchors.length < 12) {
+    anchors = buildNeighborhoodAnchors(feat, 12, rng);
+    anchorCache.set(ak, anchors);
+  }
+  const anchor = anchors[nhSlot] ?? anchors[0]!;
+  const [aLng, aLat] = anchor;
+
+  const minM = 95 + (idx % 7) * 12;
+  const clusterKey = `${cityName}|${districtSynthetic}|n${nhSlot}`;
+  const prev = recentByCluster.get(clusterKey) ?? [];
+
+  let pair: [number, number] | null = null;
+  for (let attempt = 0; attempt < 55; attempt++) {
+    const spread = 420 + rng() * 520;
+    const p = randomPointNearAnchor(aLng, aLat, feat, rng, spread, 40);
+    const cand = p ?? randomPointInPolygonStratified(feat, rng, 5, nhSlot + attempt, 70);
+    if (!cand) continue;
+    let [lng, lat] = cand;
+
+    if (shouldApplyCoastalInlandBlend(citySeed.city)) {
+      const blended = blendTowardCityInland(lng, lat, citySeed.center, 0.1 + rng() * 0.08);
+      lng = blended[0];
+      lat = blended[1];
+      const pt = { type: "Point" as const, coordinates: [lng, lat] };
+      if (!booleanPointInPolygon(pt, { type: "Feature", properties: {}, geometry: feat.geometry })) {
+        continue;
+      }
+    }
+
+    if (!isFarEnoughFromExistingPoints(lng, lat, prev, minM)) continue;
+
+    pair = [lng, lat];
+    break;
+  }
+
+  if (!pair) {
+    pair = randomPointInPolygonStratified(feat, rng, 6, nhSlot + idx, 95);
+  }
   if (!pair) return null;
 
   let lng = pair[0];
@@ -134,22 +143,42 @@ export function sampleDemoPropertyLngLat(
     { type: "Feature", properties: {}, geometry: feat.geometry }
   );
   if (!inside) {
-    const again = sampleLngLatInPolygonFeature(feat, rng, 80, { stratumGrid: 7, stratumSlot: stratumSlot ^ 0xdeadbeef });
+    const again = randomPointInPolygonStratified(feat, rng, 7, (idx ^ nhSlot) & 63, 90);
     if (!again) return { lat: parsed.lat, lng: parsed.lng };
     const p2 = parseTurkeyLatLng(again[1], again[0]);
     return p2 ? { lat: p2.lat, lng: p2.lng } : { lat: parsed.lat, lng: parsed.lng };
   }
-  return { lat: parsed.lat, lng: parsed.lng };
+
+  const out = { lat: parsed.lat, lng: parsed.lng };
+  const arr = prev.slice();
+  arr.push([out.lng, out.lat]);
+  if (arr.length > 80) arr.shift();
+  recentByCluster.set(clusterKey, arr);
+
+  return out;
 }
 
+/**
+ * Sentetik ilan koordinatı — poligon başarısızsa şehir merkezi spiral yedeği (son çare).
+ */
 export function demoCoordsOrFallback(
-  citySeed: { city: string; center: [number, number]; inlandBias?: [number, number] },
+  citySeed: CitySeed,
   district: string,
   neighborhood: string,
+  neighborhoodIndex: number,
   idx: number,
-  rng: () => number
+  rng: () => number,
+  recentByCluster: Map<string, [number, number][]>
 ): { lat: number; lng: number } {
-  const fromPoly = sampleDemoPropertyLngLat(citySeed.city, district, neighborhood, idx, rng);
+  const fromPoly = sampleDemoPropertyLngLat(
+    citySeed.city,
+    district,
+    neighborhoodIndex,
+    idx,
+    rng,
+    citySeed,
+    recentByCluster
+  );
   if (fromPoly) return fromPoly;
 
   const [cLat, cLng] = citySeed.center;

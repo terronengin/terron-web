@@ -1,6 +1,7 @@
 /**
  * Arsa üret (seed) insert — yalnızca gerçek tablo kolonları.
  * `source_type` veya şemada olmayan kolonlar gönderilmez.
+ * `zoning_band` kolonu yoksa listede tutulmaz (keşif filtresi için `normalizePropertyForPanel` türetir).
  */
 import { LISTING_STATUS_DB_VALUES, type ListingStatusDb } from "@/lib/propertyListingStatus";
 export const SEED_PROPERTY_INSERT_KEYS = [
@@ -22,7 +23,6 @@ export const SEED_PROPERTY_INSERT_KEYS = [
   "expected_annual_return",
   "last_30d_change",
   "zoning_status",
-  "zoning_band",
   "liquidity_score",
   "ai_summary",
   "growth_story",
