@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { formatM2 } from "@/lib/formatM2";
 import { calculateSellQuoteTRY, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
 import { getTerronSalePricePerM2, type TerronPropertyPricingInput } from "@/lib/propertySalePrice";
+import { invalidatePropertiesCache } from "@/lib/propertiesCache";
 import { AppShell } from "../components/AppShell";
 
 type RealPositionRow = {
@@ -318,6 +319,7 @@ export default function PortfolioPage() {
       alert(
         `Satış tamamlandı. Hesaba geçen net: ₺${formatTRY(json.netProceeds ?? net)} (brüt üzerinden %1 satış komisyonu düşülmüştür).`
       );
+      invalidatePropertiesCache();
       setRefresh((x) => x + 1);
     } finally {
       setSellingKey(null);

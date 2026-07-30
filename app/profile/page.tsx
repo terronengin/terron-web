@@ -27,6 +27,32 @@ const card: React.CSSProperties = {
 const rowLabel: React.CSSProperties = { fontSize: 11, opacity: 0.6, fontWeight: 700, letterSpacing: 0.2 };
 const rowValue: React.CSSProperties = { fontSize: 14, fontWeight: 700, marginTop: 3 };
 
+const fieldInput: React.CSSProperties = {
+  width: "100%",
+  height: 40,
+  padding: "0 12px",
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
+  fontSize: 13,
+  outline: "none",
+  marginBottom: 8,
+  boxSizing: "border-box",
+};
+
+const quickAmountBtn: React.CSSProperties = {
+  flex: 1,
+  height: 34,
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.05)",
+  color: "white",
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -65,6 +91,22 @@ function NavRow({ label, onClick, danger }: { label: string; onClick: () => void
 export default function ProfilePage() {
   const router = useRouter();
   const [info, setInfo] = useState<ProfileInfo | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const [walletPanel, setWalletPanel] = useState<"none" | "deposit" | "withdraw">("none");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositBusy, setDepositBusy] = useState(false);
+  const [depositMsg, setDepositMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const [wdAmount, setWdAmount] = useState("");
+  const [wdBankName, setWdBankName] = useState("");
+  const [wdHolderName, setWdHolderName] = useState("");
+  const [wdIban, setWdIban] = useState("");
+  const [wdBusy, setWdBusy] = useState(false);
+  const [wdMsg, setWdMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   useEffect(() => {
@@ -93,8 +135,112 @@ export default function ProfilePage() {
     window.location.href = "/login";
   }
 
-  function notYetAvailable(action: string) {
-    alert(`${action} özelliği yakında aktif olacak.`);
+  async function changePassword() {
+    setPwMsg(null);
+    if (newPassword.length < 6) {
+      setPwMsg({ text: "Şifre en az 6 karakter olmalı.", error: true });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwMsg({ text: "Şifreler eşleşmiyor.", error: true });
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setPwMsg({ text: error.message, error: true });
+        return;
+      }
+      setPwMsg({ text: "Şifreniz güncellendi." });
+      setNewPassword("");
+      setConfirmPassword("");
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  async function authToken(): Promise<string | null> {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  }
+
+  async function submitDeposit() {
+    setDepositMsg(null);
+    const amount = Math.round(Number(depositAmount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setDepositMsg({ text: "Geçerli bir tutar girin.", error: true });
+      return;
+    }
+    setDepositBusy(true);
+    try {
+      const token = await authToken();
+      if (!token) {
+        setDepositMsg({ text: "Oturum süresi dolmuş olabilir.", error: true });
+        return;
+      }
+      const res = await fetch("/api/wallet/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; balance?: number };
+      if (!res.ok || !json.ok) {
+        setDepositMsg({ text: json.error ?? "Yatırma tamamlanamadı.", error: true });
+        return;
+      }
+      setWalletBalance(json.balance ?? null);
+      setDepositAmount("");
+      setDepositMsg({ text: `₺${formatTRY(amount)} bakiyenize eklendi.` });
+    } finally {
+      setDepositBusy(false);
+    }
+  }
+
+  async function submitWithdraw() {
+    setWdMsg(null);
+    const amount = Math.round(Number(wdAmount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setWdMsg({ text: "Geçerli bir tutar girin.", error: true });
+      return;
+    }
+    if (walletBalance != null && amount > walletBalance) {
+      setWdMsg({ text: "Bakiyenizden fazla tutar talep edemezsiniz.", error: true });
+      return;
+    }
+    if (!wdBankName.trim() || !wdHolderName.trim() || !wdIban.trim()) {
+      setWdMsg({ text: "Banka adı, hesap sahibi ve IBAN gerekli.", error: true });
+      return;
+    }
+    setWdBusy(true);
+    try {
+      const token = await authToken();
+      if (!token) {
+        setWdMsg({ text: "Oturum süresi dolmuş olabilir.", error: true });
+        return;
+      }
+      const res = await fetch("/api/wallet/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          amount,
+          bankName: wdBankName.trim(),
+          accountHolderName: wdHolderName.trim(),
+          iban: wdIban.trim(),
+        }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; balance?: number };
+      if (!res.ok || !json.ok) {
+        setWdMsg({ text: json.error ?? "Çekme talebi oluşturulamadı.", error: true });
+        return;
+      }
+      setWalletBalance(json.balance ?? null);
+      setWdAmount("");
+      setWdIban("");
+      setWdMsg({ text: "Talebiniz alındı, en kısa sürede işleme alınacak." });
+    } finally {
+      setWdBusy(false);
+    }
   }
 
   const memberSince = info?.createdAt
@@ -168,13 +314,16 @@ export default function ProfilePage() {
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => notYetAvailable("Para yatırma")}
+                    onClick={() => setWalletPanel(walletPanel === "deposit" ? "none" : "deposit")}
                     style={{
                       flex: 1,
                       padding: "10px 0",
                       borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(255,255,255,0.05)",
+                      border:
+                        walletPanel === "deposit"
+                          ? "1px solid rgba(245,215,110,0.5)"
+                          : "1px solid rgba(255,255,255,0.12)",
+                      background: walletPanel === "deposit" ? "rgba(245,215,110,0.12)" : "rgba(255,255,255,0.05)",
                       color: "white",
                       fontWeight: 700,
                       fontSize: 13,
@@ -184,13 +333,16 @@ export default function ProfilePage() {
                     Para Yatır
                   </button>
                   <button
-                    onClick={() => notYetAvailable("Para çekme")}
+                    onClick={() => setWalletPanel(walletPanel === "withdraw" ? "none" : "withdraw")}
                     style={{
                       flex: 1,
                       padding: "10px 0",
                       borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(255,255,255,0.05)",
+                      border:
+                        walletPanel === "withdraw"
+                          ? "1px solid rgba(245,215,110,0.5)"
+                          : "1px solid rgba(255,255,255,0.12)",
+                      background: walletPanel === "withdraw" ? "rgba(245,215,110,0.12)" : "rgba(255,255,255,0.05)",
                       color: "white",
                       fontWeight: 700,
                       fontSize: 13,
@@ -200,6 +352,115 @@ export default function ProfilePage() {
                     Para Çek
                   </button>
                 </div>
+
+                {walletPanel === "deposit" && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                      {[1000, 5000, 25000, 100000].map((v) => (
+                        <button key={v} style={quickAmountBtn} onClick={() => setDepositAmount(String(v))}>
+                          ₺{formatTRY(v)}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="Tutar (₺)"
+                      inputMode="numeric"
+                      style={fieldInput}
+                    />
+                    {depositMsg ? (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          marginBottom: 8,
+                          color: depositMsg.error ? "#fca5a5" : "#86efac",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {depositMsg.text}
+                      </div>
+                    ) : null}
+                    <button
+                      onClick={() => void submitDeposit()}
+                      disabled={depositBusy}
+                      style={{
+                        width: "100%",
+                        padding: "11px 0",
+                        borderRadius: 12,
+                        border: "1px solid rgba(245,215,110,0.4)",
+                        background: depositBusy ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                        color: depositBusy ? "white" : "#0a0f1a",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        cursor: depositBusy ? "not-allowed" : "pointer",
+                        opacity: depositBusy ? 0.6 : 1,
+                      }}
+                    >
+                      {depositBusy ? "İşleniyor…" : "Yatır"}
+                    </button>
+                  </div>
+                )}
+
+                {walletPanel === "withdraw" && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <input
+                      value={wdAmount}
+                      onChange={(e) => setWdAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="Çekilecek tutar (₺)"
+                      inputMode="numeric"
+                      style={fieldInput}
+                    />
+                    <input
+                      value={wdBankName}
+                      onChange={(e) => setWdBankName(e.target.value)}
+                      placeholder="Banka adı"
+                      style={fieldInput}
+                    />
+                    <input
+                      value={wdHolderName}
+                      onChange={(e) => setWdHolderName(e.target.value)}
+                      placeholder="Hesap sahibinin adı soyadı"
+                      style={fieldInput}
+                    />
+                    <input
+                      value={wdIban}
+                      onChange={(e) => setWdIban(e.target.value.toUpperCase())}
+                      placeholder="TR__ ____ ____ ____ ____ ____ __"
+                      style={fieldInput}
+                    />
+                    {wdMsg ? (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          marginBottom: 8,
+                          color: wdMsg.error ? "#fca5a5" : "#86efac",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {wdMsg.text}
+                      </div>
+                    ) : null}
+                    <button
+                      onClick={() => void submitWithdraw()}
+                      disabled={wdBusy}
+                      style={{
+                        width: "100%",
+                        padding: "11px 0",
+                        borderRadius: 12,
+                        border: "1px solid rgba(245,215,110,0.4)",
+                        background: wdBusy ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                        color: wdBusy ? "white" : "#0a0f1a",
+                        fontWeight: 800,
+                        fontSize: 13,
+                        cursor: wdBusy ? "not-allowed" : "pointer",
+                        opacity: wdBusy ? 0.6 : 1,
+                      }}
+                    >
+                      {wdBusy ? "İşleniyor…" : "Çekim Talebi Oluştur"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Kişisel bilgiler */}
@@ -216,6 +477,79 @@ export default function ProfilePage() {
                 <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4, opacity: 0.85 }}>Hesap Bilgileri</div>
                 <InfoRow label="ÜYELİK TARİHİ" value={memberSince} />
                 <InfoRow label="E-POSTA DOĞRULAMA" value={info.emailConfirmed ? "Doğrulanmış" : "Doğrulanmamış"} />
+              </div>
+
+              {/* Şifre değiştir */}
+              <div style={{ ...card, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, opacity: 0.85 }}>Şifre Değiştir</div>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Yeni şifre"
+                  style={{
+                    width: "100%",
+                    height: 40,
+                    padding: "0 12px",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "white",
+                    fontSize: 13,
+                    outline: "none",
+                    marginBottom: 8,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Yeni şifre (tekrar)"
+                  style={{
+                    width: "100%",
+                    height: 40,
+                    padding: "0 12px",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "white",
+                    fontSize: 13,
+                    outline: "none",
+                    marginBottom: 10,
+                    boxSizing: "border-box",
+                  }}
+                />
+                {pwMsg ? (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      marginBottom: 10,
+                      color: pwMsg.error ? "#fca5a5" : "#86efac",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {pwMsg.text}
+                  </div>
+                ) : null}
+                <button
+                  onClick={() => void changePassword()}
+                  disabled={pwSaving}
+                  style={{
+                    width: "100%",
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: "1px solid rgba(245,215,110,0.4)",
+                    background: pwSaving ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                    color: pwSaving ? "white" : "#0a0f1a",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: pwSaving ? "not-allowed" : "pointer",
+                    opacity: pwSaving ? 0.6 : 1,
+                  }}
+                >
+                  {pwSaving ? "Güncelleniyor…" : "Şifreyi Güncelle"}
+                </button>
               </div>
 
               {/* Diğer işlemler */}

@@ -60,19 +60,19 @@ function AddFab({ onClick }: { onClick: () => void }) {
         title="İlan Ver"
         style={{
           position: "absolute",
-          top: -20,
-          width: 52,
-          height: 52,
-          borderRadius: 18,
+          top: -12,
+          width: 38,
+          height: 38,
+          borderRadius: 13,
           background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
-          border: "3px solid #070B14",
-          boxShadow: "0 8px 22px rgba(212,175,55,0.45)",
+          border: "2.5px solid #070B14",
+          boxShadow: "0 6px 16px rgba(212,175,55,0.4)",
           display: "grid",
           placeItems: "center",
           cursor: "pointer",
         }}
       >
-        <span style={{ fontSize: 26, fontWeight: 900, color: "#111", lineHeight: 1 }}>+</span>
+        <span style={{ fontSize: 18, fontWeight: 900, color: "#111", lineHeight: 1 }}>+</span>
       </button>
     </div>
   );

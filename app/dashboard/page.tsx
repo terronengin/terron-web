@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../components/AppShell";
 import MapViewV2 from "../components/map/MapViewV2";
 import { supabase } from "../../lib/supabaseClient";
+import { getCachedProperties, invalidatePropertiesCache } from "../../lib/propertiesCache";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
 import {
   calculateSimpleBuyQuoteTRY,
@@ -630,6 +631,7 @@ export default function DashboardPage() {
       await ensureAndLoadWallet();
 
       clearCart();
+      invalidatePropertiesCache();
       alert("Toplu m² alımı tamam ✓");
       setCheckingOut(false);
     } catch (e: unknown) {
@@ -868,21 +870,10 @@ export default function DashboardPage() {
     let loadSource = "none";
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (token) {
-        const res = await fetch("/api/properties/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const json = (await res.json()) as { ok?: boolean; items?: Property[]; error?: string; useClient?: boolean };
-        if (res.ok && json.ok && Array.isArray(json.items)) {
-          all = json.items;
-          loadSource = "api_service_role";
-        } else if (res.status === 503) {
-          console.warn("[dashboard] API 503 (service role yok), istemci sorgusu kullanılıyor");
-        } else if (!res.ok) {
-          console.warn("[dashboard] API error:", json?.error, res.status);
-        }
+      const cached = await getCachedProperties();
+      if (cached.length > 0) {
+        all = cached;
+        loadSource = "api_service_role";
       }
     } catch (e) {
       console.warn("[dashboard] /api/properties/dashboard fetch failed:", e);

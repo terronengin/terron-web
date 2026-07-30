@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
+import { getCachedProperties } from "@/lib/propertiesCache";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
-import { supabase } from "@/lib/supabaseClient";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
 
@@ -49,19 +49,8 @@ export default function MarketPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) {
-          if (!cancelled) setItems([]);
-          return;
-        }
-        const res = await fetch("/api/properties/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const json = (await res.json()) as { ok?: boolean; items?: PropertyRow[] };
-        if (!cancelled && res.ok && json.ok && Array.isArray(json.items)) {
-          setItems(json.items);
-        }
+        const rows = await getCachedProperties();
+        if (!cancelled) setItems(rows);
       } catch (e) {
         console.warn("[market] fetch failed:", e);
       } finally {
