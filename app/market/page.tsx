@@ -1,22 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { getCachedProperties } from "@/lib/propertiesCache";
-import { computePriceTrend, getDailyChangePct } from "@/lib/priceTrend";
+import { computeTrendSeries, getDailyChangePct, TREND_PERIODS } from "@/lib/priceTrend";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
 
 function formatPct(n: number) {
   const s = n >= 0 ? "+" : "";
-  return `${s}${n.toFixed(1)}%`;
+  return `${s}${n.toFixed(2)}%`;
 }
 
 function PctBadge({ value, size = 12.5 }: { value: number; size?: number }) {
   const positive = value >= 0;
   return (
-    <span style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 900, fontSize: size, fontVariantNumeric: "tabular-nums" }}>
+    <span
+      style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 900, fontSize: size, fontVariantNumeric: "tabular-nums" }}
+    >
       {formatPct(value)}
     </span>
   );
@@ -30,6 +32,41 @@ function formatM2(n: number) {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(n));
 }
 
+/** Borsa uygulamalarındaki gibi basit çizgi grafiği — harici kütüphane olmadan, hafif SVG. */
+function Sparkline({ points, positive }: { points: number[]; positive: boolean }) {
+  const gradId = useId().replace(/:/g, "");
+  const w = 100;
+  const h = 34;
+  const pad = 2;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+  const coords = points.map((v, i) => {
+    const x = pad + i * stepX;
+    const y = pad + (h - pad * 2) * (1 - (v - min) / range);
+    return [x, y] as const;
+  });
+  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+  const last = coords[coords.length - 1]!;
+  const first = coords[0]!;
+  const areaPath = `${linePath} L${last[0].toFixed(2)},${h - pad} L${first[0].toFixed(2)},${h - pad} Z`;
+  const color = positive ? "#86efac" : "#fca5a5";
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={64} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`sg-${gradId}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#sg-${gradId})`} stroke="none" />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 const card: React.CSSProperties = {
   borderRadius: 16,
   background: "rgba(12,20,38,0.92)",
@@ -37,7 +74,6 @@ const card: React.CSSProperties = {
   boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
   padding: 14,
   textAlign: "left",
-  cursor: "pointer",
   color: "white",
   width: "100%",
 };
@@ -59,6 +95,7 @@ export default function MarketPage() {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [periodDays, setPeriodDays] = useState<number>(30);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +119,24 @@ export default function MarketPage() {
     const set = new Set<string>();
     for (const it of items) if (it.city) set.add(it.city);
     return Array.from(set).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [items]);
+
+  /** İl bazında ortalama alım yoğunluğu (satılan/toplam m²) — bölgede alım çoksa trend buna göre güçlensin. */
+  const cityDemand = useMemo(() => {
+    const sums = new Map<string, { sum: number; n: number }>();
+    for (const it of items) {
+      const total = Number(it.total_area_m2 ?? 0);
+      if (total <= 0) continue;
+      const ratio = Math.max(0, Math.min(1, Number(it.sold_m2 ?? 0) / total));
+      const key = it.city ?? "";
+      const cur = sums.get(key) ?? { sum: 0, n: 0 };
+      cur.sum += ratio;
+      cur.n += 1;
+      sums.set(key, cur);
+    }
+    const out = new Map<string, number>();
+    for (const [k, v] of sums) out.set(k, v.n > 0 ? v.sum / v.n : 0);
+    return out;
   }, [items]);
 
   const filtered = useMemo(() => {
@@ -139,9 +194,13 @@ export default function MarketPage() {
                 const total = Number(it.total_area_m2 ?? 0);
                 const available = it.available_m2 != null ? Number(it.available_m2) : total;
                 const px = getTerronSalePricePerM2(it, "market");
-                const dailyPct = getDailyChangePct(it, "market");
+                const regionDemand = cityDemand.get(it.city ?? "") ?? 0;
+                const dailyPct = getDailyChangePct(it, "market", regionDemand);
                 const isExpanded = expandedId === it.id;
-                const trend = isExpanded ? computePriceTrend(it, "market") : null;
+                const series = isExpanded ? computeTrendSeries(it, "market", regionDemand) : null;
+                const periodPct = series ? series.changeOver(periodDays) : 0;
+                const chartPoints = series ? series.index.slice(-Math.min(periodDays + 1, series.index.length)) : [];
+
                 return (
                   <div key={it.id} style={card}>
                     <div
@@ -188,14 +247,9 @@ export default function MarketPage() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedId(isExpanded ? null : it.id);
-                      }}
+                    <div
                       style={{
                         marginTop: 10,
-                        width: "100%",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
@@ -203,49 +257,79 @@ export default function MarketPage() {
                         borderRadius: 10,
                         background: "rgba(255,255,255,0.04)",
                         border: "1px solid rgba(255,255,255,0.08)",
-                        color: "white",
-                        cursor: "pointer",
                         fontSize: 12,
                       }}
                     >
                       <span style={{ opacity: 0.7, fontWeight: 700 }}>24 saat</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <PctBadge value={dailyPct} />
-                        <span style={{ opacity: 0.5, fontSize: 10 }}>{isExpanded ? "▲" : "▼"}</span>
-                      </span>
-                    </button>
 
-                    {isExpanded && trend ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedId(isExpanded ? null : it.id);
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          padding: "4px 10px",
+                          borderRadius: 8,
+                          background: isExpanded ? "rgba(245,215,110,0.16)" : "rgba(255,255,255,0.06)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "white",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Detay
+                        <span style={{ fontSize: 9, opacity: 0.8 }}>{isExpanded ? "▴" : "▾"}</span>
+                      </button>
+
+                      <PctBadge value={dailyPct} />
+                    </div>
+
+                    {isExpanded && series ? (
                       <div
                         style={{
                           marginTop: 8,
                           borderRadius: 10,
                           border: "1px solid rgba(255,255,255,0.08)",
-                          overflow: "hidden",
+                          padding: 12,
                         }}
                       >
-                        {(
-                          [
-                            { label: "Günlük", value: trend.daily },
-                            { label: "Haftalık", value: trend.weekly },
-                            { label: "Aylık", value: trend.monthly },
-                          ] as const
-                        ).map((row, i) => (
-                          <div
-                            key={row.label}
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              padding: "9px 12px",
-                              background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
-                              borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
-                            }}
-                          >
-                            <span style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.8 }}>{row.label}</span>
-                            <PctBadge value={row.value} size={13} />
-                          </div>
-                        ))}
+                        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
+                          {TREND_PERIODS.map((p) => (
+                            <button
+                              key={p.key}
+                              onClick={() => setPeriodDays(p.days)}
+                              style={{
+                                flexShrink: 0,
+                                padding: "6px 12px",
+                                borderRadius: 999,
+                                border:
+                                  periodDays === p.days
+                                    ? "1px solid rgba(245,215,110,0.55)"
+                                    : "1px solid rgba(255,255,255,0.1)",
+                                background: periodDays === p.days ? "rgba(245,215,110,0.14)" : "rgba(255,255,255,0.04)",
+                                color: periodDays === p.days ? "#F5D76E" : "rgba(255,255,255,0.75)",
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 700 }}>
+                            Seçili dönem ({TREND_PERIODS.find((p) => p.days === periodDays)?.label ?? ""}):
+                          </span>
+                          <PctBadge value={periodPct} size={15} />
+                        </div>
+
+                        <Sparkline points={chartPoints} positive={periodPct >= 0} />
                       </div>
                     ) : null}
                   </div>
