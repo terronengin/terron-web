@@ -99,6 +99,8 @@ export default function DashboardPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
+  const [keypadOpen, setKeypadOpen] = useState(false);
+  const [keypadStr, setKeypadStr] = useState("0");
 
   /** Üst bar artık paylaşılan AppShell/TopBar'da — bu sayfa içindeki mutlak konumlamalar için header yüksekliği 0. */
   const headerH = 0;
@@ -485,6 +487,7 @@ export default function DashboardPage() {
       setWalletBalance(newBalance);
       updateLocalPropertyM2(selected.id, m2);
       await ensureAndLoadWallet();
+      invalidatePropertiesCache();
       alert("m² pozisyonu açıldı ✓");
       setBuyInProgress(false);
     } catch (e: unknown) {
@@ -492,6 +495,33 @@ export default function DashboardPage() {
       alert("Beklenmeyen hata: " + (e instanceof Error ? e.message : String(e)));
       setBuyInProgress(false);
     }
+  }
+
+  function pressKeypadKey(k: string) {
+    setKeypadStr((prev) => {
+      let next = prev;
+      if (k === "⌫") next = prev.slice(0, -1);
+      else if (k === ".") next = prev.includes(".") ? prev : prev + ".";
+      else next = prev === "0" ? k : prev + k;
+      if (next === "" || next === ".") next = "0";
+      const num = Number(next);
+      if (Number.isFinite(num) && selected) syncBuyFromM2(num, selected);
+      return next;
+    });
+  }
+
+  async function reviewAndBuyFromKeypad() {
+    if (!selected) return;
+    const ok = window.confirm(
+      `Emri gözden geçir\n\n` +
+        `${selected.title}\n` +
+        `${formatDecimal(buyM2)} m² × ₺${formatTRY(Math.round(selectedPricePerM2))}/m²\n\n` +
+        `Toplam ödenecek: ₺${formatTRY(Math.round(selectedTotalCost))}\n\n` +
+        `Onaylıyor musunuz?`
+    );
+    if (!ok) return;
+    await handleOpenPosition();
+    setKeypadOpen(false);
   }
 
   async function handleCheckoutCart() {
@@ -2408,7 +2438,10 @@ export default function DashboardPage() {
                         cursor: buyInProgress ? "not-allowed" : "pointer",
                       }}
                       disabled={buyInProgress}
-                      onClick={() => void handleOpenPosition()}
+                      onClick={() => {
+                        setKeypadStr(String(buyM2 || 0));
+                        setKeypadOpen(true);
+                      }}
                     >
                       Satın Al
                     </button>
@@ -2515,6 +2548,124 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            {keypadOpen && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 200,
+                  background: "#FFFFFF",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "14px 16px",
+                    borderBottom: "1px solid rgba(15,23,42,0.08)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    onClick={() => setKeypadOpen(false)}
+                    aria-label="Kapat"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 10,
+                      border: "1px solid rgba(15,23,42,0.1)",
+                      background: "rgba(15,23,42,0.04)",
+                      color: "#0F172A",
+                      fontSize: 15,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✕
+                  </button>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontWeight: 800, fontSize: 15 }}>{selected.title} alış</div>
+                    <div style={{ fontSize: 12, opacity: 0.55, marginTop: 2 }}>
+                      Piyasa fiyatı: ₺{formatTRY(Math.round(selectedPricePerM2))}/m²
+                    </div>
+                  </div>
+                  <div style={{ width: 32 }} />
+                </div>
+
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    padding: 16,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.5, letterSpacing: 0.5 }}>
+                    M² MİKTARI
+                  </div>
+                  <div style={{ fontSize: 52, fontWeight: 900, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                    {keypadStr}
+                  </div>
+                  <div style={{ fontSize: 13, opacity: 0.6, marginTop: 4 }}>
+                    Tutar: ₺{formatTRY(Math.round(selectedTotalCost))}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.45, marginTop: 14 }}>
+                    ₺{formatTRY(Math.round(walletBalance ?? 0))} alım gücü
+                  </div>
+                  <button
+                    onClick={() => void reviewAndBuyFromKeypad()}
+                    disabled={buyInProgress}
+                    style={{
+                      marginTop: 20,
+                      padding: "14px 40px",
+                      borderRadius: 16,
+                      border: "none",
+                      background: "linear-gradient(135deg, #e8d48a, #c9a227)",
+                      color: "#0a0f1a",
+                      fontWeight: 900,
+                      fontSize: 14,
+                      cursor: buyInProgress ? "not-allowed" : "pointer",
+                      opacity: buyInProgress ? 0.6 : 1,
+                    }}
+                  >
+                    {buyInProgress ? "İşleniyor…" : "Emri gözden geçir"}
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    borderTop: "1px solid rgba(15,23,42,0.08)",
+                    flexShrink: 0,
+                  }}
+                >
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => (
+                    <button
+                      key={k}
+                      onClick={() => pressKeypadKey(k)}
+                      style={{
+                        padding: "16px 0",
+                        fontSize: 20,
+                        fontWeight: 700,
+                        background: "transparent",
+                        border: "1px solid rgba(15,23,42,0.05)",
+                        color: "#0F172A",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </section>
