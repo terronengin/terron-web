@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import { AppShell } from "../components/AppShell";
 
 const card: React.CSSProperties = {
   borderRadius: 18,
@@ -28,9 +29,12 @@ export default function InquiriesInfoPage() {
   const router = useRouter();
 
   return (
+    <AppShell>
     <div
       style={{
-        minHeight: "100vh",
+        position: "absolute",
+        inset: 0,
+        overflowY: "auto",
         background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
         color: "white",
         padding: "28px 16px 56px",
@@ -38,23 +42,6 @@ export default function InquiriesInfoPage() {
       }}
     >
       <div style={{ maxWidth: 920, margin: "0 auto" }}>
-        <button
-          type="button"
-          onClick={() => router.push("/dashboard")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "rgba(255,255,255,0.05)",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: 700,
-            marginBottom: 18,
-          }}
-        >
-          ← Dashboard
-        </button>
-
         <div style={{ marginBottom: 10, fontSize: 12, opacity: 0.75, fontWeight: 700, letterSpacing: 1.2 }}>
           TERRON • GERÇEK İLAN
         </div>
@@ -142,5 +129,6 @@ export default function InquiriesInfoPage() {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 }

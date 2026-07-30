@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServiceRoleKey, responseMissingServiceRole } from "@/lib/server/supabaseServiceRole";
-import { calculateSellQuoteTRY, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
+import { calculateSellQuoteTRY, grossAssetFromTotalPaid, SELL_FEE_RATE } from "@/lib/sim/realEstatePrice";
 import { getTerronSalePricePerM2, type TerronPropertyPricingInput } from "@/lib/propertySalePrice";
 
 export const runtime = "nodejs";
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   const { data: prop, error: pErr } = await sb
     .from("properties")
     .select(
-      "id,price_per_m2,available_m2,sold_m2,total_area_m2,development_score,last_30d_change,quality_score,risk_score,rental_yield_annual,min_buy_m2,total_shares"
+      "id,title,city,price_per_m2,available_m2,sold_m2,total_area_m2,development_score,last_30d_change,quality_score,risk_score,rental_yield_annual,min_buy_m2,total_shares"
     )
     .eq("id", pos.property_id)
     .maybeSingle();
@@ -154,8 +154,33 @@ export async function POST(req: Request) {
     return bad(revErr.message, 500);
   }
 
+  const entryGross = grossAssetFromTotalPaid(Number(pos.total_paid ?? 0));
+  const profitTry = Math.round(quote.grossSaleValue - entryGross);
+  const profitPct = entryGross > 0 ? (profitTry / entryGross) * 100 : 0;
+
+  const { data: soldSnapRow, error: soldSnapErr } = await sb
+    .from("sold_positions")
+    .insert({
+      user_id: user.id,
+      property_id: pos.property_id,
+      property_title: prop.title ?? null,
+      city: prop.city ?? null,
+      m2,
+      total_paid: Number(pos.total_paid ?? 0),
+      sell_gross: Math.round(quote.grossSaleValue),
+      sell_fee: sellFee,
+      sell_net: net,
+      profit_try: profitTry,
+      profit_pct: profitPct,
+    })
+    .select("id")
+    .single();
+  // sold_positions henüz migrate edilmemişse (tablo yok) satışı bloklamayız — sadece geçmiş kaydı atlanır.
+  if (soldSnapErr) console.warn("[sell] sold_positions insert skipped:", soldSnapErr.message);
+
   const { error: delErr } = await sb.from("positions").delete().eq("id", positionId).eq("user_id", user.id);
   if (delErr) {
+    if (soldSnapRow?.id) await sb.from("sold_positions").delete().eq("id", soldSnapRow.id);
     if (revRow?.id) await sb.from("platform_revenue").delete().eq("id", revRow.id);
     await sb
       .from("properties")

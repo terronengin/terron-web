@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import { AppShell } from "../components/AppShell";
 
 const inputBase: React.CSSProperties = {
   width: "100%",
@@ -187,9 +188,11 @@ export default function SubmitPropertyPage() {
 
   if (done) {
     return (
+      <AppShell>
       <div
         style={{
-          minHeight: "100vh",
+          position: "absolute",
+          inset: 0,
           background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
           color: "white",
           display: "grid",
@@ -223,13 +226,17 @@ export default function SubmitPropertyPage() {
           </button>
         </div>
       </div>
+      </AppShell>
     );
   }
 
   return (
+    <AppShell>
     <div
       style={{
-        minHeight: "100vh",
+        position: "absolute",
+        inset: 0,
+        overflowY: "auto",
         background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
         color: "white",
         padding: "28px 16px 48px",
@@ -452,5 +459,6 @@ export default function SubmitPropertyPage() {
         </form>
       </div>
     </div>
+    </AppShell>
   );
 }

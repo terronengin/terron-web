@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AppShell } from "../components/AppShell";
 import MapViewV2 from "../components/map/MapViewV2";
 import { supabase } from "../../lib/supabaseClient";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
@@ -61,6 +62,7 @@ type FetchClientPaginatedResult = {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -97,7 +99,10 @@ export default function DashboardPage() {
 
   const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
 
-  const HEADER_H = isMobile ? 110 : 64;
+  /** Üst bar artık paylaşılan AppShell/TopBar'da — bu sayfa içindeki mutlak konumlamalar için header yüksekliği 0. */
+  const headerH = 0;
+  /** Sadece position:"fixed" (viewport-relative) öğeler için — AppShell'in TopBar'ı ile aynı yükseklik (bkz. TopBar.tsx). */
+  const TOPBAR_H = 56;
 
   /** Harita / panel: yayındaki tüm görünür ilanlar (seeded + kullanıcı) */
   function showListedProperty(p: Property | null): boolean {
@@ -1033,6 +1038,19 @@ export default function DashboardPage() {
     return normalizePropertyForPanel(p as any) as Property;
   }
 
+  /** Market sekmesinden "?p=<id>" ile gelindiğinde ilgili ilanı otomatik seçip paneli aç. */
+  useEffect(() => {
+    const pid = searchParams?.get("p");
+    if (!pid || items.length === 0) return;
+    const found = items.find((x) => String(x.id) === pid);
+    if (found) {
+      setSelected(selectPropertyForPanel(found));
+      setPanelOpen(false);
+      router.replace("/dashboard");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, searchParams]);
+
   /** MapView: id boşken kullanılan ll_lat_lng — id ile DB eşleşmezse koordinattan bul */
   function parseSyntheticLlId(id: string): { lat: number; lng: number } | null {
     const m = /^ll_([\d.-]+)_([\d.-]+)$/.exec(String(id).trim());
@@ -1463,7 +1481,9 @@ export default function DashboardPage() {
     );
   }
 
-  return (    <div style={{ height: "100vh", background: "#070B14", color: "white", position: "relative" }}>
+  return (
+    <AppShell>
+    <div style={{ position: "absolute", inset: 0, background: "#070B14", color: "white" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -1471,7 +1491,7 @@ export default function DashboardPage() {
             position: "fixed",
             left: 0,
             right: 0,
-            top: HEADER_H,
+            top: TOPBAR_H,
             bottom: 0,
             background: "rgba(0,0,0,0.55)",
             zIndex: 40,
@@ -1482,9 +1502,9 @@ export default function DashboardPage() {
       <div
         style={{
           position: "fixed",
-          top: HEADER_H,
+          top: TOPBAR_H,
           left: 0,
-          height: `calc(100vh - ${HEADER_H}px)`,
+          height: `calc(100vh - ${TOPBAR_H}px)`,
           width: 380,
           maxWidth: "92vw",
           zIndex: 50,
@@ -1502,6 +1522,31 @@ export default function DashboardPage() {
           <button onClick={() => setPanelOpen(false)} style={{ ...btnGhost, padding: "8px 10px" }}>
             ✕
           </button>
+        </div>
+
+        <div style={{ position: "relative", marginTop: 14 }}>
+          <span
+            style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.75, fontSize: 14 }}
+          >
+            🔎
+          </span>
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Ara... (adres, il, ilçe, parsel, ada)"
+            style={{
+              width: "100%",
+              height: 40,
+              padding: "0 12px 0 36px",
+              borderRadius: 14,
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "white",
+              outline: "none",
+              fontSize: 13,
+              boxSizing: "border-box",
+            }}
+          />
         </div>
 
         <div
@@ -1749,301 +1794,13 @@ export default function DashboardPage() {
       </div>
 
       <section style={{ position: "absolute", inset: 0 }}>
-        <div
-          style={{
-            height: HEADER_H,
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 0,
-            zIndex: 30,
-            background: "linear-gradient(to bottom, rgba(10,14,24,0.94), rgba(10,14,24,0.72))",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          {!isMobile ? (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-                padding: "0 16px",
-                maxWidth: 1600,
-                margin: "0 auto",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  lineHeight: 1,
-                  minWidth: 150,
-                }}
-              >
-                <div
-                  style={{
-                    padding: "6px 20px",
-                    borderRadius: 12,
-                    background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
-                    boxShadow: "0 0 20px rgba(212,175,55,0.35)",
-                    color: "#111",
-                    fontWeight: 1000,
-                    letterSpacing: 2,
-                    fontSize: 18,
-                    textAlign: "center",
-                    minWidth: 150,
-                  }}
-                >
-                  TERRON
-                </div>
-              </div>
-
-              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-                <div style={{ width: "min(760px, 100%)", position: "relative" }}>
-                  <span
-                    style={{
-                      position: "absolute",
-                      left: 12,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      opacity: 0.75,
-                      fontSize: 14,
-                    }}
-                  >
-                    🔎
-                  </span>
-                  <input
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    placeholder="Ara... (adres, il, ilçe, parsel, ada)"
-                    style={{
-                      width: "100%",
-                      height: 40,
-                      padding: "0 12px 0 36px",
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      color: "white",
-                      outline: "none",
-                      fontSize: 13,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 900,
-                    color: "#F5D76E",
-                    padding: "6px 12px",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    whiteSpace: "nowrap",
-                  }}
-                  title="Cüzdan bakiyesi"
-                >
-                  {walletBalance != null ? `₺${formatTRY(Math.round(walletBalance))}` : "—"}
-                </div>
-                <button onClick={() => setPanelOpen(true)} style={btnGhost}>
-                  Filtreler
-                </button>
-
-                <button onClick={() => router.push("/portfolio")} style={btnGhost}>
-                  Portföy
-                </button>
-
-                <button onClick={() => router.push("/inquiries")} style={btnGhost} title="Gerçek ilan talep süreci">
-                  Talep Süreci
-                </button>
-
-                <button onClick={() => router.push("/submit-property")} style={btnGhost}>
-                  İlan Ver
-                </button>
-
-                {isAdminEmail(email) ? (
-                  <button onClick={() => router.push("/admin")} style={btnGhost}>
-                    Admin
-                  </button>
-                ) : null}
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 10px",
-                    borderRadius: 16,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                  }}
-                  title={email ?? ""}
-                >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      display: "grid",
-                      placeItems: "center",
-                      fontWeight: 1000,
-                    }}
-                  >
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <span style={{ opacity: 0.9 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
-                    )}
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05, minWidth: 110 }}>
-                    <div style={{ fontSize: 13, fontWeight: 1000 }}>{displayName}</div>
-                    <div style={{ fontSize: 11, opacity: 0.7 }}>
-                      {(email ?? "").slice(0, 18)}
-                      {(email ?? "").length > 18 ? "…" : ""}
-                    </div>
-                  </div>
-
-                  <button onClick={logout} style={{ ...btnGhost, padding: "8px 10px" }}>
-                    Çıkış
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                padding: "8px 10px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div
-                  style={{
-                    padding: "7px 12px",
-                    borderRadius: 12,
-                    background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
-                    boxShadow: "0 0 18px rgba(212,175,55,0.28)",
-                    color: "#111",
-                    fontWeight: 1000,
-                    letterSpacing: 1.6,
-                    fontSize: 15,
-                    minWidth: 105,
-                    textAlign: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  TERRON
-                </div>
-
-                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-                  <span
-                    style={{
-                      position: "absolute",
-                      left: 10,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      opacity: 0.72,
-                      fontSize: 13,
-                    }}
-                  >
-                    🔎
-                  </span>
-                  <input
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    placeholder="Ara..."
-                    style={{
-                      width: "100%",
-                      height: 38,
-                      padding: "0 10px 0 32px",
-                      borderRadius: 13,
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      color: "white",
-                      outline: "none",
-                      fontSize: 13,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 900,
-                    color: "#F5D76E",
-                    padding: "0 10px",
-                    height: 38,
-                    display: "flex",
-                    alignItems: "center",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                  }}
-                  title="Cüzdan bakiyesi"
-                >
-                  {walletBalance != null ? `₺${formatTRY(Math.round(walletBalance))}` : "—"}
-                </div>
-                <button
-                  onClick={() => setPanelOpen(true)}
-                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
-                >
-                  Filtreler
-                </button>
-
-                <button onClick={() => router.push("/portfolio")} style={{ ...btnGhost, padding: "0 10px", height: 38 }}>
-                  Portföy
-                </button>
-
-                <button
-                  onClick={() => router.push("/inquiries")}
-                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
-                  title="Gerçek ilan talep süreci"
-                >
-                  Talep
-                </button>
-
-                <button
-                  onClick={() => router.push("/submit-property")}
-                  style={{ ...btnGhost, padding: "0 10px", height: 38 }}
-                >
-                  İlan Ver
-                </button>
-
-                {isAdminEmail(email) ? (
-                  <button onClick={() => router.push("/admin")} style={{ ...btnGhost, padding: "0 10px", height: 38 }}>
-                    Admin
-                  </button>
-                ) : null}
-
-                <button onClick={logout} style={{ ...btnGhost, padding: "0 12px", height: 38 }}>
-                  Çıkış
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
         {!panelOpen && (
           <button
             onClick={() => setPanelOpen(true)}
             style={{
               position: "absolute",
               left: 0,
-              top: HEADER_H + 22,
+              top: headerH + 22,
               zIndex: 25,
               width: 24,
               height: 74,
@@ -2065,7 +1822,7 @@ export default function DashboardPage() {
           </button>
         )}
 
-        <div style={{ position: "absolute", left: 0, right: 0, top: HEADER_H, bottom: 0 }}>
+        <div style={{ position: "absolute", left: 0, right: 0, top: headerH, bottom: 0 }}>
           <MapViewV2
             items={mapItemsForView}
             onSelectPropertyId={(id: string) => {
@@ -2141,7 +1898,7 @@ export default function DashboardPage() {
                 style={{
                   position: "absolute",
                   inset: 0,
-                  top: HEADER_H,
+                  top: headerH,
                   background: "rgba(0,0,0,0.28)",
                   zIndex: 11,
                 }}
@@ -2171,10 +1928,10 @@ export default function DashboardPage() {
                     }
                   : {
                       right: 16,
-                      top: HEADER_H + 12,
+                      top: headerH + 12,
                       width: 320,
-                      height: `calc(100vh - ${HEADER_H + 24}px)`,
-                      maxHeight: `calc(100vh - ${HEADER_H + 24}px)`,
+                      height: `calc(100vh - ${headerH + 24}px)`,
+                      maxHeight: `calc(100vh - ${headerH + 24}px)`,
                       borderRadius: 18,
                     }),
               }}
@@ -2771,6 +2528,7 @@ export default function DashboardPage() {
         )}
       </section>
     </div>
+    </AppShell>
   );
 }
 

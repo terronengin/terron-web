@@ -29,6 +29,7 @@ import {
   isTurkeyRegionName,
   lookupCityKey,
 } from "./map.data";
+import { parcelPolygonBoundsFor } from "./parcelShape";
 import type { ActivePolyConfig, CountPointProps, MapItem, MapLevel, MapViewProps } from "./map.types";
 
 function safeStr(x: unknown): string {
@@ -147,7 +148,7 @@ export function useMapHierarchy(props: Pick<MapViewProps, "items" | "filters" | 
 
   const hierarchyIndex = useMemo(() => {
     const t0 = typeof performance !== "undefined" ? performance.now() : 0;
-    const ix = buildHierarchyIndex(mergedItems, { distGeo });
+    const ix = buildHierarchyIndex(mergedItems, { distGeo, getPolygonBounds: parcelPolygonBoundsFor });
     const ms = (typeof performance !== "undefined" ? performance.now() : 0) - t0;
     console.log(`[hierarchy] build time ${ms.toFixed(1)}ms`);
     return ix;

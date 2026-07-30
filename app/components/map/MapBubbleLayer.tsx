@@ -1,9 +1,84 @@
 "use client";
 
 import type { Feature, FeatureCollection, Point } from "geojson";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Marker, useMap } from "react-map-gl/mapbox";
 import type { CountPointProps, MapLevel } from "./map.types";
+
+type DeclutterPoint = { key: string; x: number; y: number; count: number };
+
+/**
+ * Coğrafi olarak yakın baloncuklar (örn. birbirine yakın iller) ekranda üst üste
+ * binmesin diye piksel uzayında hafif itme uygular. Gerçek lng/lat değişmez —
+ * sadece görsel (CSS transform) offset üretir, önemli (sayısı büyük) baloncuk yerinde kalır.
+ */
+function computeDeclutterOffsets(
+  points: DeclutterPoint[],
+  minDist: number
+): Map<string, { dx: number; dy: number }> {
+  const offsets = new Map<string, { dx: number; dy: number }>();
+  if (points.length < 2 || minDist <= 0) return offsets;
+
+  const placed: { x: number; y: number }[] = [];
+  const sorted = [...points].sort((a, b) => b.count - a.count);
+
+  for (const p of sorted) {
+    let x = p.x;
+    let y = p.y;
+    for (let iter = 0; iter < 6; iter++) {
+      let moved = false;
+      for (const q of placed) {
+        const dx = x - q.x;
+        const dy = y - q.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < minDist) {
+          moved = true;
+          const angle = dist > 0.001 ? Math.atan2(dy, dx) : (p.x + p.y) % (Math.PI * 2);
+          const push = minDist - dist + 1;
+          x += Math.cos(angle) * push;
+          y += Math.sin(angle) * push;
+        }
+      }
+      if (!moved) break;
+    }
+    placed.push({ x, y });
+    if (x !== p.x || y !== p.y) {
+      offsets.set(p.key, { dx: x - p.x, dy: y - p.y });
+    }
+  }
+  return offsets;
+}
+
+function markerKeyFor(f: Feature<Point, CountPointProps>): string {
+  return String(f.properties?.id ?? f.id ?? f.geometry.coordinates.join(","));
+}
+
+/** Sadece bölge/il/ilçe/mahalle baloncukları için (parsel zaten gerçek şekiller kullanıyor). */
+function useDeclutterOffsets(
+  features: Feature<Point, CountPointProps>[],
+  level: MapLevel,
+  zoom: number
+): Map<string, { dx: number; dy: number }> {
+  const maps = useMap();
+  const mapInstance = maps.current;
+
+  return useMemo(() => {
+    if (level === "parcel" || !mapInstance || features.length < 2) return new Map();
+    try {
+      const map = mapInstance.getMap();
+      const size = orbPixelSize(level, zoom);
+      const minDist = size * 1.05;
+      const points: DeclutterPoint[] = features.map((f) => {
+        const [lng, lat] = f.geometry.coordinates;
+        const p = map.project([lng, lat]);
+        return { key: markerKeyFor(f), x: p.x, y: p.y, count: Number(f.properties?.count ?? 0) };
+      });
+      return computeDeclutterOffsets(points, minDist);
+    } catch {
+      return new Map();
+    }
+  }, [features, level, zoom, mapInstance]);
+}
 
 export type MapBubbleLayerProps = {
   data: FeatureCollection<Point, CountPointProps>;
@@ -124,6 +199,8 @@ type OrbMarkerProps = {
   level: MapLevel;
   zoom: number;
   onMarkerClick?: MapBubbleLayerProps["onMarkerClick"];
+  offsetX?: number;
+  offsetY?: number;
 };
 
 function ParcelDropletMarker({
@@ -213,7 +290,7 @@ function ParcelDropletMarker({
   );
 }
 
-function OrbMarker({ feature, level, zoom, onMarkerClick }: OrbMarkerProps) {
+function OrbMarker({ feature, level, zoom, onMarkerClick, offsetX = 0, offsetY = 0 }: OrbMarkerProps) {
   const [lng, lat] = feature.geometry.coordinates;
   const props = feature.properties;
   const count = Number(props?.count ?? 0);
@@ -248,6 +325,12 @@ function OrbMarker({ feature, level, zoom, onMarkerClick }: OrbMarkerProps) {
         onMarkerClick?.({ properties: props, longitude: lng, latitude: lat });
       }}
     >
+      <div
+        style={{
+          transform: `translate(${offsetX}px, ${offsetY}px)`,
+          transition: "transform 0.25s ease",
+        }}
+      >
       <div
         role="presentation"
         onMouseEnter={() => setHover(true)}
@@ -328,6 +411,7 @@ function OrbMarker({ feature, level, zoom, onMarkerClick }: OrbMarkerProps) {
           </div>
         ) : null}
       </div>
+      </div>
     </Marker>
   );
 }
@@ -337,7 +421,8 @@ function OrbMarker({ feature, level, zoom, onMarkerClick }: OrbMarkerProps) {
  */
 export function MapBubbleLayer({ data, level, onMarkerClick }: MapBubbleLayerProps) {
   const z = useMapZoom();
-  const features = data.features ?? [];
+  const features = (data.features ?? []) as Feature<Point, CountPointProps>[];
+  const declutterOffsets = useDeclutterOffsets(features, level, z);
 
   /** Baloncuk üstündeki sayı: GeoJSON `properties.count` (kaynak: `buildHierarchyIndex` + `buildVisibleCountGeoFromHierarchy`). */
   useEffect(() => {
@@ -365,11 +450,19 @@ export function MapBubbleLayer({ data, level, onMarkerClick }: MapBubbleLayerPro
 
   return (
     <>
-      {features.map((f) => {
-        const feat = f as Feature<Point, CountPointProps>;
-        const key = String(feat.properties?.id ?? feat.id ?? `${feat.geometry.coordinates.join(",")}`);
+      {features.map((feat) => {
+        const key = markerKeyFor(feat);
+        const offset = declutterOffsets.get(key);
         return (
-          <OrbMarker key={key} feature={feat} level={level} zoom={z} onMarkerClick={onMarkerClick} />
+          <OrbMarker
+            key={key}
+            feature={feat}
+            level={level}
+            zoom={z}
+            onMarkerClick={onMarkerClick}
+            offsetX={offset?.dx}
+            offsetY={offset?.dy}
+          />
         );
       })}
     </>

@@ -7,12 +7,16 @@ import {
   L_FOCUS_FILL,
   L_FOCUS_GLOW,
   L_FOCUS_OUT,
+  L_PARCEL_SHAPE_FILL,
+  L_PARCEL_SHAPE_GLOW,
+  L_PARCEL_SHAPE_OUT,
   L_SELECTED_GLOW,
   L_SELECTED_POINT,
   MAP_CENTER_LAT,
   MAP_CENTER_LNG,
   MAP_ZOOM,
   POLY_SOURCES,
+  SRC_PARCEL_SHAPES,
   SRC_SELECTED,
 } from "./map/map.config";
 import {
@@ -37,6 +41,7 @@ import { MapOverlayPanel } from "./map/MapOverlayPanel";
 import { MapPolygonLayer } from "./map/MapPolygonLayer";
 import { fillPaintDefault, fillPaintRegionView, lineGlowPaint, lineOutPaint } from "./map/map.paint";
 import type { HierarchyBounds, HierarchyIndex, MapItem, MapViewProps } from "./map/map.types";
+import { buildParcelShapesGeo } from "./map/parcelShape";
 import { useMapCamera } from "./map/useMapCamera";
 import { useMapHierarchy } from "./map/useMapHierarchy";
 
@@ -333,6 +338,9 @@ export default function MapView(props: MapViewProps) {
 
   const propsItems = mergedItems;
 
+  /** Parsel seviyesi: nokta yerine gerçek m2'ye uygun, düzensiz kenarlı arsa şekli */
+  const parcelShapesGeo = useMemo(() => buildParcelShapesGeo(parcelItems), [parcelItems]);
+
   /** Polygon hover’ın hangi source’ta olduğu (level değişince eski source’a güvenli clear için) */
   const polyHoverSourceRef = useRef<string | null>(null);
   const hoverPolyIdRef = useRef<string | null>(null);
@@ -585,6 +593,20 @@ export default function MapView(props: MapViewProps) {
     }
 
     if (level === "parcel") {
+      const shapeLayerIds = filterExistingLayerIds(map, [L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT]);
+      const shapeHits =
+        shapeLayerIds.length > 0
+          ? map.queryRenderedFeatures(e.point as never, { layers: shapeLayerIds })
+          : [];
+      if (shapeHits && shapeHits.length > 0) {
+        const f = shapeHits[0] as { properties?: Record<string, unknown>; id?: unknown };
+        const pid = String(f.properties?.id || f.id || "");
+        if (pid) {
+          handleParcelClick(`parcel:${pid}`);
+          return;
+        }
+      }
+
       const lng = Number(e.lngLat?.lng);
       const lat = Number(e.lngLat?.lat);
 
@@ -663,6 +685,30 @@ export default function MapView(props: MapViewProps) {
     }
 
     if (level === "parcel") {
+      const shapeLayerIds = filterExistingLayerIds(map, [L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT]);
+      const shapeHits =
+        shapeLayerIds.length > 0
+          ? map.queryRenderedFeatures(e.point as never, { layers: shapeLayerIds })
+          : [];
+      if (shapeHits && shapeHits.length > 0) {
+        map.getCanvas().style.cursor = "pointer";
+        const f = shapeHits[0] as { properties?: { id?: string }; id?: unknown };
+        const pid = String(f.properties?.id || f.id || "");
+        if (pid && pid !== hoverPolyId) {
+          if (hoverPolyId) {
+            safeClearFeatureHover(map, polyHoverSourceRef.current, hoverPolyId);
+          }
+          polyHoverSourceRef.current = SRC_PARCEL_SHAPES;
+          safeSetFeatureHover(map, SRC_PARCEL_SHAPES, pid, true);
+          setHoverPolyId(pid);
+        }
+        return;
+      } else if (hoverPolyId && polyHoverSourceRef.current === SRC_PARCEL_SHAPES) {
+        safeClearFeatureHover(map, polyHoverSourceRef.current, hoverPolyId);
+        polyHoverSourceRef.current = null;
+        setHoverPolyId(null);
+      }
+
       const focusLayerIds = filterExistingLayerIds(map, [L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT]);
       if (focusLayerIds.length > 0) {
         const fhits = map.queryRenderedFeatures(e.point as never, { layers: focusLayerIds });
@@ -690,6 +736,7 @@ export default function MapView(props: MapViewProps) {
     }
     if (level === "parcel") {
       arr.push(L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT);
+      arr.push(L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT);
     }
     return arr;
   }, [activePoly, level, pointsMapItems.length, props.selected?.id, selectedGeo.features.length]);
@@ -771,16 +818,26 @@ export default function MapView(props: MapViewProps) {
         )}
 
         {level === "parcel" && (
-          <MapPolygonLayer mode="parcel-focus" sourceId={POLY_SOURCES.parcelFocus} data={parcelFocusGeo} />
+          <>
+            <MapPolygonLayer mode="parcel-focus" sourceId={POLY_SOURCES.parcelFocus} data={parcelFocusGeo} />
+            <MapPolygonLayer
+              mode="parcel-shapes"
+              sourceId={SRC_PARCEL_SHAPES}
+              data={parcelShapesGeo}
+              promoteId="id"
+            />
+          </>
         )}
 
-        <MapBubbleLayer
-          data={countGeo}
-          level={level}
-          onMarkerClick={({ properties }) =>
-            handleCountNavigation({ properties: properties as Record<string, unknown> }, undefined)
-          }
-        />
+        {level !== "parcel" && (
+          <MapBubbleLayer
+            data={countGeo}
+            level={level}
+            onMarkerClick={({ properties }) =>
+              handleCountNavigation({ properties: properties as Record<string, unknown> }, undefined)
+            }
+          />
+        )}
 
         {selectedGeo.features.length > 0 && (
           <Source id={SRC_SELECTED} type="geojson" data={selectedGeo}>

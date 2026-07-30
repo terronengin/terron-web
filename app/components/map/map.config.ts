@@ -54,6 +54,12 @@ export const L_FOCUS_OUT = "focus-out";
 export const L_SELECTED_GLOW = "selected-glow";
 export const L_SELECTED_POINT = "selected-point";
 
+/** Parsel seviyesinde nokta yerine gerçekçi şekilli arsa poligonu */
+export const SRC_PARCEL_SHAPES = "src-parcel-shapes";
+export const L_PARCEL_SHAPE_FILL = "parcel-shape-fill";
+export const L_PARCEL_SHAPE_GLOW = "parcel-shape-glow";
+export const L_PARCEL_SHAPE_OUT = "parcel-shape-out";
+
 /** Seçili ilan vurgusu (circle); eski symbol/point layer’lar kaldırıldı */
 export const PROPERTY_POINT_LAYER_IDS = [L_SELECTED_GLOW, L_SELECTED_POINT] as const;
 

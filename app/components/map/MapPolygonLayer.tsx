@@ -9,6 +9,9 @@ import {
   L_FOCUS_FILL,
   L_FOCUS_GLOW,
   L_FOCUS_OUT,
+  L_PARCEL_SHAPE_FILL,
+  L_PARCEL_SHAPE_GLOW,
+  L_PARCEL_SHAPE_OUT,
   L_PROV_FILL,
   L_PROV_GLOW,
   L_PROV_OUT,
@@ -30,9 +33,64 @@ export type MapPolygonLayerProps =
       mode: "parcel-focus";
       data: FeatureCollection;
       sourceId: string;
+    }
+  | {
+      mode: "parcel-shapes";
+      data: FeatureCollection;
+      sourceId: string;
+      promoteId?: string;
     };
 
 export function MapPolygonLayer(props: MapPolygonLayerProps) {
+  if (props.mode === "parcel-shapes") {
+    return (
+      <Source id={props.sourceId} type="geojson" data={props.data} promoteId={(props.promoteId ?? "id") as string}>
+        <Layer
+          id={L_PARCEL_SHAPE_FILL}
+          type="fill"
+          paint={{
+            "fill-color": [
+              "case",
+              ["boolean", ["feature-state", "hover"], false],
+              "rgba(245,215,110,0.30)",
+              "rgba(245,215,110,0.15)",
+            ],
+            "fill-opacity": 1,
+          }}
+        />
+        <Layer
+          id={L_PARCEL_SHAPE_GLOW}
+          type="line"
+          paint={{
+            "line-color": "rgba(245,215,110,0.55)",
+            "line-width": 3,
+            "line-blur": 1.4,
+            "line-opacity": 1,
+          }}
+        />
+        <Layer
+          id={L_PARCEL_SHAPE_OUT}
+          type="line"
+          paint={{
+            "line-color": [
+              "case",
+              ["boolean", ["feature-state", "hover"], false],
+              "rgba(255,240,180,0.95)",
+              "rgba(245,215,110,0.9)",
+            ],
+            "line-width": [
+              "case",
+              ["boolean", ["feature-state", "hover"], false],
+              2.2,
+              1.3,
+            ],
+            "line-opacity": 1,
+          }}
+        />
+      </Source>
+    );
+  }
+
   if (props.mode === "parcel-focus") {
     return (
       <Source id={props.sourceId} type="geojson" data={props.data}>
