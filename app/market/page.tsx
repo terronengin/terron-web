@@ -3,9 +3,24 @@
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 import { getCachedProperties } from "@/lib/propertiesCache";
+import { computePriceTrend, getDailyChangePct } from "@/lib/priceTrend";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
+
+function formatPct(n: number) {
+  const s = n >= 0 ? "+" : "";
+  return `${s}${n.toFixed(1)}%`;
+}
+
+function PctBadge({ value, size = 12.5 }: { value: number; size?: number }) {
+  const positive = value >= 0;
+  return (
+    <span style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 900, fontSize: size, fontVariantNumeric: "tabular-nums" }}>
+      {formatPct(value)}
+    </span>
+  );
+}
 
 function formatTRY(n: number) {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(n));
@@ -43,6 +58,7 @@ export default function MarketPage() {
   const [items, setItems] = useState<PropertyRow[]>([]);
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,42 +139,116 @@ export default function MarketPage() {
                 const total = Number(it.total_area_m2 ?? 0);
                 const available = it.available_m2 != null ? Number(it.available_m2) : total;
                 const px = getTerronSalePricePerM2(it, "market");
+                const dailyPct = getDailyChangePct(it, "market");
+                const isExpanded = expandedId === it.id;
+                const trend = isExpanded ? computePriceTrend(it, "market") : null;
                 return (
-                  <button key={it.id} style={card} onClick={() => router.push(`/dashboard?p=${it.id}`)}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.3 }}>{it.title}</div>
-                        <div style={{ fontSize: 12, opacity: 0.65, marginTop: 3 }}>
-                          {it.city}
-                          {it.district ? ` / ${it.district}` : ""}
+                  <div key={it.id} style={card}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push(`/dashboard?p=${it.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") router.push(`/dashboard?p=${it.id}`);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.3 }}>{it.title}</div>
+                          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 3 }}>
+                            {it.city}
+                            {it.district ? ` / ${it.district}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 14, color: "#F5D76E" }}>₺{formatTRY(px)}</div>
+                          <div style={{ fontSize: 10, opacity: 0.6 }}>/m²</div>
                         </div>
                       </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 14, color: "#F5D76E" }}>₺{formatTRY(px)}</div>
-                        <div style={{ fontSize: 10, opacity: 0.6 }}>/m²</div>
+                      <div
+                        style={{
+                          marginTop: 10,
+                          paddingTop: 10,
+                          borderTop: "1px solid rgba(255,255,255,0.08)",
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 8,
+                          fontSize: 12,
+                        }}
+                      >
+                        <div>
+                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>TOPLAM M²</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(total)}</div>
+                        </div>
+                        <div>
+                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>KALAN M²</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(available)}</div>
+                        </div>
                       </div>
                     </div>
-                    <div
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedId(isExpanded ? null : it.id);
+                      }}
                       style={{
                         marginTop: 10,
-                        paddingTop: 10,
-                        borderTop: "1px solid rgba(255,255,255,0.08)",
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 8,
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        color: "white",
+                        cursor: "pointer",
                         fontSize: 12,
                       }}
                     >
-                      <div>
-                        <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>TOPLAM M²</div>
-                        <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(total)}</div>
+                      <span style={{ opacity: 0.7, fontWeight: 700 }}>24 saat</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <PctBadge value={dailyPct} />
+                        <span style={{ opacity: 0.5, fontSize: 10 }}>{isExpanded ? "▲" : "▼"}</span>
+                      </span>
+                    </button>
+
+                    {isExpanded && trend ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {(
+                          [
+                            { label: "Günlük", value: trend.daily },
+                            { label: "Haftalık", value: trend.weekly },
+                            { label: "Aylık", value: trend.monthly },
+                          ] as const
+                        ).map((row, i) => (
+                          <div
+                            key={row.label}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "9px 12px",
+                              background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent",
+                              borderTop: i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
+                            }}
+                          >
+                            <span style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.8 }}>{row.label}</span>
+                            <PctBadge value={row.value} size={13} />
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>KALAN M²</div>
-                        <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(available)}</div>
-                      </div>
-                    </div>
-                  </button>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
