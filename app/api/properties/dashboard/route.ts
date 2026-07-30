@@ -39,25 +39,39 @@ export async function GET(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // Önce toplam satır sayısını al (hızlı), sonra tüm sayfaları TEK SEFERDE paralel çek.
+  // Eskiden sayfalar sırayla (biri bitmeden diğeri başlamadan) çekiliyordu — ~6800 satır
+  // için 7 ayrı bekleme toplamda 5-8 saniye sürüyordu. Paralel istek bunu ~1 isteklik
+  // süreye indirir.
+  const { count, error: countErr } = await sb
+    .from("properties")
+    .select("id", { count: "exact", head: true })
+    .in("listing_status", ["approved"]);
+
+  if (countErr) {
+    return NextResponse.json({ ok: false, error: countErr.message }, { status: 500 });
+  }
+
+  const total = count ?? 0;
+  const pageCount = total > 0 ? Math.ceil(total / PAGE) : 0;
+
+  const pageResults = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) =>
+      sb
+        .from("properties")
+        .select(PROPERTIES_EXPLORER_SELECT)
+        .in("listing_status", ["approved"])
+        .order("created_at", { ascending: false })
+        .range(i * PAGE, i * PAGE + PAGE - 1)
+    )
+  );
+
   const all: unknown[] = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await sb
-      .from("properties")
-      .select(PROPERTIES_EXPLORER_SELECT)
-      .in("listing_status", ["approved"])
-      .order("created_at", { ascending: false })
-      .range(from, from + PAGE - 1);
-
+  for (const { data, error } of pageResults) {
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
-
-    const chunk = Array.isArray(data) ? data : [];
-    for (const row of chunk) all.push(row);
-    if (chunk.length < PAGE) break;
-    from += PAGE;
+    if (Array.isArray(data)) for (const row of data) all.push(row);
   }
 
   return NextResponse.json({ ok: true, count: all.length, items: all });
