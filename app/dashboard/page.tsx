@@ -1474,7 +1474,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-    <div style={{ position: "absolute", inset: 0, background: "#070B14", color: "white" }}>
+    <div style={{ position: "absolute", inset: 0, background: "#F1F2F5", color: "#0F172A" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -1502,7 +1502,7 @@ export default function DashboardPage() {
           transform: panelOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 220ms ease",
           background: "rgba(8,12,22,0.96)",
-          borderRight: "1px solid rgba(255,255,255,0.10)",
+          borderRight: "1px solid rgba(15,23,42,0.10)",
           padding: 16,
           overflowY: "auto",
           backdropFilter: "blur(10px)",
@@ -1530,9 +1530,9 @@ export default function DashboardPage() {
               height: 40,
               padding: "0 12px 0 36px",
               borderRadius: 14,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              color: "white",
+              background: "rgba(15,23,42,0.06)",
+              border: "1px solid rgba(15,23,42,0.12)",
+              color: "#0F172A",
               outline: "none",
               fontSize: 13,
               boxSizing: "border-box",
@@ -1545,8 +1545,8 @@ export default function DashboardPage() {
             marginTop: 14,
             padding: 14,
             borderRadius: 16,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.10)",
+            background: "rgba(15,23,42,0.05)",
+            border: "1px solid rgba(15,23,42,0.10)",
           }}
         >
           <div style={{ fontSize: 11, opacity: 0.75 }}>Bölge Özeti</div>
@@ -1742,12 +1742,12 @@ export default function DashboardPage() {
                   textAlign: "left",
                   padding: 12,
                   borderRadius: 14,
-                  background: selected?.id === p.id ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
+                  background: selected?.id === p.id ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.04)",
                   border:
                     selected?.id === p.id
-                      ? "1px solid rgba(255,255,255,0.18)"
-                      : "1px solid rgba(255,255,255,0.08)",
-                  color: "white",
+                      ? "1px solid rgba(15,23,42,0.18)"
+                      : "1px solid rgba(15,23,42,0.08)",
+                  color: "#0F172A",
                   cursor: "pointer",
                 }}
               >
@@ -1797,8 +1797,8 @@ export default function DashboardPage() {
               height: 74,
               borderTopRightRadius: 16,
               borderBottomRightRadius: 16,
-              background: "rgba(10,14,24,0.55)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.75)",
+              border: "1px solid rgba(15,23,42,0.12)",
               borderLeft: "none",
               cursor: "pointer",
               display: "flex",
@@ -1903,9 +1903,9 @@ export default function DashboardPage() {
                 display: "flex",
                 flexDirection: "column",
                 overflow: "hidden",
-                boxShadow: "0 18px 55px rgba(0,0,0,0.35)",
-                background: "rgba(10,14,24,0.78)",
-                border: "1px solid rgba(255,255,255,0.12)",
+                boxShadow: "0 18px 55px rgba(15,23,42,0.16)",
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid rgba(15,23,42,0.1)",
                 backdropFilter: "blur(14px)",
                 ...(isMobile
                   ? {
@@ -1935,7 +1935,7 @@ export default function DashboardPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "0 10px",
-                  borderBottom: "1px solid rgba(255,255,255,0.10)",
+                  borderBottom: "1px solid rgba(15,23,42,0.10)",
                 }}
               >
                 <div style={{ fontSize: 11, opacity: 0.88, fontWeight: 900, letterSpacing: 0.4 }}>
@@ -1968,7 +1968,7 @@ export default function DashboardPage() {
                     flexDirection: "column",
                     gap: 6,
                     paddingBottom: 8,
-                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    borderBottom: "1px solid rgba(15,23,42,0.06)",
                   }}
                 >
                   {showListedProperty(selected) ? (
@@ -2084,8 +2084,8 @@ export default function DashboardPage() {
                       style={{
                         padding: "6px 6px",
                         borderRadius: 10,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "rgba(15,23,42,0.04)",
+                        border: "1px solid rgba(15,23,42,0.08)",
                       }}
                     >
                       <div style={{ fontSize: 9, opacity: 0.62, fontWeight: 700, letterSpacing: 0.2 }}>{label}</div>
@@ -2148,8 +2148,8 @@ export default function DashboardPage() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(15,23,42,0.04)",
+                    border: "1px solid rgba(15,23,42,0.10)",
                     maxHeight: "min(200px, 30vh)",
                     overflowY: "auto",
                   }}
@@ -2255,8 +2255,8 @@ export default function DashboardPage() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "rgba(15,23,42,0.04)",
+                    border: "1px solid rgba(15,23,42,0.08)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -2269,7 +2269,7 @@ export default function DashboardPage() {
                       height: 5,
                       borderRadius: 999,
                       overflow: "hidden",
-                      background: "rgba(255,255,255,0.07)",
+                      background: "rgba(15,23,42,0.07)",
                     }}
                   >
                     <div
@@ -2290,8 +2290,8 @@ export default function DashboardPage() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(15,23,42,0.05)",
+                    border: "1px solid rgba(15,23,42,0.10)",
                   }}
                 >
                   <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.88, letterSpacing: 0.4 }}>Alım</div>
@@ -2340,8 +2340,8 @@ export default function DashboardPage() {
                       marginTop: 8,
                       padding: 8,
                       borderRadius: 10,
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: "rgba(15,23,42,0.03)",
+                      border: "1px solid rgba(15,23,42,0.08)",
                     }}
                   >
                     <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Alım özeti</div>
@@ -2378,7 +2378,7 @@ export default function DashboardPage() {
                         alignItems: "flex-end",
                         marginTop: 8,
                         paddingTop: 8,
-                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        borderTop: "1px solid rgba(15,23,42,0.06)",
                         gap: 8,
                       }}
                     >
@@ -2420,8 +2420,8 @@ export default function DashboardPage() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(15,23,42,0.04)",
+                    border: "1px solid rgba(15,23,42,0.10)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -2429,7 +2429,7 @@ export default function DashboardPage() {
                       <div style={{ fontSize: 11, fontWeight: 950 }}>Sepet</div>
                       <div style={{ fontSize: 10, opacity: 0.72, marginTop: 2 }}>
                         {cart.length} kalem ·{" "}
-                        <span style={{ color: "#F5D76E" }}>₺{formatTRY(Math.round(cartTotal()))}</span>
+                        <span style={{ color: "#B8860B" }}>₺{formatTRY(Math.round(cartTotal()))}</span>
                       </div>
                     </div>
                     <button type="button" onClick={clearCart} style={{ ...smallGhostBtn, padding: "6px 8px", fontSize: 11 }}>
@@ -2459,8 +2459,8 @@ export default function DashboardPage() {
                             alignItems: "center",
                             padding: "6px 8px",
                             borderRadius: 10,
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "rgba(15,23,42,0.04)",
+                            border: "1px solid rgba(15,23,42,0.08)",
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
@@ -2501,9 +2501,9 @@ export default function DashboardPage() {
                       width: "100%",
                       padding: "10px 10px",
                       borderRadius: 12,
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      color: "white",
+                      background: "rgba(15,23,42,0.06)",
+                      border: "1px solid rgba(15,23,42,0.14)",
+                      color: "#0F172A",
                       fontWeight: 950,
                       fontSize: 12,
                       cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
@@ -2536,9 +2536,9 @@ function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
               style={{
                 height: 6,
                 borderRadius: 999,
-                background: "rgba(255,255,255,0.08)",
+                background: "rgba(15,23,42,0.08)",
                 overflow: "hidden",
-                border: "1px solid rgba(255,255,255,0.08)",
+                border: "1px solid rgba(15,23,42,0.08)",
               }}
             >
               <div
@@ -2684,9 +2684,9 @@ const selectStyle: React.CSSProperties = {
   padding: 10,
   borderRadius: 12,
   colorScheme: "dark",
-  backgroundColor: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  backgroundColor: "rgba(15,23,42,0.05)",
+  border: "1px solid rgba(15,23,42,0.12)",
+  color: "#0F172A",
   outline: "none",
 };
 
@@ -2694,9 +2694,9 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 12,
   borderRadius: 14,
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  background: "rgba(15,23,42,0.05)",
+  border: "1px solid rgba(15,23,42,0.12)",
+  color: "#0F172A",
   outline: "none",
 };
 
@@ -2704,9 +2704,9 @@ const btnGhost: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 14,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  background: "rgba(15,23,42,0.06)",
+  border: "1px solid rgba(15,23,42,0.12)",
+  color: "#0F172A",
   fontSize: 13,
   fontWeight: 800,
   cursor: "pointer",
@@ -2716,9 +2716,9 @@ const btnOutline: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 14,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.18)",
-  color: "white",
+  background: "rgba(15,23,42,0.04)",
+  border: "1px solid rgba(15,23,42,0.18)",
+  color: "#0F172A",
   fontSize: 13,
   fontWeight: 1000,
   cursor: "pointer",
@@ -2728,8 +2728,8 @@ const badgeBox: React.CSSProperties = {
   height: 40,
   padding: "8px 12px",
   borderRadius: 14,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(15,23,42,0.06)",
+  border: "1px solid rgba(15,23,42,0.12)",
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
@@ -2739,9 +2739,9 @@ const badgeBox: React.CSSProperties = {
 const smallGhostBtn: React.CSSProperties = {
   padding: "8px 10px",
   borderRadius: 12,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  background: "rgba(15,23,42,0.06)",
+  border: "1px solid rgba(15,23,42,0.12)",
+  color: "#0F172A",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -2750,9 +2750,9 @@ const neutralActionBtn: React.CSSProperties = {
   width: "100%",
   height: 44,
   borderRadius: 14,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.16)",
-  color: "white",
+  background: "rgba(15,23,42,0.04)",
+  border: "1px solid rgba(15,23,42,0.16)",
+  color: "#0F172A",
   fontWeight: 900,
   cursor: "pointer",
 };
@@ -2761,9 +2761,9 @@ function tabBtn(active: boolean): React.CSSProperties {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
-    border: active ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.10)",
-    color: "white",
+    background: active ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.04)",
+    border: active ? "1px solid rgba(15,23,42,0.18)" : "1px solid rgba(15,23,42,0.10)",
+    color: "#0F172A",
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
@@ -2774,9 +2774,9 @@ function chip(active: boolean): React.CSSProperties {
   return {
     padding: 10,
     borderRadius: 12,
-    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)",
-    border: active ? "1px solid rgba(255,255,255,0.20)" : "1px solid rgba(255,255,255,0.10)",
-    color: "white",
+    background: active ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.05)",
+    border: active ? "1px solid rgba(15,23,42,0.20)" : "1px solid rgba(15,23,42,0.10)",
+    color: "#0F172A",
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 800,
@@ -2786,8 +2786,8 @@ function chip(active: boolean): React.CSSProperties {
 const metricBox: React.CSSProperties = {
   padding: 10,
   borderRadius: 14,
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(15,23,42,0.05)",
+  border: "1px solid rgba(15,23,42,0.10)",
 };
 
 const metricLabel: React.CSSProperties = { fontSize: 12, opacity: 0.7 };
@@ -2796,8 +2796,8 @@ const metricValue: React.CSSProperties = { fontSize: 18, fontWeight: 1000, margi
 const miniInfoCard: React.CSSProperties = {
   padding: 10,
   borderRadius: 14,
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(15,23,42,0.04)",
+  border: "1px solid rgba(15,23,42,0.10)",
 };
 
 const miniInfoLabel: React.CSSProperties = { fontSize: 11, opacity: 0.7, fontWeight: 800 };

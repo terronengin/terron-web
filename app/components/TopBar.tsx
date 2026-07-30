@@ -60,21 +60,21 @@ export function TopBar() {
         alignItems: "center",
         gap: 10,
         padding: "9px 14px",
-        background: "rgba(9,12,20,0.94)",
-        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        background: "rgba(255,255,255,0.92)",
+        borderBottom: "1px solid rgba(15,23,42,0.08)",
         backdropFilter: "blur(12px)",
       }}
     >
       <div
         style={{
           fontSize: 14.5,
-          fontWeight: 700,
+          fontWeight: 800,
           letterSpacing: 0.5,
-          color: "rgba(255,255,255,0.94)",
+          color: "#0F172A",
           flexShrink: 0,
         }}
       >
-        Terron<span style={{ color: "#D9B44A" }}>.</span>
+        Terron<span style={{ color: "#B8860B" }}>.</span>
       </div>
 
       <div style={{ flex: 1 }} />
@@ -82,12 +82,12 @@ export function TopBar() {
       <div
         style={{
           fontSize: 12.5,
-          fontWeight: 700,
-          color: "rgba(245,215,110,0.92)",
+          fontWeight: 800,
+          color: "#8A6A0A",
           padding: "5px 10px",
           borderRadius: 10,
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(201,162,39,0.1)",
+          border: "1px solid rgba(201,162,39,0.25)",
           whiteSpace: "nowrap",
           flexShrink: 0,
           fontVariantNumeric: "tabular-nums",
@@ -104,12 +104,12 @@ export function TopBar() {
           height: 30,
           borderRadius: 9,
           overflow: "hidden",
-          background: "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(255,255,255,0.1)",
+          background: "#F1F2F5",
+          border: "1px solid rgba(15,23,42,0.1)",
           display: "grid",
           placeItems: "center",
           fontWeight: 700,
-          color: "rgba(255,255,255,0.9)",
+          color: "#0F172A",
           flexShrink: 0,
           cursor: "pointer",
           padding: 0,
@@ -120,7 +120,7 @@ export function TopBar() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ opacity: 0.9, fontSize: 12.5 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
+          <span style={{ opacity: 0.85, fontSize: 12.5 }}>{(displayName?.[0] ?? "A").toUpperCase()}</span>
         )}
       </button>
     </div>

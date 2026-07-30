@@ -70,10 +70,10 @@ export function lineGlowPaint(selectedPolyId: string | null) {
     "line-color": [
       "case",
       ["==", ["get", "id"], selectedPolyId ?? ""],
-      "rgba(245,215,110,0.82)",
+      "rgba(184,134,11,0.75)",
       ["boolean", ["feature-state", "hover"], false],
-      "rgba(245,215,110,0.62)",
-      "rgba(201,162,39,0.22)",
+      "rgba(184,134,11,0.55)",
+      "rgba(184,134,11,0.3)",
     ],
     "line-width": [
       "case",
@@ -93,10 +93,10 @@ export function lineOutPaint(selectedPolyId: string | null) {
     "line-color": [
       "case",
       ["==", ["get", "id"], selectedPolyId ?? ""],
-      "rgba(255,240,180,0.92)",
+      "rgba(138,106,10,0.95)",
       ["boolean", ["feature-state", "hover"], false],
-      "rgba(245,215,110,0.85)",
-      "rgba(245,215,110,0.44)",
+      "rgba(184,134,11,0.85)",
+      "rgba(184,134,11,0.5)",
     ],
     "line-width": [
       "case",

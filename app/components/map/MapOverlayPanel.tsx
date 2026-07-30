@@ -22,12 +22,12 @@ export function MapOverlayPanel({ title, breadcrumb, subtitle, showBack, onBack 
         maxWidth: "min(92vw, 320px)",
         padding: "8px 10px",
         borderRadius: 14,
-        background: "linear-gradient(145deg, rgba(12,16,28,0.78) 0%, rgba(8,10,18,0.72) 100%)",
-        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(255,255,255,0.9)",
+        border: "1px solid rgba(15,23,42,0.1)",
         backdropFilter: "blur(12px) saturate(1.2)",
         WebkitBackdropFilter: "blur(12px) saturate(1.2)",
-        color: "rgba(255,255,255,0.96)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06)",
+        color: "#0F172A",
+        boxShadow: "0 8px 32px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.6)",
       }}
     >
       {showBack && (
@@ -45,8 +45,8 @@ export function MapOverlayPanel({ title, breadcrumb, subtitle, showBack, onBack 
             alignItems: "center",
             justifyContent: "center",
             borderRadius: 8,
-            background: "rgba(255,255,255,0.07)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(15,23,42,0.06)",
+            border: "1px solid rgba(15,23,42,0.1)",
             color: "inherit",
             cursor: "pointer",
             fontSize: 15,

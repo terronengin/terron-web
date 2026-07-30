@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CandlestickChart } from "@/app/components/CandlestickChart";
+import { CHART_PERIODS, computeCandles } from "@/lib/candlestick";
 import { getCachedProperties } from "@/lib/propertiesCache";
-import { computeTrendSeries, getDailyChangePct, TREND_PERIODS } from "@/lib/priceTrend";
+import { getDailyChangePct } from "@/lib/priceTrend";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
@@ -17,7 +19,7 @@ function PctBadge({ value, size = 12.5 }: { value: number; size?: number }) {
   const positive = value >= 0;
   return (
     <span
-      style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 900, fontSize: size, fontVariantNumeric: "tabular-nums" }}
+      style={{ color: positive ? "#16A34A" : "#DC2626", fontWeight: 800, fontSize: size, fontVariantNumeric: "tabular-nums" }}
     >
       {formatPct(value)}
     </span>
@@ -32,58 +34,37 @@ function formatM2(n: number) {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(n));
 }
 
-/** Borsa uygulamalarındaki gibi basit çizgi grafiği — harici kütüphane olmadan, hafif SVG. */
-function Sparkline({ points, positive }: { points: number[]; positive: boolean }) {
-  const gradId = useId().replace(/:/g, "");
-  const w = 100;
-  const h = 34;
-  const pad = 2;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
-  const coords = points.map((v, i) => {
-    const x = pad + i * stepX;
-    const y = pad + (h - pad * 2) * (1 - (v - min) / range);
-    return [x, y] as const;
-  });
-  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
-  const last = coords[coords.length - 1]!;
-  const first = coords[0]!;
-  const areaPath = `${linePath} L${last[0].toFixed(2)},${h - pad} L${first[0].toFixed(2)},${h - pad} Z`;
-  const color = positive ? "#86efac" : "#fca5a5";
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={64} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={`sg-${gradId}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-          <stop offset="100%" stopColor={color} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#sg-${gradId})`} stroke="none" />
-      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
+function initialOf(s: string) {
+  return (s?.trim()?.[0] ?? "A").toUpperCase();
 }
 
-const card: React.CSSProperties = {
-  borderRadius: 16,
-  background: "rgba(12,20,38,0.92)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  boxShadow: "0 12px 34px rgba(0,0,0,0.28)",
-  padding: 14,
-  textAlign: "left",
-  color: "white",
+/** Başlıktan deterministik, sakin bir amblem rengi. */
+function emblemColor(seed: string): string {
+  const palette = ["#0EA5E9", "#8B5CF6", "#F59E0B", "#10B981", "#EC4899", "#6366F1"];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length]!;
+}
+
+const row: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "12px 4px",
   width: "100%",
+  textAlign: "left",
+  cursor: "pointer",
+  color: "#0F172A",
+  background: "transparent",
+  border: "none",
 };
 
 const selectStyle: React.CSSProperties = {
   height: 38,
   borderRadius: 12,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  background: "#FFFFFF",
+  border: "1px solid rgba(15,23,42,0.12)",
+  color: "#0F172A",
   fontSize: 12,
   padding: "0 8px",
 };
@@ -95,7 +76,7 @@ export default function MarketPage() {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [periodDays, setPeriodDays] = useState<number>(30);
+  const [periodDays, setPeriodDays] = useState<number>(90);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,11 +132,11 @@ export default function MarketPage() {
 
   return (
     <AppShell>
-      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#070B14", color: "white" }}>
-        <div style={{ maxWidth: 720, margin: "0 auto", padding: "14px 12px 40px" }}>
-          <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 950 }}>Market</h1>
+      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#FFFFFF", color: "#0F172A" }}>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "14px 16px 40px" }}>
+          <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 800 }}>Market</h1>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -164,9 +145,9 @@ export default function MarketPage() {
                 flex: 1,
                 height: 38,
                 borderRadius: 12,
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                color: "white",
+                background: "#FFFFFF",
+                border: "1px solid rgba(15,23,42,0.12)",
+                color: "#0F172A",
                 padding: "0 12px",
                 fontSize: 13,
                 outline: "none",
@@ -182,14 +163,33 @@ export default function MarketPage() {
             </select>
           </div>
 
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "8px 4px",
+              fontSize: 10.5,
+              fontWeight: 700,
+              color: "rgba(15,23,42,0.45)",
+              letterSpacing: 0.3,
+              borderBottom: "1px solid rgba(15,23,42,0.08)",
+            }}
+          >
+            <span>ARSA</span>
+            <span style={{ display: "flex", gap: 24 }}>
+              <span>24S DEĞİŞİM</span>
+              <span>FİYAT</span>
+            </span>
+          </div>
+
           {loading ? (
-            <div style={{ fontSize: 14, opacity: 0.75, padding: 20, textAlign: "center" }}>Yükleniyor…</div>
+            <div style={{ fontSize: 14, opacity: 0.6, padding: 20, textAlign: "center" }}>Yükleniyor…</div>
           ) : filtered.length === 0 ? (
-            <div style={{ fontSize: 14, opacity: 0.75, padding: 20, textAlign: "center" }}>
+            <div style={{ fontSize: 14, opacity: 0.6, padding: 20, textAlign: "center" }}>
               Aramanızla eşleşen ilan bulunamadı.
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 10 }}>
+            <div>
               {filtered.slice(0, 200).map((it) => {
                 const total = Number(it.total_area_m2 ?? 0);
                 const available = it.available_m2 != null ? Number(it.available_m2) : total;
@@ -197,121 +197,71 @@ export default function MarketPage() {
                 const regionDemand = cityDemand.get(it.city ?? "") ?? 0;
                 const dailyPct = getDailyChangePct(it, "market", regionDemand);
                 const isExpanded = expandedId === it.id;
-                const series = isExpanded ? computeTrendSeries(it, "market", regionDemand) : null;
-                const periodPct = series ? series.changeOver(periodDays) : 0;
-                const chartPoints = series ? series.index.slice(-Math.min(periodDays + 1, series.index.length)) : [];
+                const candles = isExpanded ? computeCandles(it, "market", periodDays, regionDemand) : [];
+                const periodPct =
+                  candles.length > 1 ? ((candles[candles.length - 1]!.close - candles[0]!.open) / candles[0]!.open) * 100 : 0;
 
                 return (
-                  <div key={it.id} style={card}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => router.push(`/dashboard?p=${it.id}`)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") router.push(`/dashboard?p=${it.id}`);
-                      }}
-                      style={{ cursor: "pointer" }}
+                  <div key={it.id} style={{ borderBottom: "1px solid rgba(15,23,42,0.06)" }}>
+                    <button
+                      onClick={() => setExpandedId(isExpanded ? null : it.id)}
+                      style={row}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.3 }}>{it.title}</div>
-                          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 3 }}>
-                            {it.city}
-                            {it.district ? ` / ${it.district}` : ""}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 14, color: "#F5D76E" }}>₺{formatTRY(px)}</div>
-                          <div style={{ fontSize: 10, opacity: 0.6 }}>/m²</div>
-                        </div>
-                      </div>
                       <div
                         style={{
-                          marginTop: 10,
-                          paddingTop: 10,
-                          borderTop: "1px solid rgba(255,255,255,0.08)",
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 8,
-                          fontSize: 12,
-                        }}
-                      >
-                        <div>
-                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>TOPLAM M²</div>
-                          <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(total)}</div>
-                        </div>
-                        <div>
-                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>KALAN M²</div>
-                          <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(available)}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 10,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "8px 10px",
-                        borderRadius: 10,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <span style={{ opacity: 0.7, fontWeight: 700 }}>24 saat</span>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(isExpanded ? null : it.id);
-                        }}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                          padding: "4px 10px",
-                          borderRadius: 8,
-                          background: isExpanded ? "rgba(245,215,110,0.16)" : "rgba(255,255,255,0.06)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          color: "white",
-                          fontSize: 11,
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Detay
-                        <span style={{ fontSize: 9, opacity: 0.8 }}>{isExpanded ? "▴" : "▾"}</span>
-                      </button>
-
-                      <PctBadge value={dailyPct} />
-                    </div>
-
-                    {isExpanded && series ? (
-                      <div
-                        style={{
-                          marginTop: 8,
+                          width: 34,
+                          height: 34,
                           borderRadius: 10,
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          padding: 12,
+                          background: emblemColor(it.city ?? it.title),
+                          color: "white",
+                          display: "grid",
+                          placeItems: "center",
+                          fontWeight: 800,
+                          fontSize: 13,
+                          flexShrink: 0,
                         }}
                       >
-                        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
-                          {TREND_PERIODS.map((p) => (
+                        {initialOf(it.city ?? it.title)}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 13.5,
+                            lineHeight: 1.25,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {it.title}
+                        </div>
+                        <div style={{ fontSize: 11.5, opacity: 0.55, marginTop: 1 }}>
+                          {it.city}
+                          {it.district ? ` / ${it.district}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <PctBadge value={dailyPct} />
+                        <div style={{ fontWeight: 800, fontSize: 13.5, marginTop: 2 }}>₺{formatTRY(px)}</div>
+                      </div>
+                    </button>
+
+                    {isExpanded && (
+                      <div style={{ padding: "0 4px 16px" }}>
+                        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 10 }}>
+                          {CHART_PERIODS.map((p) => (
                             <button
                               key={p.key}
                               onClick={() => setPeriodDays(p.days)}
                               style={{
                                 flexShrink: 0,
-                                padding: "6px 12px",
+                                padding: "5px 12px",
                                 borderRadius: 999,
                                 border:
-                                  periodDays === p.days
-                                    ? "1px solid rgba(245,215,110,0.55)"
-                                    : "1px solid rgba(255,255,255,0.1)",
-                                background: periodDays === p.days ? "rgba(245,215,110,0.14)" : "rgba(255,255,255,0.04)",
-                                color: periodDays === p.days ? "#F5D76E" : "rgba(255,255,255,0.75)",
+                                  periodDays === p.days ? "1px solid rgba(184,134,11,0.4)" : "1px solid rgba(15,23,42,0.1)",
+                                background: periodDays === p.days ? "rgba(184,134,11,0.1)" : "#FFFFFF",
+                                color: periodDays === p.days ? "#8A6A0A" : "rgba(15,23,42,0.6)",
                                 fontSize: 11.5,
                                 fontWeight: 800,
                                 cursor: "pointer",
@@ -322,16 +272,61 @@ export default function MarketPage() {
                           ))}
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 700 }}>
-                            Seçili dönem ({TREND_PERIODS.find((p) => p.days === periodDays)?.label ?? ""}):
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, opacity: 0.55, fontWeight: 700 }}>
+                            Seçili dönem ({CHART_PERIODS.find((p) => p.days === periodDays)?.label ?? ""}):
                           </span>
-                          <PctBadge value={periodPct} size={15} />
+                          <PctBadge value={periodPct} size={14} />
                         </div>
 
-                        <Sparkline points={chartPoints} positive={periodPct >= 0} />
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(15,23,42,0.08)",
+                            padding: "10px 6px 6px",
+                          }}
+                        >
+                          <CandlestickChart candles={candles} />
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 12,
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 8,
+                            fontSize: 12,
+                          }}
+                        >
+                          <div>
+                            <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>TOPLAM M²</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(total)}</div>
+                          </div>
+                          <div>
+                            <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>KALAN M²</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(available)}</div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => router.push(`/dashboard?p=${it.id}`)}
+                          style={{
+                            width: "100%",
+                            marginTop: 12,
+                            padding: "12px 0",
+                            borderRadius: 14,
+                            border: "none",
+                            background: "linear-gradient(135deg, #e8d48a, #c9a227)",
+                            color: "#0a0f1a",
+                            fontWeight: 800,
+                            fontSize: 13.5,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Detayları Gör / Satın Al
+                        </button>
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 );
               })}
