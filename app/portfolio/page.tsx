@@ -7,6 +7,8 @@ import { formatM2 } from "@/lib/formatM2";
 import { calculateSellQuoteTRY, grossAssetFromTotalPaid } from "@/lib/sim/realEstatePrice";
 import { getTerronSalePricePerM2, type TerronPropertyPricingInput } from "@/lib/propertySalePrice";
 import { invalidatePropertiesCache } from "@/lib/propertiesCache";
+import { CHART_PERIODS, computeCandles } from "@/lib/candlestick";
+import { CandlestickChart } from "../components/CandlestickChart";
 import { AppShell } from "../components/AppShell";
 
 type RealPositionRow = {
@@ -22,8 +24,16 @@ type PropertyLite = {
   title: string | null;
   city: string | null;
   price_per_m2: number | null;
+  total_area_m2: number | null;
   available_m2: number | null;
   sold_m2: number | null;
+  development_score: number | null;
+  last_30d_change: number | null;
+  quality_score: number | null;
+  risk_score: number | null;
+  rental_yield_annual: number | null;
+  min_buy_m2: number | null;
+  total_shares: number | null;
 };
 
 type UnifiedRow = {
@@ -72,17 +82,17 @@ function formatDate(iso: string) {
 
 const card: React.CSSProperties = {
   borderRadius: 18,
-  background: "rgba(12,20,38,0.92)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  boxShadow: "0 14px 40px rgba(0,0,0,0.3)",
+  background: "#FFFFFF",
+  border: "1px solid rgba(15,23,42,0.08)",
+  boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
   padding: 16,
 };
 
 function PnlText({ value, suffix = "" }: { value: number | null; suffix?: string }) {
-  if (value == null) return <span style={{ opacity: 0.5 }}>—</span>;
+  if (value == null) return <span style={{ opacity: 0.4 }}>—</span>;
   const positive = value >= 0;
   return (
-    <span style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
+    <span style={{ color: positive ? "#16A34A" : "#DC2626", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
       {positive ? "+" : ""}
       {formatTRY(value)}
       {suffix}
@@ -93,19 +103,19 @@ function PnlText({ value, suffix = "" }: { value: number | null; suffix?: string
 function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div style={{ ...card, textAlign: "center", padding: "40px 20px" }}>
-      <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 8 }}>{title}</div>
-      <p style={{ margin: "0 0 20px", fontSize: 13, opacity: 0.75, lineHeight: 1.55 }}>{subtitle}</p>
+      <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>{title}</div>
+      <p style={{ margin: "0 0 20px", fontSize: 13, opacity: 0.6, lineHeight: 1.55 }}>{subtitle}</p>
       <Link
         href="/dashboard"
         style={{
           display: "inline-block",
           padding: "12px 22px",
           borderRadius: 14,
-          fontWeight: 900,
+          fontWeight: 800,
           textDecoration: "none",
           color: "#0a0f1a",
           background: "linear-gradient(135deg, #e8d48a, #c9a227)",
-          border: "1px solid rgba(245,215,110,0.5)",
+          border: "1px solid rgba(184,134,11,0.4)",
         }}
       >
         Haritaya Git
@@ -124,6 +134,8 @@ export default function PortfolioPage() {
   const [refresh, setRefresh] = useState(0);
   const [sellingKey, setSellingKey] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("aktif");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [periodDays, setPeriodDays] = useState<number>(90);
 
   useEffect(() => {
     let cancelled = false;
@@ -333,18 +345,18 @@ export default function PortfolioPage() {
           position: "absolute",
           inset: 0,
           overflowY: "auto",
-          background: "radial-gradient(1200px 600px at 50% -10%, rgba(201,162,39,0.12), transparent 55%), #0a0f1a",
-          color: "#fff",
+          background: "#FFFFFF",
+          color: "#0F172A",
         }}
       >
-        <div style={{ maxWidth: 720, margin: "0 auto", padding: "18px 14px 40px" }}>
-          <h1 style={{ margin: "0 0 14px", fontSize: 22, fontWeight: 950 }}>Portföy</h1>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 40px" }}>
+          <h1 style={{ margin: "0 0 14px", fontSize: 22, fontWeight: 800 }}>Portföy</h1>
 
           {!email && !loading ? (
             <div style={{ ...card, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, opacity: 0.85 }}>
+              <span style={{ fontSize: 13, opacity: 0.7 }}>
                 Pozisyonları görmek için{" "}
-                <Link href="/login" style={{ color: "#7dd3fc" }}>
+                <Link href="/login" style={{ color: "#0EA5E9" }}>
                   giriş yapın
                 </Link>
                 .
@@ -362,15 +374,15 @@ export default function PortfolioPage() {
             }}
           >
             <div style={{ ...card, padding: 12, textAlign: "center" }}>
-              <div style={{ fontSize: 10, opacity: 0.65, fontWeight: 800, letterSpacing: 0.3 }}>TOPLAM YATIRIM</div>
-              <div style={{ fontSize: 15, fontWeight: 900, marginTop: 4 }}>₺{formatTRY(totals.invested)}</div>
+              <div style={{ fontSize: 10, opacity: 0.55, fontWeight: 700, letterSpacing: 0.3 }}>TOPLAM YATIRIM</div>
+              <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>₺{formatTRY(totals.invested)}</div>
             </div>
             <div style={{ ...card, padding: 12, textAlign: "center" }}>
-              <div style={{ fontSize: 10, opacity: 0.65, fontWeight: 800, letterSpacing: 0.3 }}>GÜNCEL DEĞER</div>
-              <div style={{ fontSize: 15, fontWeight: 900, marginTop: 4 }}>₺{formatTRY(totals.currentValue)}</div>
+              <div style={{ fontSize: 10, opacity: 0.55, fontWeight: 700, letterSpacing: 0.3 }}>GÜNCEL DEĞER</div>
+              <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>₺{formatTRY(totals.currentValue)}</div>
             </div>
             <div style={{ ...card, padding: 12, textAlign: "center" }}>
-              <div style={{ fontSize: 10, opacity: 0.65, fontWeight: 800, letterSpacing: 0.3 }}>REALİZE KÂR</div>
+              <div style={{ fontSize: 10, opacity: 0.55, fontWeight: 700, letterSpacing: 0.3 }}>REALİZE KÂR</div>
               <div style={{ marginTop: 4 }}>
                 <PnlText value={totals.realizedProfit} />
               </div>
@@ -383,7 +395,7 @@ export default function PortfolioPage() {
               display: "flex",
               gap: 4,
               marginBottom: 16,
-              borderBottom: "1px solid rgba(255,255,255,0.1)",
+              borderBottom: "1px solid rgba(15,23,42,0.08)",
             }}
           >
             {(
@@ -400,9 +412,9 @@ export default function PortfolioPage() {
                   marginRight: 20,
                   background: "transparent",
                   border: "none",
-                  borderBottom: tab === t.key ? "2px solid #F5D76E" : "2px solid transparent",
-                  color: tab === t.key ? "#F5D76E" : "rgba(255,255,255,0.6)",
-                  fontWeight: tab === t.key ? 900 : 700,
+                  borderBottom: tab === t.key ? "2px solid #B8860B" : "2px solid transparent",
+                  color: tab === t.key ? "#8A6A0A" : "rgba(15,23,42,0.5)",
+                  fontWeight: tab === t.key ? 800 : 700,
                   fontSize: 14,
                   cursor: "pointer",
                 }}
@@ -413,7 +425,7 @@ export default function PortfolioPage() {
           </div>
 
           {loading ? (
-            <div style={{ fontSize: 14, opacity: 0.8 }}>Yükleniyor…</div>
+            <div style={{ fontSize: 14, opacity: 0.6 }}>Yükleniyor…</div>
           ) : tab === "aktif" ? (
             unified.length === 0 ? (
               <EmptyState
@@ -424,12 +436,18 @@ export default function PortfolioPage() {
               <div style={{ display: "grid", gap: 10 }}>
                 {unified.map((row) => {
                   const busy = sellingKey === row.key;
+                  const isExpanded = expandedKey === row.key;
+                  const prop = propById[row.propertyId];
+                  const candles =
+                    isExpanded && prop
+                      ? computeCandles(prop as TerronPropertyPricingInput, userId ?? "global", periodDays)
+                      : [];
                   return (
                     <div key={row.key} style={card}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.3 }}>{row.title}</div>
-                          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 3 }}>
+                          <div style={{ fontWeight: 800, fontSize: 15, lineHeight: 1.3 }}>{row.title}</div>
+                          <div style={{ fontSize: 12, opacity: 0.55, marginTop: 3 }}>
                             {row.city} • {formatDate(row.created_at)}
                           </div>
                         </div>
@@ -441,10 +459,10 @@ export default function PortfolioPage() {
                             flexShrink: 0,
                             padding: "8px 14px",
                             borderRadius: 12,
-                            border: "1px solid rgba(245,215,110,0.45)",
-                            background: busy ? "rgba(255,255,255,0.06)" : "rgba(245,215,110,0.14)",
-                            color: "#fff",
-                            fontWeight: 900,
+                            border: "1px solid rgba(184,134,11,0.4)",
+                            background: busy ? "rgba(15,23,42,0.05)" : "rgba(184,134,11,0.12)",
+                            color: "#0F172A",
+                            fontWeight: 800,
                             fontSize: 12,
                             cursor: busy ? "not-allowed" : "pointer",
                             opacity: busy ? 0.6 : 1,
@@ -458,7 +476,7 @@ export default function PortfolioPage() {
                         style={{
                           marginTop: 12,
                           paddingTop: 12,
-                          borderTop: "1px solid rgba(255,255,255,0.08)",
+                          borderTop: "1px solid rgba(15,23,42,0.07)",
                           display: "grid",
                           gridTemplateColumns: "1fr 1fr 1fr",
                           gap: 8,
@@ -466,24 +484,76 @@ export default function PortfolioPage() {
                         }}
                       >
                         <div>
-                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>M²</div>
+                          <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>M²</div>
                           <div style={{ fontWeight: 800, marginTop: 2 }}>
                             {row.m2 != null && row.m2 > 0 ? formatM2(row.m2) : "—"}
                           </div>
                         </div>
                         <div>
-                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>ÖDENEN</div>
+                          <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>ÖDENEN</div>
                           <div style={{ fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
                             {row.totalPaid != null ? formatTRY(Math.round(row.totalPaid)) : "—"}
                           </div>
                         </div>
                         <div>
-                          <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>KÂR/ZARAR</div>
+                          <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>KÂR/ZARAR</div>
                           <div style={{ marginTop: 2 }}>
                             <PnlText value={row.brutKz} />
                           </div>
                         </div>
                       </div>
+
+                      {prop ? (
+                        <button
+                          onClick={() => setExpandedKey(isExpanded ? null : row.key)}
+                          style={{
+                            marginTop: 10,
+                            width: "100%",
+                            padding: "7px 0",
+                            borderRadius: 10,
+                            border: "1px solid rgba(15,23,42,0.08)",
+                            background: "rgba(15,23,42,0.02)",
+                            color: "rgba(15,23,42,0.65)",
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {isExpanded ? "Grafiği gizle ▴" : "Fiyat grafiğini göster ▾"}
+                        </button>
+                      ) : null}
+
+                      {isExpanded && prop && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+                            {CHART_PERIODS.map((p) => (
+                              <button
+                                key={p.key}
+                                onClick={() => setPeriodDays(p.days)}
+                                style={{
+                                  flexShrink: 0,
+                                  padding: "5px 12px",
+                                  borderRadius: 999,
+                                  border:
+                                    periodDays === p.days
+                                      ? "1px solid rgba(184,134,11,0.4)"
+                                      : "1px solid rgba(15,23,42,0.1)",
+                                  background: periodDays === p.days ? "rgba(184,134,11,0.1)" : "#FFFFFF",
+                                  color: periodDays === p.days ? "#8A6A0A" : "rgba(15,23,42,0.6)",
+                                  fontSize: 11.5,
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ borderRadius: 12, border: "1px solid rgba(15,23,42,0.08)", padding: "10px 6px 6px" }}>
+                            <CandlestickChart candles={candles} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -500,10 +570,10 @@ export default function PortfolioPage() {
                 <div key={s.id} style={card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.3 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, lineHeight: 1.3 }}>
                         {s.property_title?.trim() || "Arsa"}
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.65, marginTop: 3 }}>
+                      <div style={{ fontSize: 12, opacity: 0.55, marginTop: 3 }}>
                         {s.city || "—"} • {formatDate(s.sold_at)}
                       </div>
                     </div>
@@ -514,7 +584,7 @@ export default function PortfolioPage() {
                           fontSize: 11,
                           fontWeight: 800,
                           marginTop: 2,
-                          color: s.profit_pct >= 0 ? "#86efac" : "#fca5a5",
+                          color: s.profit_pct >= 0 ? "#16A34A" : "#DC2626",
                         }}
                       >
                         {s.profit_pct >= 0 ? "+" : ""}
@@ -526,7 +596,7 @@ export default function PortfolioPage() {
                     style={{
                       marginTop: 12,
                       paddingTop: 12,
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
+                      borderTop: "1px solid rgba(15,23,42,0.07)",
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
                       gap: 8,
@@ -534,11 +604,11 @@ export default function PortfolioPage() {
                     }}
                   >
                     <div>
-                      <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>M²</div>
+                      <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>M²</div>
                       <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(s.m2)}</div>
                     </div>
                     <div>
-                      <div style={{ opacity: 0.6, fontSize: 10, fontWeight: 800 }}>HESABA GEÇEN NET</div>
+                      <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>HESABA GEÇEN NET</div>
                       <div style={{ fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
                         ₺{formatTRY(Math.round(s.sell_net))}
                       </div>

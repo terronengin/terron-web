@@ -6,10 +6,10 @@ import { AppShell } from "../components/AppShell";
 
 const card: React.CSSProperties = {
   borderRadius: 18,
-  border: "1px solid rgba(255,255,255,0.10)",
-  background: "rgba(10,22,44,0.72)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  background: "#FFFFFF",
   padding: 22,
-  boxShadow: "0 18px 50px rgba(0,0,0,0.28)",
+  boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
 };
 
 const stepNum: React.CSSProperties = {
@@ -20,8 +20,8 @@ const stepNum: React.CSSProperties = {
   placeItems: "center",
   fontWeight: 950,
   fontSize: 14,
-  background: "rgba(245,215,110,0.14)",
-  border: "1px solid rgba(245,215,110,0.35)",
+  background: "rgba(184,134,11,0.12)",
+  border: "1px solid rgba(184,134,11,0.35)",
   flexShrink: 0,
 };
 
@@ -35,8 +35,8 @@ export default function InquiriesInfoPage() {
         position: "absolute",
         inset: 0,
         overflowY: "auto",
-        background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
-        color: "white",
+        background: "#FFFFFF",
+        color: "#0F172A",
         padding: "28px 16px 56px",
         fontFamily: "system-ui, sans-serif",
       }}
@@ -86,7 +86,7 @@ export default function InquiriesInfoPage() {
             </div>
           </div>
 
-          <div style={{ ...card, borderColor: "rgba(56,189,248,0.22)", background: "rgba(10,22,44,0.85)" }}>
+          <div style={{ ...card, borderColor: "rgba(14,165,233,0.25)", background: "rgba(14,165,233,0.04)" }}>
             <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 8 }}>Bilgilendirme</div>
             <p style={{ fontSize: 14, opacity: 0.86, lineHeight: 1.65, margin: 0 }}>
               Harita ve metrikler yatırım kararını desteklemek içindir; <b>bağlayıcı teklif değildir</b>. Kesin koşullar
@@ -102,7 +102,7 @@ export default function InquiriesInfoPage() {
                 padding: "12px 20px",
                 borderRadius: 14,
                 border: "none",
-                background: "linear-gradient(92deg, rgba(56,189,248,0.9), rgba(245,215,110,0.85))",
+                background: "linear-gradient(92deg, rgba(14,165,233,0.9), rgba(201,162,39,0.85))",
                 color: "#031326",
                 fontWeight: 950,
                 cursor: "pointer",
@@ -116,9 +116,9 @@ export default function InquiriesInfoPage() {
               style={{
                 padding: "12px 20px",
                 borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.18)",
+                border: "1px solid rgba(15,23,42,0.14)",
                 background: "transparent",
-                color: "#e2e8f0",
+                color: "#334155",
                 fontWeight: 800,
                 cursor: "pointer",
               }}

@@ -9,9 +9,9 @@ const inputBase: React.CSSProperties = {
   width: "100%",
   padding: "12px 14px",
   borderRadius: 14,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.05)",
-  color: "white",
+  border: "1px solid rgba(15,23,42,0.14)",
+  background: "#FFFFFF",
+  color: "#0F172A",
   fontSize: 14,
   outline: "none",
 };
@@ -56,11 +56,10 @@ export default function SubmitPropertyPage() {
   const card: React.CSSProperties = useMemo(
     () => ({
       borderRadius: 22,
-      border: "1px solid rgba(255,255,255,0.10)",
-      background: "rgba(10,22,44,0.72)",
+      border: "1px solid rgba(15,23,42,0.08)",
+      background: "#FFFFFF",
       padding: 22,
-      boxShadow: "0 24px 70px rgba(0,0,0,0.35)",
-      backdropFilter: "blur(12px)",
+      boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
     }),
     []
   );
@@ -193,8 +192,8 @@ export default function SubmitPropertyPage() {
         style={{
           position: "absolute",
           inset: 0,
-          background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
-          color: "white",
+          background: "#FFFFFF",
+          color: "#0F172A",
           display: "grid",
           placeItems: "center",
           padding: 24,
@@ -215,9 +214,9 @@ export default function SubmitPropertyPage() {
               marginTop: 22,
               padding: "12px 22px",
               borderRadius: 14,
-              border: "1px solid rgba(245,215,110,0.45)",
-              background: "linear-gradient(135deg, rgba(201,162,39,0.35), rgba(245,215,110,0.2))",
-              color: "#fff",
+              border: "1px solid rgba(184,134,11,0.4)",
+              background: "linear-gradient(135deg, #e8d48a, #c9a227)",
+              color: "#0a0f1a",
               fontWeight: 900,
               cursor: "pointer",
             }}
@@ -237,8 +236,8 @@ export default function SubmitPropertyPage() {
         position: "absolute",
         inset: 0,
         overflowY: "auto",
-        background: "linear-gradient(180deg, #031326 0%, #071a33 100%)",
-        color: "white",
+        background: "#FFFFFF",
+        color: "#0F172A",
         padding: "28px 16px 48px",
         fontFamily: "system-ui, -apple-system, Segoe UI, Arial, sans-serif",
       }}
@@ -251,9 +250,9 @@ export default function SubmitPropertyPage() {
             style={{
               padding: "10px 16px",
               borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.05)",
-              color: "white",
+              border: "1px solid rgba(15,23,42,0.14)",
+              background: "#FFFFFF",
+              color: "#0F172A",
               cursor: "pointer",
               fontWeight: 700,
             }}
@@ -274,9 +273,9 @@ export default function SubmitPropertyPage() {
               marginBottom: 16,
               padding: "12px 14px",
               borderRadius: 14,
-              border: "1px solid rgba(255,120,120,0.4)",
-              background: "rgba(90,20,20,0.35)",
-              color: "#ffc9c9",
+              border: "1px solid rgba(220,38,38,0.3)",
+              background: "rgba(220,38,38,0.06)",
+              color: "#B91C1C",
               fontSize: 14,
             }}
           >
@@ -445,9 +444,9 @@ export default function SubmitPropertyPage() {
             style={{
               padding: "14px 22px",
               borderRadius: 16,
-              border: "1px solid rgba(245,215,110,0.5)",
-              background: submitting ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg, rgba(201,162,39,0.45), rgba(245,215,110,0.25))",
-              color: "#fff",
+              border: "1px solid rgba(184,134,11,0.4)",
+              background: submitting ? "rgba(15,23,42,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+              color: submitting ? "#0F172A" : "#0a0f1a",
               fontWeight: 950,
               fontSize: 16,
               cursor: submitting ? "not-allowed" : "pointer",

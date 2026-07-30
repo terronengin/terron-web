@@ -19,12 +19,13 @@ type ProfileInfo = {
 
 const card: React.CSSProperties = {
   borderRadius: 16,
-  background: "rgba(12,20,38,0.92)",
-  border: "1px solid rgba(255,255,255,0.09)",
+  background: "#FFFFFF",
+  border: "1px solid rgba(15,23,42,0.08)",
+  boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
   padding: 16,
 };
 
-const rowLabel: React.CSSProperties = { fontSize: 11, opacity: 0.6, fontWeight: 700, letterSpacing: 0.2 };
+const rowLabel: React.CSSProperties = { fontSize: 11, opacity: 0.5, fontWeight: 700, letterSpacing: 0.2 };
 const rowValue: React.CSSProperties = { fontSize: 14, fontWeight: 700, marginTop: 3 };
 
 const fieldInput: React.CSSProperties = {
@@ -32,9 +33,9 @@ const fieldInput: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 12,
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  color: "white",
+  background: "#FFFFFF",
+  border: "1px solid rgba(15,23,42,0.14)",
+  color: "#0F172A",
   fontSize: 13,
   outline: "none",
   marginBottom: 8,
@@ -45,9 +46,9 @@ const quickAmountBtn: React.CSSProperties = {
   flex: 1,
   height: 34,
   borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.05)",
-  color: "white",
+  border: "1px solid rgba(15,23,42,0.12)",
+  background: "rgba(15,23,42,0.03)",
+  color: "#0F172A",
   fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
@@ -55,7 +56,7 @@ const quickAmountBtn: React.CSSProperties = {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ padding: "10px 0", borderBottom: "1px solid rgba(15,23,42,0.06)" }}>
       <div style={rowLabel}>{label}</div>
       <div style={rowValue}>{value || "—"}</div>
     </div>
@@ -74,8 +75,8 @@ function NavRow({ label, onClick, danger }: { label: string; onClick: () => void
         padding: "13px 4px",
         background: "transparent",
         border: "none",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        color: danger ? "#fca5a5" : "white",
+        borderBottom: "1px solid rgba(15,23,42,0.06)",
+        color: danger ? "#DC2626" : "#0F172A",
         fontSize: 14,
         fontWeight: 700,
         cursor: "pointer",
@@ -83,7 +84,7 @@ function NavRow({ label, onClick, danger }: { label: string; onClick: () => void
       }}
     >
       <span>{label}</span>
-      <span style={{ opacity: 0.4 }}>›</span>
+      <span style={{ opacity: 0.35 }}>›</span>
     </button>
   );
 }
@@ -249,7 +250,7 @@ export default function ProfilePage() {
 
   return (
     <AppShell>
-      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#070B14", color: "white" }}>
+      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#FFFFFF", color: "#0F172A" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "18px 14px 40px" }}>
           <h1 style={{ margin: "0 0 16px", fontSize: 19, fontWeight: 800 }}>Profil</h1>
 
@@ -280,8 +281,8 @@ export default function ProfilePage() {
                     height: 56,
                     borderRadius: 16,
                     overflow: "hidden",
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "rgba(15,23,42,0.04)",
+                    border: "1px solid rgba(15,23,42,0.1)",
                     display: "grid",
                     placeItems: "center",
                     flexShrink: 0,
@@ -305,7 +306,7 @@ export default function ProfilePage() {
               {/* Cüzdan */}
               <div style={{ ...card, marginBottom: 14 }}>
                 <div style={rowLabel}>CÜZDAN BAKİYESİ</div>
-                <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6, color: "#F5D76E" }}>
+                <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6, color: "#B8860B" }}>
                   {walletBalance != null ? `₺${formatTRY(walletBalance)}` : "—"}
                 </div>
                 <p style={{ margin: "8px 0 14px", fontSize: 11.5, opacity: 0.55, lineHeight: 1.5 }}>
@@ -322,9 +323,9 @@ export default function ProfilePage() {
                       border:
                         walletPanel === "deposit"
                           ? "1px solid rgba(245,215,110,0.5)"
-                          : "1px solid rgba(255,255,255,0.12)",
-                      background: walletPanel === "deposit" ? "rgba(245,215,110,0.12)" : "rgba(255,255,255,0.05)",
-                      color: "white",
+                          : "1px solid rgba(15,23,42,0.14)",
+                      background: walletPanel === "deposit" ? "rgba(245,215,110,0.12)" : "#FFFFFF",
+                      color: "#0F172A",
                       fontWeight: 700,
                       fontSize: 13,
                       cursor: "pointer",
@@ -341,9 +342,9 @@ export default function ProfilePage() {
                       border:
                         walletPanel === "withdraw"
                           ? "1px solid rgba(245,215,110,0.5)"
-                          : "1px solid rgba(255,255,255,0.12)",
-                      background: walletPanel === "withdraw" ? "rgba(245,215,110,0.12)" : "rgba(255,255,255,0.05)",
-                      color: "white",
+                          : "1px solid rgba(15,23,42,0.14)",
+                      background: walletPanel === "withdraw" ? "rgba(245,215,110,0.12)" : "#FFFFFF",
+                      color: "#0F172A",
                       fontWeight: 700,
                       fontSize: 13,
                       cursor: "pointer",
@@ -354,7 +355,7 @@ export default function ProfilePage() {
                 </div>
 
                 {walletPanel === "deposit" && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(15,23,42,0.08)" }}>
                     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                       {[1000, 5000, 25000, 100000].map((v) => (
                         <button key={v} style={quickAmountBtn} onClick={() => setDepositAmount(String(v))}>
@@ -374,7 +375,7 @@ export default function ProfilePage() {
                         style={{
                           fontSize: 12,
                           marginBottom: 8,
-                          color: depositMsg.error ? "#fca5a5" : "#86efac",
+                          color: depositMsg.error ? "#DC2626" : "#16A34A",
                           fontWeight: 700,
                         }}
                       >
@@ -389,8 +390,8 @@ export default function ProfilePage() {
                         padding: "11px 0",
                         borderRadius: 12,
                         border: "1px solid rgba(245,215,110,0.4)",
-                        background: depositBusy ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
-                        color: depositBusy ? "white" : "#0a0f1a",
+                        background: depositBusy ? "rgba(15,23,42,0.04)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                        color: depositBusy ? "#0F172A" : "#0a0f1a",
                         fontWeight: 800,
                         fontSize: 13,
                         cursor: depositBusy ? "not-allowed" : "pointer",
@@ -403,7 +404,7 @@ export default function ProfilePage() {
                 )}
 
                 {walletPanel === "withdraw" && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(15,23,42,0.08)" }}>
                     <input
                       value={wdAmount}
                       onChange={(e) => setWdAmount(e.target.value.replace(/[^0-9]/g, ""))}
@@ -434,7 +435,7 @@ export default function ProfilePage() {
                         style={{
                           fontSize: 12,
                           marginBottom: 8,
-                          color: wdMsg.error ? "#fca5a5" : "#86efac",
+                          color: wdMsg.error ? "#DC2626" : "#16A34A",
                           fontWeight: 700,
                         }}
                       >
@@ -449,8 +450,8 @@ export default function ProfilePage() {
                         padding: "11px 0",
                         borderRadius: 12,
                         border: "1px solid rgba(245,215,110,0.4)",
-                        background: wdBusy ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
-                        color: wdBusy ? "white" : "#0a0f1a",
+                        background: wdBusy ? "rgba(15,23,42,0.04)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                        color: wdBusy ? "#0F172A" : "#0a0f1a",
                         fontWeight: 800,
                         fontSize: 13,
                         cursor: wdBusy ? "not-allowed" : "pointer",
@@ -492,9 +493,9 @@ export default function ProfilePage() {
                     height: 40,
                     padding: "0 12px",
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "white",
+                    background: "#FFFFFF",
+                    border: "1px solid rgba(15,23,42,0.14)",
+                    color: "#0F172A",
                     fontSize: 13,
                     outline: "none",
                     marginBottom: 8,
@@ -511,9 +512,9 @@ export default function ProfilePage() {
                     height: 40,
                     padding: "0 12px",
                     borderRadius: 12,
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "white",
+                    background: "#FFFFFF",
+                    border: "1px solid rgba(15,23,42,0.14)",
+                    color: "#0F172A",
                     fontSize: 13,
                     outline: "none",
                     marginBottom: 10,
@@ -525,7 +526,7 @@ export default function ProfilePage() {
                     style={{
                       fontSize: 12,
                       marginBottom: 10,
-                      color: pwMsg.error ? "#fca5a5" : "#86efac",
+                      color: pwMsg.error ? "#DC2626" : "#16A34A",
                       fontWeight: 700,
                     }}
                   >
@@ -540,8 +541,8 @@ export default function ProfilePage() {
                     padding: "11px 0",
                     borderRadius: 12,
                     border: "1px solid rgba(245,215,110,0.4)",
-                    background: pwSaving ? "rgba(255,255,255,0.06)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
-                    color: pwSaving ? "white" : "#0a0f1a",
+                    background: pwSaving ? "rgba(15,23,42,0.04)" : "linear-gradient(135deg, #e8d48a, #c9a227)",
+                    color: pwSaving ? "#0F172A" : "#0a0f1a",
                     fontWeight: 800,
                     fontSize: 13,
                     cursor: pwSaving ? "not-allowed" : "pointer",
