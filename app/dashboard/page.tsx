@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../components/AppShell";
-import MapViewV2 from "../components/map/MapViewV2";
+import { useMapHost } from "../components/map/MapHostContext";
 import { supabase } from "../../lib/supabaseClient";
 import { getCachedProperties, invalidatePropertiesCache } from "../../lib/propertiesCache";
 import { isVisibleOnExplorer } from "@/lib/propertyListing";
@@ -72,6 +72,7 @@ export default function DashboardPage() {
 function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { setMapProps } = useMapHost();
 
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -1334,6 +1335,75 @@ function DashboardPageInner() {
     return out;
   }, [filteredItems]);
 
+  // Harita artık kök seviyede kalıcı bir bileşende yaşıyor (bkz. MapHostContext) —
+  // sekmeler arası geçişte yeniden kurulmasın diye burada sadece güncel veri/callback'ler yayınlanır.
+  useEffect(() => {
+    setMapProps({
+      items: mapItemsForView,
+      onSelectPropertyId: (id: string) => {
+        const k = String(id).trim();
+        let found =
+          items.find((x) => samePropertyIdLoose(x.id, k)) ??
+          filteredItems.find((x) => samePropertyIdLoose(x.id, k)) ??
+          null;
+        if (!found) {
+          const ll = parseSyntheticLlId(k);
+          if (ll) {
+            found = findPropertyForMapSelection({
+              id: k,
+              propertyId: undefined,
+              title: "",
+              city: "",
+              district: null,
+              neighborhood: null,
+              latitude: ll.lat,
+              longitude: ll.lng,
+            });
+            if (!found) {
+              setSelected(
+                selectPropertyForPanel(
+                  propertyFromMapFallback({
+                    id: k,
+                    title: "Arsa",
+                    city: "—",
+                    district: null,
+                    neighborhood: null,
+                    latitude: ll.lat,
+                    longitude: ll.lng,
+                  }),
+                ),
+              );
+              return;
+            }
+          }
+        }
+        setSelected(selectPropertyForPanel(found));
+      },
+      onOpenInfo: () => undefined,
+      onPropertyClick: (p: MapItemPayload) => {
+        const found = findPropertyForMapSelection(p);
+        if (found) {
+          setSelected(selectPropertyForPanel(found));
+          setPanelOpen(false);
+          return;
+        }
+        const fromPayload = propertyFromMapItemPayload(p);
+        if (fromPayload) {
+          setSelected(fromPayload);
+          setPanelOpen(false);
+          return;
+        }
+        setSelected(selectPropertyForPanel(propertyFromMapFallback(p)));
+        setPanelOpen(false);
+      },
+      onOpenPropertyPanel: () => {
+        setPanelOpen(false);
+      },
+    });
+    // Unmount'ta (başka sekmeye geçişte) mapProps'u temizlemiyoruz — harita görünmez
+    // olur ama son durumuyla bellekte/DOM'da kalır, geri dönüşte anında hazır olsun diye.
+  }, [mapItemsForView, items, filteredItems, setMapProps]);
+
   const visibleItems = useMemo(() => {
     let arr = [...filteredItems];
     if (city) arr = arr.filter((x) => x.city === city);
@@ -1850,71 +1920,6 @@ function DashboardPageInner() {
             <span style={{ opacity: 0.92, fontSize: 14 }}>⟫</span>
           </button>
         )}
-
-        <div style={{ position: "absolute", left: 0, right: 0, top: headerH, bottom: 0 }}>
-          <MapViewV2
-            items={mapItemsForView}
-            onSelectPropertyId={(id: string) => {
-              const k = String(id).trim();
-              let found =
-                items.find((x) => samePropertyIdLoose(x.id, k)) ??
-                filteredItems.find((x) => samePropertyIdLoose(x.id, k)) ??
-                null;
-              if (!found) {
-                const ll = parseSyntheticLlId(k);
-                if (ll) {
-                  found = findPropertyForMapSelection({
-                    id: k,
-                    propertyId: undefined,
-                    title: "",
-                    city: "",
-                    district: null,
-                    neighborhood: null,
-                    latitude: ll.lat,
-                    longitude: ll.lng,
-                  });
-                  if (!found) {
-                    setSelected(
-                      selectPropertyForPanel(
-                        propertyFromMapFallback({
-                          id: k,
-                          title: "Arsa",
-                          city: "—",
-                          district: null,
-                          neighborhood: null,
-                          latitude: ll.lat,
-                          longitude: ll.lng,
-                        }),
-                      ),
-                    );
-                    return;
-                  }
-                }
-              }
-              setSelected(selectPropertyForPanel(found));
-            }}
-            onOpenInfo={() => undefined}
-            onPropertyClick={(p: MapItemPayload) => {
-              const found = findPropertyForMapSelection(p);
-              if (found) {
-                setSelected(selectPropertyForPanel(found));
-                setPanelOpen(false);
-                return;
-              }
-              const fromPayload = propertyFromMapItemPayload(p);
-              if (fromPayload) {
-                setSelected(fromPayload);
-                setPanelOpen(false);
-                return;
-              }
-              setSelected(selectPropertyForPanel(propertyFromMapFallback(p)));
-              setPanelOpen(false);
-            }}
-            onOpenPropertyPanel={() => {
-              setPanelOpen(false);
-            }}
-          />
-        </div>
 
         {selected && (
           <>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
+import { MapHostProvider } from "@/app/components/map/MapHostContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -53,7 +54,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <I18nProvider>{children}</I18nProvider>
+        <I18nProvider>
+          <MapHostProvider>{children}</MapHostProvider>
+        </I18nProvider>
       </body>
     </html>
   );
