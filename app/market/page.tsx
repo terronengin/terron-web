@@ -323,7 +323,7 @@ export default function MarketPage() {
                             cursor: "pointer",
                           }}
                         >
-                          Detayları Gör / Satın Al
+                          Satın Al →
                         </button>
                       </div>
                     )}
