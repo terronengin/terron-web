@@ -2,8 +2,8 @@ import { supabase } from "./supabaseClient";
 
 /** Cüzdanı getirir, yoksa varsayılan bakiyeyle oluşturur. TopBar ve Profil sayfası ortak kullanır. */
 export async function ensureAndLoadWallet(): Promise<number | null> {
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes?.user;
+  const { data: sessionRes } = await supabase.auth.getSession();
+  const user = sessionRes.session?.user;
   if (!user) return null;
 
   const { data: w, error: wErr } = await supabase
