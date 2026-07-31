@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../components/AppShell";
 import MapViewV2 from "../components/map/MapViewV2";
@@ -62,6 +62,14 @@ type FetchClientPaginatedResult = {
 };
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageInner />
+    </Suspense>
+  );
+}
+
+function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
