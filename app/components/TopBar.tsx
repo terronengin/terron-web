@@ -59,7 +59,7 @@ export function TopBar() {
         display: "flex",
         alignItems: "center",
         gap: 10,
-        padding: "9px 14px",
+        padding: "calc(9px + env(safe-area-inset-top, 0px)) 14px 9px",
         background: "rgba(255,255,255,0.92)",
         borderBottom: "1px solid rgba(15,23,42,0.08)",
         backdropFilter: "blur(12px)",
