@@ -6,6 +6,8 @@ import { isAdminEmail } from "@/lib/admin/isAdmin";
 import { supabase } from "@/lib/supabaseClient";
 import { ensureAndLoadWallet, formatTRY } from "@/lib/wallet";
 import { AppShell } from "../components/AppShell";
+import { useI18n } from "@/lib/i18n/I18nProvider";
+import { LOCALES } from "@/lib/i18n/locales";
 
 type ProfileInfo = {
   email: string;
@@ -91,6 +93,7 @@ function NavRow({ label, onClick, danger }: { label: string; onClick: () => void
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { t, locale, setLocale } = useI18n();
   const [info, setInfo] = useState<ProfileInfo | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -139,11 +142,11 @@ export default function ProfilePage() {
   async function changePassword() {
     setPwMsg(null);
     if (newPassword.length < 6) {
-      setPwMsg({ text: "Şifre en az 6 karakter olmalı.", error: true });
+      setPwMsg({ text: t("profile.msg.passwordTooShort"), error: true });
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPwMsg({ text: "Şifreler eşleşmiyor.", error: true });
+      setPwMsg({ text: t("profile.msg.passwordMismatch"), error: true });
       return;
     }
     setPwSaving(true);
@@ -153,7 +156,7 @@ export default function ProfilePage() {
         setPwMsg({ text: error.message, error: true });
         return;
       }
-      setPwMsg({ text: "Şifreniz güncellendi." });
+      setPwMsg({ text: t("profile.msg.passwordUpdated") });
       setNewPassword("");
       setConfirmPassword("");
     } finally {
@@ -170,14 +173,14 @@ export default function ProfilePage() {
     setDepositMsg(null);
     const amount = Math.round(Number(depositAmount));
     if (!Number.isFinite(amount) || amount <= 0) {
-      setDepositMsg({ text: "Geçerli bir tutar girin.", error: true });
+      setDepositMsg({ text: t("profile.msg.invalidAmount"), error: true });
       return;
     }
     setDepositBusy(true);
     try {
       const token = await authToken();
       if (!token) {
-        setDepositMsg({ text: "Oturum süresi dolmuş olabilir.", error: true });
+        setDepositMsg({ text: t("profile.msg.sessionExpired"), error: true });
         return;
       }
       const res = await fetch("/api/wallet/deposit", {
@@ -187,12 +190,12 @@ export default function ProfilePage() {
       });
       const json = (await res.json()) as { ok?: boolean; error?: string; balance?: number };
       if (!res.ok || !json.ok) {
-        setDepositMsg({ text: json.error ?? "Yatırma tamamlanamadı.", error: true });
+        setDepositMsg({ text: json.error ?? t("profile.msg.depositFailed"), error: true });
         return;
       }
       setWalletBalance(json.balance ?? null);
       setDepositAmount("");
-      setDepositMsg({ text: `₺${formatTRY(amount)} bakiyenize eklendi.` });
+      setDepositMsg({ text: t("profile.msg.depositSuccess", { amount: formatTRY(amount) }) });
     } finally {
       setDepositBusy(false);
     }
@@ -202,22 +205,22 @@ export default function ProfilePage() {
     setWdMsg(null);
     const amount = Math.round(Number(wdAmount));
     if (!Number.isFinite(amount) || amount <= 0) {
-      setWdMsg({ text: "Geçerli bir tutar girin.", error: true });
+      setWdMsg({ text: t("profile.msg.invalidAmount"), error: true });
       return;
     }
     if (walletBalance != null && amount > walletBalance) {
-      setWdMsg({ text: "Bakiyenizden fazla tutar talep edemezsiniz.", error: true });
+      setWdMsg({ text: t("profile.msg.overBalance"), error: true });
       return;
     }
     if (!wdBankName.trim() || !wdHolderName.trim() || !wdIban.trim()) {
-      setWdMsg({ text: "Banka adı, hesap sahibi ve IBAN gerekli.", error: true });
+      setWdMsg({ text: t("profile.msg.bankInfoRequired"), error: true });
       return;
     }
     setWdBusy(true);
     try {
       const token = await authToken();
       if (!token) {
-        setWdMsg({ text: "Oturum süresi dolmuş olabilir.", error: true });
+        setWdMsg({ text: t("profile.msg.sessionExpired"), error: true });
         return;
       }
       const res = await fetch("/api/wallet/withdraw", {
@@ -232,13 +235,13 @@ export default function ProfilePage() {
       });
       const json = (await res.json()) as { ok?: boolean; error?: string; balance?: number };
       if (!res.ok || !json.ok) {
-        setWdMsg({ text: json.error ?? "Çekme talebi oluşturulamadı.", error: true });
+        setWdMsg({ text: json.error ?? t("profile.msg.withdrawFailed"), error: true });
         return;
       }
       setWalletBalance(json.balance ?? null);
       setWdAmount("");
       setWdIban("");
-      setWdMsg({ text: "Talebiniz alındı, en kısa sürede işleme alınacak." });
+      setWdMsg({ text: t("profile.msg.withdrawSuccess") });
     } finally {
       setWdBusy(false);
     }
@@ -252,11 +255,11 @@ export default function ProfilePage() {
     <AppShell>
       <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#FFFFFF", color: "#0F172A" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "18px 14px 40px" }}>
-          <h1 style={{ margin: "0 0 16px", fontSize: 19, fontWeight: 800 }}>Profil</h1>
+          <h1 style={{ margin: "0 0 16px", fontSize: 19, fontWeight: 800 }}>{t("profile.title")}</h1>
 
           {!info ? (
             <div style={{ ...card, textAlign: "center", padding: 30 }}>
-              <p style={{ margin: "0 0 16px", fontSize: 13, opacity: 0.8 }}>Bilgilerinizi görmek için giriş yapın.</p>
+              <p style={{ margin: "0 0 16px", fontSize: 13, opacity: 0.8 }}>{t("profile.loginPrompt")}</p>
               <button
                 onClick={() => router.push("/login")}
                 style={{
@@ -269,7 +272,7 @@ export default function ProfilePage() {
                   cursor: "pointer",
                 }}
               >
-                Giriş Yap
+                {t("profile.loginButton")}
               </button>
             </div>
           ) : (
@@ -298,20 +301,19 @@ export default function ProfilePage() {
                   )}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800 }}>{info.displayName || "Kullanıcı"}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{info.displayName || t("profile.defaultUser")}</div>
                   <div style={{ fontSize: 12.5, opacity: 0.6, marginTop: 2 }}>{info.email}</div>
                 </div>
               </div>
 
               {/* Cüzdan */}
               <div style={{ ...card, marginBottom: 14 }}>
-                <div style={rowLabel}>CÜZDAN BAKİYESİ</div>
+                <div style={rowLabel}>{t("profile.walletBalance")}</div>
                 <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6, color: "#B8860B" }}>
                   {walletBalance != null ? `₺${formatTRY(walletBalance)}` : "—"}
                 </div>
                 <p style={{ margin: "8px 0 14px", fontSize: 11.5, opacity: 0.55, lineHeight: 1.5 }}>
-                  Bu bakiye platform içi simülasyon amaçlıdır; gerçek banka hesabınızdan para çekme/yatırma işlemi
-                  yapılmaz.
+                  {t("profile.walletDisclaimer")}
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
@@ -331,7 +333,7 @@ export default function ProfilePage() {
                       cursor: "pointer",
                     }}
                   >
-                    Para Yatır
+                    {t("profile.deposit")}
                   </button>
                   <button
                     onClick={() => setWalletPanel(walletPanel === "withdraw" ? "none" : "withdraw")}
@@ -350,7 +352,7 @@ export default function ProfilePage() {
                       cursor: "pointer",
                     }}
                   >
-                    Para Çek
+                    {t("profile.withdraw")}
                   </button>
                 </div>
 
@@ -366,7 +368,7 @@ export default function ProfilePage() {
                     <input
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(e.target.value.replace(/[^0-9]/g, ""))}
-                      placeholder="Tutar (₺)"
+                      placeholder={t("profile.amountPlaceholder")}
                       inputMode="numeric"
                       style={fieldInput}
                     />
@@ -398,7 +400,7 @@ export default function ProfilePage() {
                         opacity: depositBusy ? 0.6 : 1,
                       }}
                     >
-                      {depositBusy ? "İşleniyor…" : "Yatır"}
+                      {depositBusy ? t("profile.processing") : t("profile.depositSubmit")}
                     </button>
                   </div>
                 )}
@@ -408,26 +410,26 @@ export default function ProfilePage() {
                     <input
                       value={wdAmount}
                       onChange={(e) => setWdAmount(e.target.value.replace(/[^0-9]/g, ""))}
-                      placeholder="Çekilecek tutar (₺)"
+                      placeholder={t("profile.withdrawAmountPlaceholder")}
                       inputMode="numeric"
                       style={fieldInput}
                     />
                     <input
                       value={wdBankName}
                       onChange={(e) => setWdBankName(e.target.value)}
-                      placeholder="Banka adı"
+                      placeholder={t("profile.bankNamePlaceholder")}
                       style={fieldInput}
                     />
                     <input
                       value={wdHolderName}
                       onChange={(e) => setWdHolderName(e.target.value)}
-                      placeholder="Hesap sahibinin adı soyadı"
+                      placeholder={t("profile.accountHolderPlaceholder")}
                       style={fieldInput}
                     />
                     <input
                       value={wdIban}
                       onChange={(e) => setWdIban(e.target.value.toUpperCase())}
-                      placeholder="TR__ ____ ____ ____ ____ ____ __"
+                      placeholder={t("profile.ibanPlaceholder")}
                       style={fieldInput}
                     />
                     {wdMsg ? (
@@ -458,7 +460,7 @@ export default function ProfilePage() {
                         opacity: wdBusy ? 0.6 : 1,
                       }}
                     >
-                      {wdBusy ? "İşleniyor…" : "Çekim Talebi Oluştur"}
+                      {wdBusy ? t("profile.processing") : t("profile.withdrawSubmit")}
                     </button>
                   </div>
                 )}
@@ -466,28 +468,53 @@ export default function ProfilePage() {
 
               {/* Kişisel bilgiler */}
               <div style={{ ...card, marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4, opacity: 0.85 }}>Kişisel Bilgiler</div>
-                <InfoRow label="AD SOYAD" value={info.displayName} />
-                <InfoRow label="E-POSTA" value={info.email} />
-                <InfoRow label="ŞEHİR" value={info.city} />
-                <InfoRow label="İLÇE" value={info.district} />
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4, opacity: 0.85 }}>{t("profile.personalInfo")}</div>
+                <InfoRow label={t("profile.fullName")} value={info.displayName} />
+                <InfoRow label={t("profile.email")} value={info.email} />
+                <InfoRow label={t("profile.city")} value={info.city} />
+                <InfoRow label={t("profile.district")} value={info.district} />
+              </div>
+
+              {/* Dil */}
+              <div style={{ ...card, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, opacity: 0.85 }}>{t("profile.languageSection")}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {LOCALES.map((l) => (
+                    <button
+                      key={l.code}
+                      onClick={() => setLocale(l.code)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: locale === l.code ? "1px solid rgba(245,215,110,0.5)" : "1px solid rgba(15,23,42,0.12)",
+                        background: locale === l.code ? "rgba(245,215,110,0.12)" : "rgba(15,23,42,0.02)",
+                        color: "#0F172A",
+                        fontSize: 12.5,
+                        fontWeight: locale === l.code ? 800 : 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {l.nativeLabel}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Hesap bilgileri */}
               <div style={{ ...card, marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4, opacity: 0.85 }}>Hesap Bilgileri</div>
-                <InfoRow label="ÜYELİK TARİHİ" value={memberSince} />
-                <InfoRow label="E-POSTA DOĞRULAMA" value={info.emailConfirmed ? "Doğrulanmış" : "Doğrulanmamış"} />
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4, opacity: 0.85 }}>{t("profile.accountInfo")}</div>
+                <InfoRow label={t("profile.memberSince")} value={memberSince} />
+                <InfoRow label={t("profile.emailVerification")} value={info.emailConfirmed ? t("profile.verified") : t("profile.notVerified")} />
               </div>
 
               {/* Şifre değiştir */}
               <div style={{ ...card, marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, opacity: 0.85 }}>Şifre Değiştir</div>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, opacity: 0.85 }}>{t("profile.changePassword")}</div>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Yeni şifre"
+                  placeholder={t("profile.newPasswordPlaceholder")}
                   style={{
                     width: "100%",
                     height: 40,
@@ -506,7 +533,7 @@ export default function ProfilePage() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Yeni şifre (tekrar)"
+                  placeholder={t("profile.confirmPasswordPlaceholder")}
                   style={{
                     width: "100%",
                     height: 40,
@@ -549,17 +576,17 @@ export default function ProfilePage() {
                     opacity: pwSaving ? 0.6 : 1,
                   }}
                 >
-                  {pwSaving ? "Güncelleniyor…" : "Şifreyi Güncelle"}
+                  {pwSaving ? t("profile.updating") : t("profile.updatePassword")}
                 </button>
               </div>
 
               {/* Diğer işlemler */}
               <div style={card}>
-                <NavRow label="Talep Süreci" onClick={() => router.push("/inquiries")} />
-                <NavRow label="İlan Ver" onClick={() => router.push("/submit-property")} />
-                {isAdminEmail(info.email) ? <NavRow label="Admin Paneli" onClick={() => router.push("/admin")} /> : null}
+                <NavRow label={t("profile.requests")} onClick={() => router.push("/inquiries")} />
+                <NavRow label={t("profile.listProperty")} onClick={() => router.push("/submit-property")} />
+                {isAdminEmail(info.email) ? <NavRow label={t("profile.adminPanel")} onClick={() => router.push("/admin")} /> : null}
                 <div style={{ marginTop: 6 }}>
-                  <NavRow label="Çıkış Yap" onClick={logout} danger />
+                  <NavRow label={t("profile.logout")} onClick={logout} danger />
                 </div>
               </div>
             </>

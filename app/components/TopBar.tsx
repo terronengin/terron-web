@@ -4,10 +4,12 @@ import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { ensureAndLoadWallet, formatTRY } from "../../lib/wallet";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -92,7 +94,7 @@ export function TopBar() {
           flexShrink: 0,
           fontVariantNumeric: "tabular-nums",
         }}
-        title="Cüzdan bakiyesi"
+        title={t("topbar.walletTooltip")}
       >
         {walletBalance != null ? `₺${formatTRY(walletBalance)}` : "—"}
       </div>
@@ -114,7 +116,7 @@ export function TopBar() {
           cursor: "pointer",
           padding: 0,
         }}
-        title="Profil"
+        title={t("topbar.profileTooltip")}
       >
         {avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element

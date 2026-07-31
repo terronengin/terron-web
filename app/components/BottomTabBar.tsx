@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import React from "react";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 type TabKey = "anasayfa" | "market" | "ekle" | "portfoy" | "profil";
 
@@ -137,13 +138,13 @@ function TabButton({
   );
 }
 
-function AddFab({ onClick }: { onClick: () => void }) {
+function AddFab({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <div style={{ flex: 1, display: "flex", justifyContent: "center", position: "relative" }}>
       <button
         onClick={onClick}
-        aria-label="İlan Ver"
-        title="İlan Ver"
+        aria-label={label}
+        title={label}
         style={{
           position: "absolute",
           top: -12,
@@ -167,6 +168,7 @@ function AddFab({ onClick }: { onClick: () => void }) {
 export function BottomTabBar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
 
   const activeKey: TabKey | "" =
     pathname?.startsWith("/dashboard") ? "anasayfa" :
@@ -193,11 +195,11 @@ export function BottomTabBar() {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <TabButton active={activeKey === "anasayfa"} Icon={HomeIcon} label="Anasayfa" onClick={() => go("/dashboard")} />
-      <TabButton active={activeKey === "market"} Icon={TagIcon} label="Market" onClick={() => go("/market")} />
-      <AddFab onClick={() => go("/submit-property")} />
-      <TabButton active={activeKey === "portfoy"} Icon={BriefcaseIcon} label="Portföy" onClick={() => go("/portfolio")} />
-      <TabButton active={activeKey === "profil"} Icon={UserIcon} label="Profil" onClick={() => go("/profile")} />
+      <TabButton active={activeKey === "anasayfa"} Icon={HomeIcon} label={t("nav.home")} onClick={() => go("/dashboard")} />
+      <TabButton active={activeKey === "market"} Icon={TagIcon} label={t("nav.market")} onClick={() => go("/market")} />
+      <AddFab label={t("nav.add")} onClick={() => go("/submit-property")} />
+      <TabButton active={activeKey === "portfoy"} Icon={BriefcaseIcon} label={t("nav.portfolio")} onClick={() => go("/portfolio")} />
+      <TabButton active={activeKey === "profil"} Icon={UserIcon} label={t("nav.profile")} onClick={() => go("/profile")} />
     </div>
   );
 }
