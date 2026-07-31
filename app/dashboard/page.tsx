@@ -1582,7 +1582,7 @@ function DashboardPageInner() {
 
   return (
     <AppShell>
-    <div style={{ position: "absolute", inset: 0, background: "#070B14", color: "white" }}>
+    <div style={{ position: "absolute", inset: 0, color: "white" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
