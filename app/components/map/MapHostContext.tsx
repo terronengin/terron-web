@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import MapViewV2 from "./MapViewV2";
 import type { MapViewProps } from "./map.types";
 
@@ -43,6 +43,19 @@ function PersistentMapHost({
 }) {
   const pathname = usePathname();
   const isDashboard = pathname === "/dashboard";
+  const wasDashboard = useRef(isDashboard);
+
+  useEffect(() => {
+    // visibility:hidden can make some browsers (notably mobile Safari) stop
+    // compositing/updating the WebGL canvas entirely while hidden, so coming
+    // back to Anasayfa could show a frozen/blank map. opacity:0 keeps it
+    // actively composited; this nudges mapbox-gl's own window "resize"
+    // listener to force a fresh repaint the moment the tab becomes visible.
+    if (isDashboard && !wasDashboard.current) {
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    }
+    wasDashboard.current = isDashboard;
+  }, [isDashboard]);
 
   return (
     <div
@@ -53,7 +66,7 @@ function PersistentMapHost({
         top: chromeInsets.top,
         bottom: chromeInsets.bottom,
         zIndex: 0,
-        visibility: isDashboard ? "visible" : "hidden",
+        opacity: isDashboard ? 1 : 0,
         pointerEvents: isDashboard ? "auto" : "none",
       }}
     >
