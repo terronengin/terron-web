@@ -206,30 +206,38 @@ export function validateRealCoordsAgainstParents(
   const districtNode = ix.districtsByKey[dk];
   const neighborhoodNode = ix.neighborhoodsByKey[nk];
 
+  const isDev = process.env.NODE_ENV === "development";
+
   const polyOk =
     districtPoly &&
     (districtPoly.geometry.type === "Polygon" || districtPoly.geometry.type === "MultiPolygon");
   if (polyOk) {
     if (!booleanPointInPolygon(pt, districtPoly)) {
-      console.log(
-        `[coords] real coordinate outside parent bounds: id=${pid} city=${item.city} district=${item.district ?? ""} — outside district polygon (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
-      );
+      if (isDev) {
+        console.log(
+          `[coords] real coordinate outside parent bounds: id=${pid} city=${item.city} district=${item.district ?? ""} — outside district polygon (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
+        );
+      }
       return false;
     }
   }
 
   if (neighborhoodNode?.bounds && isValidBounds(neighborhoodNode.bounds)) {
     if (!pointInBoundsH(neighborhoodNode.bounds, c.lng, c.lat)) {
-      console.log(
-        `[coords] real coordinate outside parent bounds: id=${pid} — outside neighborhood bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
-      );
+      if (isDev) {
+        console.log(
+          `[coords] real coordinate outside parent bounds: id=${pid} — outside neighborhood bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
+        );
+      }
       return false;
     }
   } else if (districtNode?.bounds && isValidBounds(districtNode.bounds)) {
     if (!pointInBoundsH(districtNode.bounds, c.lng, c.lat)) {
-      console.log(
-        `[coords] real coordinate outside parent bounds: id=${pid} — outside district bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
-      );
+      if (isDev) {
+        console.log(
+          `[coords] real coordinate outside parent bounds: id=${pid} — outside district bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
+        );
+      }
       return false;
     }
   } else {
@@ -237,9 +245,11 @@ export function validateRealCoordsAgainstParents(
     const cityNode = ix.citiesByKey[ck];
     if (cityNode?.bounds && isValidBounds(cityNode.bounds)) {
       if (!pointInBoundsH(cityNode.bounds, c.lng, c.lat)) {
-        console.log(
-          `[coords] real coordinate outside parent bounds: id=${pid} — outside city bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
-        );
+        if (isDev) {
+          console.log(
+            `[coords] real coordinate outside parent bounds: id=${pid} — outside city bounds (${c.lng.toFixed(5)}, ${c.lat.toFixed(5)})`
+          );
+        }
         return false;
       }
     }
