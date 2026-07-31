@@ -748,7 +748,7 @@ export default function MapView(props: MapViewProps) {
 
   if (!MAPBOX_TOKEN) {
     return (
-      <div style={{ padding: 16, color: "#0F172A" }}>
+      <div style={{ padding: 16, color: "white" }}>
         MAPBOX TOKEN yok: <code>NEXT_PUBLIC_MAPBOX_TOKEN</code>
       </div>
     );
@@ -769,7 +769,7 @@ export default function MapView(props: MapViewProps) {
           mapRef.current = r;
         }}
         mapboxAccessToken={MAPBOX_TOKEN}
-        mapStyle="mapbox://styles/mapbox/light-v11"
+        mapStyle="mapbox://styles/mapbox/dark-v11"
         initialViewState={{ longitude: MAP_CENTER_LNG, latitude: MAP_CENTER_LAT, zoom: MAP_ZOOM }}
         minZoom={3}
         maxZoom={17}

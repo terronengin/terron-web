@@ -52,8 +52,8 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
             "fill-color": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
-              "rgba(184,134,11,0.28)",
-              "rgba(184,134,11,0.14)",
+              "rgba(245,215,110,0.30)",
+              "rgba(245,215,110,0.15)",
             ],
             "fill-opacity": 1,
           }}
@@ -62,7 +62,7 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
           id={L_PARCEL_SHAPE_GLOW}
           type="line"
           paint={{
-            "line-color": "rgba(184,134,11,0.4)",
+            "line-color": "rgba(245,215,110,0.55)",
             "line-width": 3,
             "line-blur": 1.4,
             "line-opacity": 1,
@@ -75,8 +75,8 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
             "line-color": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
-              "rgba(138,106,10,0.95)",
-              "rgba(184,134,11,0.9)",
+              "rgba(255,240,180,0.95)",
+              "rgba(245,215,110,0.9)",
             ],
             "line-width": [
               "case",
@@ -98,7 +98,7 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
           id={L_FOCUS_FILL}
           type="fill"
           paint={{
-            "fill-color": "rgba(184,134,11,0.06)",
+            "fill-color": "rgba(245,215,110,0.06)",
             "fill-opacity": 0.18,
           }}
         />
@@ -106,7 +106,7 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
           id={L_FOCUS_GLOW}
           type="line"
           paint={{
-            "line-color": "rgba(184,134,11,0.55)",
+            "line-color": "rgba(245,215,110,0.75)",
             "line-width": 6,
             "line-blur": 2,
             "line-opacity": 1,
@@ -116,7 +116,7 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
           id={L_FOCUS_OUT}
           type="line"
           paint={{
-            "line-color": "rgba(138,106,10,0.9)",
+            "line-color": "rgba(255,240,180,0.9)",
             "line-width": 1.6,
             "line-opacity": 1,
           }}
