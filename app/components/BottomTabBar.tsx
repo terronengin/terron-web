@@ -119,7 +119,7 @@ function TabButton({
         background: "transparent",
         border: "none",
         cursor: "pointer",
-        color: active ? "#B8860B" : "rgba(15,23,42,0.55)",
+        color: active ? "#F5D76E" : "rgba(255,255,255,0.55)",
       }}
     >
       <Icon size={22} active={active} />
@@ -130,7 +130,7 @@ function TabButton({
           width: active ? 16 : 0,
           height: 2.5,
           borderRadius: 2,
-          background: "#C9A227",
+          background: "#F5D76E",
           transition: "width 0.18s ease",
         }}
       />
@@ -152,8 +152,8 @@ function AddFab({ onClick, label }: { onClick: () => void; label: string }) {
           height: 38,
           borderRadius: 13,
           background: "linear-gradient(135deg, #C9A227, #F5D76E, #B8860B)",
-          border: "2.5px solid #FFFFFF",
-          boxShadow: "0 6px 16px rgba(184,134,11,0.35)",
+          border: "2.5px solid #070B14",
+          boxShadow: "0 6px 16px rgba(212,175,55,0.4)",
           display: "grid",
           placeItems: "center",
           cursor: "pointer",
@@ -189,8 +189,8 @@ export function BottomTabBar() {
         zIndex: 30,
         display: "flex",
         alignItems: "stretch",
-        background: "rgba(255,255,255,0.96)",
-        borderTop: "1px solid rgba(15,23,42,0.08)",
+        background: "rgba(10,14,24,0.97)",
+        borderTop: "1px solid rgba(255,255,255,0.08)",
         backdropFilter: "blur(14px)",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}

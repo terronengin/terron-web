@@ -4,8 +4,8 @@ import React, { useMemo } from "react";
 import type { Candle } from "@/lib/candlestick";
 import { computeRSI, computeSMA } from "@/lib/candlestick";
 
-const GREEN = "#16A34A";
-const RED = "#DC2626";
+const GREEN = "#86efac";
+const RED = "#fca5a5";
 const SMA_COLOR = "#8B5CF6";
 const RSI_COLOR = "#D97706";
 
@@ -96,8 +96,8 @@ export function CandlestickChart({ candles, height = 220 }: { candles: Candle[];
       {/* Fiyat izgarası */}
       {priceLabels.map((pl, i) => (
         <g key={i}>
-          <line x1={0} y1={pl.y} x2={plotW} y2={pl.y} stroke="rgba(15,23,42,0.06)" strokeWidth={1} />
-          <text x={plotW + 6} y={pl.y + 3} fontSize={8.5} fill="rgba(15,23,42,0.45)">
+          <line x1={0} y1={pl.y} x2={plotW} y2={pl.y} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+          <text x={plotW + 6} y={pl.y + 3} fontSize={8.5} fill="rgba(255,255,255,0.45)">
             {formatAxisPrice(pl.v)}
           </text>
         </g>
@@ -127,7 +127,7 @@ export function CandlestickChart({ candles, height = 220 }: { candles: Candle[];
 
       {/* RSI paneli */}
       <g transform={`translate(0, ${mainH + gap})`}>
-        <text x={0} y={9} fontSize={8.5} fontWeight={800} fill="rgba(15,23,42,0.5)">
+        <text x={0} y={9} fontSize={8.5} fontWeight={800} fill="rgba(255,255,255,0.5)">
           RSI (14)
         </text>
         <line
@@ -135,7 +135,7 @@ export function CandlestickChart({ candles, height = 220 }: { candles: Candle[];
           y1={padTop + (rsiH - padTop) * 0.3}
           x2={plotW}
           y2={padTop + (rsiH - padTop) * 0.3}
-          stroke="rgba(15,23,42,0.08)"
+          stroke="rgba(255,255,255,0.08)"
           strokeDasharray="2,2"
         />
         <line
@@ -143,7 +143,7 @@ export function CandlestickChart({ candles, height = 220 }: { candles: Candle[];
           y1={padTop + (rsiH - padTop) * 0.7}
           x2={plotW}
           y2={padTop + (rsiH - padTop) * 0.7}
-          stroke="rgba(15,23,42,0.08)"
+          stroke="rgba(255,255,255,0.08)"
           strokeDasharray="2,2"
         />
         <path d={rsiPath} fill="none" stroke={RSI_COLOR} strokeWidth={1.3} vectorEffect="non-scaling-stroke" />

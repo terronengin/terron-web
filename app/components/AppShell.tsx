@@ -16,8 +16,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         inset: 0,
         display: "flex",
         flexDirection: "column",
-        background: "#F5F6F8",
-        color: "#0F172A",
+        background: "#070B14",
+        color: "white",
       }}
     >
       <TopBar />

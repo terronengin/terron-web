@@ -291,8 +291,8 @@ function DashboardPageInner() {
   }
 
   async function ensureAndLoadWallet() {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
+    const { data: sessionRes } = await supabase.auth.getSession();
+    const user = sessionRes.session?.user;
     if (!user) return;
     const { data: w, error: wErr } = await supabase
       .from("wallets")
@@ -1512,7 +1512,7 @@ function DashboardPageInner() {
 
   return (
     <AppShell>
-    <div style={{ position: "absolute", inset: 0, background: "#F1F2F5", color: "#0F172A" }}>
+    <div style={{ position: "absolute", inset: 0, background: "#070B14", color: "white" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -1540,7 +1540,7 @@ function DashboardPageInner() {
           transform: panelOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform 220ms ease",
           background: "rgba(8,12,22,0.96)",
-          borderRight: "1px solid rgba(15,23,42,0.10)",
+          borderRight: "1px solid rgba(255,255,255,0.10)",
           padding: 16,
           overflowY: "auto",
           backdropFilter: "blur(10px)",
@@ -1568,9 +1568,9 @@ function DashboardPageInner() {
               height: 40,
               padding: "0 12px 0 36px",
               borderRadius: 14,
-              background: "rgba(15,23,42,0.06)",
-              border: "1px solid rgba(15,23,42,0.12)",
-              color: "#0F172A",
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              color: "white",
               outline: "none",
               fontSize: 13,
               boxSizing: "border-box",
@@ -1583,8 +1583,8 @@ function DashboardPageInner() {
             marginTop: 14,
             padding: 14,
             borderRadius: 16,
-            background: "rgba(15,23,42,0.05)",
-            border: "1px solid rgba(15,23,42,0.10)",
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.10)",
           }}
         >
           <div style={{ fontSize: 11, opacity: 0.75 }}>Bölge Özeti</div>
@@ -1780,12 +1780,12 @@ function DashboardPageInner() {
                   textAlign: "left",
                   padding: 12,
                   borderRadius: 14,
-                  background: selected?.id === p.id ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.04)",
+                  background: selected?.id === p.id ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
                   border:
                     selected?.id === p.id
-                      ? "1px solid rgba(15,23,42,0.18)"
-                      : "1px solid rgba(15,23,42,0.08)",
-                  color: "#0F172A",
+                      ? "1px solid rgba(255,255,255,0.18)"
+                      : "1px solid rgba(255,255,255,0.08)",
+                  color: "white",
                   cursor: "pointer",
                 }}
               >
@@ -1836,7 +1836,7 @@ function DashboardPageInner() {
               borderTopRightRadius: 16,
               borderBottomRightRadius: 16,
               background: "rgba(255,255,255,0.75)",
-              border: "1px solid rgba(15,23,42,0.12)",
+              border: "1px solid rgba(255,255,255,0.12)",
               borderLeft: "none",
               cursor: "pointer",
               display: "flex",
@@ -1941,9 +1941,9 @@ function DashboardPageInner() {
                 display: "flex",
                 flexDirection: "column",
                 overflow: "hidden",
-                boxShadow: "0 18px 55px rgba(15,23,42,0.16)",
+                boxShadow: "0 18px 55px rgba(255,255,255,0.16)",
                 background: "rgba(255,255,255,0.96)",
-                border: "1px solid rgba(15,23,42,0.1)",
+                border: "1px solid rgba(255,255,255,0.1)",
                 backdropFilter: "blur(14px)",
                 ...(isMobile
                   ? {
@@ -1973,7 +1973,7 @@ function DashboardPageInner() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "0 10px",
-                  borderBottom: "1px solid rgba(15,23,42,0.10)",
+                  borderBottom: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
                 <div style={{ fontSize: 11, opacity: 0.88, fontWeight: 900, letterSpacing: 0.4 }}>
@@ -2006,7 +2006,7 @@ function DashboardPageInner() {
                     flexDirection: "column",
                     gap: 6,
                     paddingBottom: 8,
-                    borderBottom: "1px solid rgba(15,23,42,0.06)",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
                   }}
                 >
                   {showListedProperty(selected) ? (
@@ -2122,8 +2122,8 @@ function DashboardPageInner() {
                       style={{
                         padding: "6px 6px",
                         borderRadius: 10,
-                        background: "rgba(15,23,42,0.04)",
-                        border: "1px solid rgba(15,23,42,0.08)",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
                       }}
                     >
                       <div style={{ fontSize: 9, opacity: 0.62, fontWeight: 700, letterSpacing: 0.2 }}>{label}</div>
@@ -2149,7 +2149,7 @@ function DashboardPageInner() {
                       marginTop: 8,
                       padding: "8px 8px",
                       borderRadius: 12,
-                      background: "rgba(201,162,39,0.07)",
+                      background: "rgba(245,215,110,0.07)",
                       border: "1px solid rgba(245,215,110,0.22)",
                     }}
                   >
@@ -2186,8 +2186,8 @@ function DashboardPageInner() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(15,23,42,0.04)",
-                    border: "1px solid rgba(15,23,42,0.10)",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                     maxHeight: "min(200px, 30vh)",
                     overflowY: "auto",
                   }}
@@ -2201,7 +2201,7 @@ function DashboardPageInner() {
                             lineHeight: 1.45,
                             padding: 8,
                             borderRadius: 10,
-                            background: "rgba(201,162,39,0.08)",
+                            background: "rgba(245,215,110,0.08)",
                             border: "1px solid rgba(245,215,110,0.2)",
                           }}
                         >
@@ -2293,8 +2293,8 @@ function DashboardPageInner() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(15,23,42,0.04)",
-                    border: "1px solid rgba(15,23,42,0.08)",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -2307,14 +2307,14 @@ function DashboardPageInner() {
                       height: 5,
                       borderRadius: 999,
                       overflow: "hidden",
-                      background: "rgba(15,23,42,0.07)",
+                      background: "rgba(255,255,255,0.07)",
                     }}
                   >
                     <div
                       style={{
                         width: `${Math.max(0, Math.min(100, soldPct))}%`,
                         height: "100%",
-                        background: "linear-gradient(90deg, rgba(201,162,39,0.85), rgba(245,215,110,0.95))",
+                        background: "linear-gradient(90deg, rgba(245,215,110,0.85), rgba(245,215,110,0.95))",
                       }}
                     />
                   </div>
@@ -2328,8 +2328,8 @@ function DashboardPageInner() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(15,23,42,0.05)",
-                    border: "1px solid rgba(15,23,42,0.10)",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
                   <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.88, letterSpacing: 0.4 }}>Alım</div>
@@ -2378,8 +2378,8 @@ function DashboardPageInner() {
                       marginTop: 8,
                       padding: 8,
                       borderRadius: 10,
-                      background: "rgba(15,23,42,0.03)",
-                      border: "1px solid rgba(15,23,42,0.08)",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.08)",
                     }}
                   >
                     <div style={{ fontSize: 10, opacity: 0.75, marginBottom: 6 }}>Alım özeti</div>
@@ -2416,7 +2416,7 @@ function DashboardPageInner() {
                         alignItems: "flex-end",
                         marginTop: 8,
                         paddingTop: 8,
-                        borderTop: "1px solid rgba(15,23,42,0.06)",
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
                         gap: 8,
                       }}
                     >
@@ -2461,8 +2461,8 @@ function DashboardPageInner() {
                     marginTop: 8,
                     padding: 8,
                     borderRadius: 12,
-                    background: "rgba(15,23,42,0.04)",
-                    border: "1px solid rgba(15,23,42,0.10)",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.10)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -2470,7 +2470,7 @@ function DashboardPageInner() {
                       <div style={{ fontSize: 11, fontWeight: 950 }}>Sepet</div>
                       <div style={{ fontSize: 10, opacity: 0.72, marginTop: 2 }}>
                         {cart.length} kalem ·{" "}
-                        <span style={{ color: "#B8860B" }}>₺{formatTRY(Math.round(cartTotal()))}</span>
+                        <span style={{ color: "#F5D76E" }}>₺{formatTRY(Math.round(cartTotal()))}</span>
                       </div>
                     </div>
                     <button type="button" onClick={clearCart} style={{ ...smallGhostBtn, padding: "6px 8px", fontSize: 11 }}>
@@ -2500,8 +2500,8 @@ function DashboardPageInner() {
                             alignItems: "center",
                             padding: "6px 8px",
                             borderRadius: 10,
-                            background: "rgba(15,23,42,0.04)",
-                            border: "1px solid rgba(15,23,42,0.08)",
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.08)",
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
@@ -2542,9 +2542,9 @@ function DashboardPageInner() {
                       width: "100%",
                       padding: "10px 10px",
                       borderRadius: 12,
-                      background: "rgba(15,23,42,0.06)",
-                      border: "1px solid rgba(15,23,42,0.14)",
-                      color: "#0F172A",
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      color: "white",
                       fontWeight: 950,
                       fontSize: 12,
                       cursor: checkingOut || cart.length === 0 ? "not-allowed" : "pointer",
@@ -2563,7 +2563,7 @@ function DashboardPageInner() {
                   position: "fixed",
                   inset: 0,
                   zIndex: 200,
-                  background: "#FFFFFF",
+                  background: "rgba(12,20,38,0.92)",
                   display: "flex",
                   flexDirection: "column",
                 }}
@@ -2574,7 +2574,7 @@ function DashboardPageInner() {
                     alignItems: "center",
                     justifyContent: "space-between",
                     padding: "14px 16px",
-                    borderBottom: "1px solid rgba(15,23,42,0.08)",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
                     flexShrink: 0,
                   }}
                 >
@@ -2585,9 +2585,9 @@ function DashboardPageInner() {
                       width: 32,
                       height: 32,
                       borderRadius: 10,
-                      border: "1px solid rgba(15,23,42,0.1)",
-                      background: "rgba(15,23,42,0.04)",
-                      color: "#0F172A",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "rgba(255,255,255,0.04)",
+                      color: "white",
                       fontSize: 15,
                       cursor: "pointer",
                     }}
@@ -2650,7 +2650,7 @@ function DashboardPageInner() {
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(3, 1fr)",
-                    borderTop: "1px solid rgba(15,23,42,0.08)",
+                    borderTop: "1px solid rgba(255,255,255,0.08)",
                     flexShrink: 0,
                   }}
                 >
@@ -2663,8 +2663,8 @@ function DashboardPageInner() {
                         fontSize: 20,
                         fontWeight: 700,
                         background: "transparent",
-                        border: "1px solid rgba(15,23,42,0.05)",
-                        color: "#0F172A",
+                        border: "1px solid rgba(255,255,255,0.05)",
+                        color: "white",
                         cursor: "pointer",
                       }}
                     >
@@ -2695,16 +2695,16 @@ function MiniBars(props: { title: string; values: number[]; suffix?: string }) {
               style={{
                 height: 6,
                 borderRadius: 999,
-                background: "rgba(15,23,42,0.08)",
+                background: "rgba(255,255,255,0.08)",
                 overflow: "hidden",
-                border: "1px solid rgba(15,23,42,0.08)",
+                border: "1px solid rgba(255,255,255,0.08)",
               }}
             >
               <div
                 style={{
                   width: `${Math.max(0, Math.min(100, v))}%`,
                   height: "100%",
-                  background: "linear-gradient(90deg, rgba(201,162,39,0.75), rgba(245,215,110,0.95))",
+                  background: "linear-gradient(90deg, rgba(245,215,110,0.75), rgba(245,215,110,0.95))",
                 }}
               />
             </div>
@@ -2843,9 +2843,9 @@ const selectStyle: React.CSSProperties = {
   padding: 10,
   borderRadius: 12,
   colorScheme: "dark",
-  backgroundColor: "rgba(15,23,42,0.05)",
-  border: "1px solid rgba(15,23,42,0.12)",
-  color: "#0F172A",
+  backgroundColor: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
   outline: "none",
 };
 
@@ -2853,9 +2853,9 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 12,
   borderRadius: 14,
-  background: "rgba(15,23,42,0.05)",
-  border: "1px solid rgba(15,23,42,0.12)",
-  color: "#0F172A",
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
   outline: "none",
 };
 
@@ -2863,9 +2863,9 @@ const btnGhost: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 14,
-  background: "rgba(15,23,42,0.06)",
-  border: "1px solid rgba(15,23,42,0.12)",
-  color: "#0F172A",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
   fontSize: 13,
   fontWeight: 800,
   cursor: "pointer",
@@ -2875,9 +2875,9 @@ const btnOutline: React.CSSProperties = {
   height: 40,
   padding: "0 12px",
   borderRadius: 14,
-  background: "rgba(15,23,42,0.04)",
-  border: "1px solid rgba(15,23,42,0.18)",
-  color: "#0F172A",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.18)",
+  color: "white",
   fontSize: 13,
   fontWeight: 1000,
   cursor: "pointer",
@@ -2887,8 +2887,8 @@ const badgeBox: React.CSSProperties = {
   height: 40,
   padding: "8px 12px",
   borderRadius: 14,
-  background: "rgba(15,23,42,0.06)",
-  border: "1px solid rgba(15,23,42,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
@@ -2898,9 +2898,9 @@ const badgeBox: React.CSSProperties = {
 const smallGhostBtn: React.CSSProperties = {
   padding: "8px 10px",
   borderRadius: 12,
-  background: "rgba(15,23,42,0.06)",
-  border: "1px solid rgba(15,23,42,0.12)",
-  color: "#0F172A",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
   cursor: "pointer",
   fontWeight: 900,
 };
@@ -2909,9 +2909,9 @@ const neutralActionBtn: React.CSSProperties = {
   width: "100%",
   height: 44,
   borderRadius: 14,
-  background: "rgba(15,23,42,0.04)",
-  border: "1px solid rgba(15,23,42,0.16)",
-  color: "#0F172A",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.16)",
+  color: "white",
   fontWeight: 900,
   cursor: "pointer",
 };
@@ -2920,9 +2920,9 @@ function tabBtn(active: boolean): React.CSSProperties {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    background: active ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.04)",
-    border: active ? "1px solid rgba(15,23,42,0.18)" : "1px solid rgba(15,23,42,0.10)",
-    color: "#0F172A",
+    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.04)",
+    border: active ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.10)",
+    color: "white",
     fontSize: 12,
     fontWeight: 900,
     cursor: "pointer",
@@ -2933,9 +2933,9 @@ function chip(active: boolean): React.CSSProperties {
   return {
     padding: 10,
     borderRadius: 12,
-    background: active ? "rgba(15,23,42,0.09)" : "rgba(15,23,42,0.05)",
-    border: active ? "1px solid rgba(15,23,42,0.20)" : "1px solid rgba(15,23,42,0.10)",
-    color: "#0F172A",
+    background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)",
+    border: active ? "1px solid rgba(255,255,255,0.20)" : "1px solid rgba(255,255,255,0.10)",
+    color: "white",
     fontSize: 13,
     cursor: "pointer",
     fontWeight: 800,
@@ -2945,8 +2945,8 @@ function chip(active: boolean): React.CSSProperties {
 const metricBox: React.CSSProperties = {
   padding: 10,
   borderRadius: 14,
-  background: "rgba(15,23,42,0.05)",
-  border: "1px solid rgba(15,23,42,0.10)",
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.10)",
 };
 
 const metricLabel: React.CSSProperties = { fontSize: 12, opacity: 0.7 };
@@ -2955,8 +2955,8 @@ const metricValue: React.CSSProperties = { fontSize: 18, fontWeight: 1000, margi
 const miniInfoCard: React.CSSProperties = {
   padding: 10,
   borderRadius: 14,
-  background: "rgba(15,23,42,0.04)",
-  border: "1px solid rgba(15,23,42,0.10)",
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.10)",
 };
 
 const miniInfoLabel: React.CSSProperties = { fontSize: 11, opacity: 0.7, fontWeight: 800 };

@@ -62,21 +62,21 @@ export function TopBar() {
         alignItems: "center",
         gap: 10,
         padding: "calc(9px + env(safe-area-inset-top, 0px)) 14px 9px",
-        background: "rgba(255,255,255,0.92)",
-        borderBottom: "1px solid rgba(15,23,42,0.08)",
+        background: "rgba(9,12,20,0.94)",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
         backdropFilter: "blur(12px)",
       }}
     >
       <div
         style={{
           fontSize: 14.5,
-          fontWeight: 800,
+          fontWeight: 700,
           letterSpacing: 0.5,
-          color: "#0F172A",
+          color: "rgba(255,255,255,0.94)",
           flexShrink: 0,
         }}
       >
-        Terron<span style={{ color: "#B8860B" }}>.</span>
+        Terron<span style={{ color: "#F5D76E" }}>.</span>
       </div>
 
       <div style={{ flex: 1 }} />
@@ -84,12 +84,12 @@ export function TopBar() {
       <div
         style={{
           fontSize: 12.5,
-          fontWeight: 800,
-          color: "#8A6A0A",
+          fontWeight: 700,
+          color: "rgba(245,215,110,0.92)",
           padding: "5px 10px",
           borderRadius: 10,
-          background: "rgba(201,162,39,0.1)",
-          border: "1px solid rgba(201,162,39,0.25)",
+          background: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(255,255,255,0.08)",
           whiteSpace: "nowrap",
           flexShrink: 0,
           fontVariantNumeric: "tabular-nums",
@@ -106,12 +106,12 @@ export function TopBar() {
           height: 30,
           borderRadius: 9,
           overflow: "hidden",
-          background: "#F1F2F5",
-          border: "1px solid rgba(15,23,42,0.1)",
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.12)",
           display: "grid",
           placeItems: "center",
           fontWeight: 700,
-          color: "#0F172A",
+          color: "white",
           flexShrink: 0,
           cursor: "pointer",
           padding: 0,

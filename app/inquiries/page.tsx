@@ -6,10 +6,10 @@ import { AppShell } from "../components/AppShell";
 
 const card: React.CSSProperties = {
   borderRadius: 18,
-  border: "1px solid rgba(15,23,42,0.08)",
-  background: "#FFFFFF",
+  border: "1px solid rgba(255,255,255,0.08)",
+  background: "rgba(12,20,38,0.92)",
   padding: 22,
-  boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
+  boxShadow: "0 8px 24px rgba(255,255,255,0.06)",
 };
 
 const stepNum: React.CSSProperties = {
@@ -20,8 +20,8 @@ const stepNum: React.CSSProperties = {
   placeItems: "center",
   fontWeight: 950,
   fontSize: 14,
-  background: "rgba(184,134,11,0.12)",
-  border: "1px solid rgba(184,134,11,0.35)",
+  background: "rgba(245,215,110,0.12)",
+  border: "1px solid rgba(245,215,110,0.35)",
   flexShrink: 0,
 };
 
@@ -35,8 +35,8 @@ export default function InquiriesInfoPage() {
         position: "absolute",
         inset: 0,
         overflowY: "auto",
-        background: "#FFFFFF",
-        color: "#0F172A",
+        background: "rgba(12,20,38,0.92)",
+        color: "white",
         padding: "28px 16px 56px",
         fontFamily: "system-ui, sans-serif",
       }}
@@ -102,7 +102,7 @@ export default function InquiriesInfoPage() {
                 padding: "12px 20px",
                 borderRadius: 14,
                 border: "none",
-                background: "linear-gradient(92deg, rgba(14,165,233,0.9), rgba(201,162,39,0.85))",
+                background: "linear-gradient(92deg, rgba(14,165,233,0.9), rgba(245,215,110,0.85))",
                 color: "#031326",
                 fontWeight: 950,
                 cursor: "pointer",
@@ -116,7 +116,7 @@ export default function InquiriesInfoPage() {
               style={{
                 padding: "12px 20px",
                 borderRadius: 14,
-                border: "1px solid rgba(15,23,42,0.14)",
+                border: "1px solid rgba(255,255,255,0.14)",
                 background: "transparent",
                 color: "#334155",
                 fontWeight: 800,

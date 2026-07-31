@@ -19,7 +19,7 @@ function PctBadge({ value, size = 12.5 }: { value: number; size?: number }) {
   const positive = value >= 0;
   return (
     <span
-      style={{ color: positive ? "#16A34A" : "#DC2626", fontWeight: 800, fontSize: size, fontVariantNumeric: "tabular-nums" }}
+      style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 800, fontSize: size, fontVariantNumeric: "tabular-nums" }}
     >
       {formatPct(value)}
     </span>
@@ -54,7 +54,7 @@ const row: React.CSSProperties = {
   width: "100%",
   textAlign: "left",
   cursor: "pointer",
-  color: "#0F172A",
+  color: "white",
   background: "transparent",
   border: "none",
 };
@@ -62,9 +62,9 @@ const row: React.CSSProperties = {
 const selectStyle: React.CSSProperties = {
   height: 38,
   borderRadius: 12,
-  background: "#FFFFFF",
-  border: "1px solid rgba(15,23,42,0.12)",
-  color: "#0F172A",
+  background: "rgba(12,20,38,0.92)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  color: "white",
   fontSize: 12,
   padding: "0 8px",
 };
@@ -132,7 +132,7 @@ export default function MarketPage() {
 
   return (
     <AppShell>
-      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "#FFFFFF", color: "#0F172A" }}>
+      <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: "rgba(12,20,38,0.92)", color: "white" }}>
         <div style={{ maxWidth: 720, margin: "0 auto", padding: "14px 16px 40px" }}>
           <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 800 }}>Market</h1>
 
@@ -145,9 +145,9 @@ export default function MarketPage() {
                 flex: 1,
                 height: 38,
                 borderRadius: 12,
-                background: "#FFFFFF",
-                border: "1px solid rgba(15,23,42,0.12)",
-                color: "#0F172A",
+                background: "rgba(12,20,38,0.92)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                color: "white",
                 padding: "0 12px",
                 fontSize: 13,
                 outline: "none",
@@ -170,9 +170,9 @@ export default function MarketPage() {
               padding: "8px 4px",
               fontSize: 10.5,
               fontWeight: 700,
-              color: "rgba(15,23,42,0.45)",
+              color: "rgba(255,255,255,0.45)",
               letterSpacing: 0.3,
-              borderBottom: "1px solid rgba(15,23,42,0.08)",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}
           >
             <span>ARSA</span>
@@ -202,7 +202,7 @@ export default function MarketPage() {
                   candles.length > 1 ? ((candles[candles.length - 1]!.close - candles[0]!.open) / candles[0]!.open) * 100 : 0;
 
                 return (
-                  <div key={it.id} style={{ borderBottom: "1px solid rgba(15,23,42,0.06)" }}>
+                  <div key={it.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : it.id)}
                       style={row}
@@ -259,9 +259,9 @@ export default function MarketPage() {
                                 padding: "5px 12px",
                                 borderRadius: 999,
                                 border:
-                                  periodDays === p.days ? "1px solid rgba(184,134,11,0.4)" : "1px solid rgba(15,23,42,0.1)",
-                                background: periodDays === p.days ? "rgba(184,134,11,0.1)" : "#FFFFFF",
-                                color: periodDays === p.days ? "#8A6A0A" : "rgba(15,23,42,0.6)",
+                                  periodDays === p.days ? "1px solid rgba(245,215,110,0.4)" : "1px solid rgba(255,255,255,0.1)",
+                                background: periodDays === p.days ? "rgba(245,215,110,0.1)" : "rgba(12,20,38,0.92)",
+                                color: periodDays === p.days ? "#F5D76E" : "rgba(255,255,255,0.6)",
                                 fontSize: 11.5,
                                 fontWeight: 800,
                                 cursor: "pointer",
@@ -282,7 +282,7 @@ export default function MarketPage() {
                         <div
                           style={{
                             borderRadius: 12,
-                            border: "1px solid rgba(15,23,42,0.08)",
+                            border: "1px solid rgba(255,255,255,0.08)",
                             padding: "10px 6px 6px",
                           }}
                         >

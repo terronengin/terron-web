@@ -82,9 +82,9 @@ function formatDate(iso: string) {
 
 const card: React.CSSProperties = {
   borderRadius: 18,
-  background: "#FFFFFF",
-  border: "1px solid rgba(15,23,42,0.08)",
-  boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
+  background: "rgba(12,20,38,0.92)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  boxShadow: "0 8px 24px rgba(255,255,255,0.06)",
   padding: 16,
 };
 
@@ -92,7 +92,7 @@ function PnlText({ value, suffix = "" }: { value: number | null; suffix?: string
   if (value == null) return <span style={{ opacity: 0.4 }}>—</span>;
   const positive = value >= 0;
   return (
-    <span style={{ color: positive ? "#16A34A" : "#DC2626", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+    <span style={{ color: positive ? "#86efac" : "#fca5a5", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
       {positive ? "+" : ""}
       {formatTRY(value)}
       {suffix}
@@ -115,7 +115,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
           textDecoration: "none",
           color: "#0a0f1a",
           background: "linear-gradient(135deg, #e8d48a, #c9a227)",
-          border: "1px solid rgba(184,134,11,0.4)",
+          border: "1px solid rgba(245,215,110,0.4)",
         }}
       >
         Haritaya Git
@@ -160,13 +160,31 @@ export default function PortfolioPage() {
         setUserId(user.id);
       }
 
-      const { data: posData, error: posErr } = await supabase
-        .from("positions")
-        .select("id,property_id,m2,total_paid,created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      // positions ve sold_positions birbirinden bağımsız — paralel çekilir (sıralı çekim gereksiz gecikme yaratıyordu).
+      const [posResult, soldResult] = await Promise.all([
+        supabase
+          .from("positions")
+          .select("id,property_id,m2,total_paid,created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("sold_positions")
+          .select("id,property_title,city,m2,total_paid,sell_net,profit_try,profit_pct,sold_at")
+          .eq("user_id", user.id)
+          .order("sold_at", { ascending: false }),
+      ]);
 
       if (cancelled) return;
+
+      if (soldResult.error) {
+        // Tablo henüz migrate edilmemiş olabilir — sessizce boş liste (empty-state) göster.
+        console.warn("[portfolio] sold_positions:", soldResult.error.message);
+        setSoldRows([]);
+      } else {
+        setSoldRows((soldResult.data ?? []) as SoldRow[]);
+      }
+
+      const { data: posData, error: posErr } = posResult;
       if (posErr) {
         console.warn("[portfolio] positions:", posErr.message);
         setRealRows([]);
@@ -195,21 +213,6 @@ export default function PortfolioPage() {
           }
         } else {
           setPropById({});
-        }
-      }
-
-      const { data: soldData, error: soldErr } = await supabase
-        .from("sold_positions")
-        .select("id,property_title,city,m2,total_paid,sell_net,profit_try,profit_pct,sold_at")
-        .eq("user_id", user.id)
-        .order("sold_at", { ascending: false });
-      if (!cancelled) {
-        if (soldErr) {
-          // Tablo henüz migrate edilmemiş olabilir — sessizce boş liste (empty-state) göster.
-          console.warn("[portfolio] sold_positions:", soldErr.message);
-          setSoldRows([]);
-        } else {
-          setSoldRows((soldData ?? []) as SoldRow[]);
         }
       }
 
@@ -345,8 +348,8 @@ export default function PortfolioPage() {
           position: "absolute",
           inset: 0,
           overflowY: "auto",
-          background: "#FFFFFF",
-          color: "#0F172A",
+          background: "rgba(12,20,38,0.92)",
+          color: "white",
         }}
       >
         <div style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 40px" }}>
@@ -395,7 +398,7 @@ export default function PortfolioPage() {
               display: "flex",
               gap: 4,
               marginBottom: 16,
-              borderBottom: "1px solid rgba(15,23,42,0.08)",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}
           >
             {(
@@ -412,8 +415,8 @@ export default function PortfolioPage() {
                   marginRight: 20,
                   background: "transparent",
                   border: "none",
-                  borderBottom: tab === t.key ? "2px solid #B8860B" : "2px solid transparent",
-                  color: tab === t.key ? "#8A6A0A" : "rgba(15,23,42,0.5)",
+                  borderBottom: tab === t.key ? "2px solid #F5D76E" : "2px solid transparent",
+                  color: tab === t.key ? "#F5D76E" : "rgba(255,255,255,0.5)",
                   fontWeight: tab === t.key ? 800 : 700,
                   fontSize: 14,
                   cursor: "pointer",
@@ -459,9 +462,9 @@ export default function PortfolioPage() {
                             flexShrink: 0,
                             padding: "8px 14px",
                             borderRadius: 12,
-                            border: "1px solid rgba(184,134,11,0.4)",
-                            background: busy ? "rgba(15,23,42,0.05)" : "rgba(184,134,11,0.12)",
-                            color: "#0F172A",
+                            border: "1px solid rgba(245,215,110,0.4)",
+                            background: busy ? "rgba(255,255,255,0.05)" : "rgba(245,215,110,0.12)",
+                            color: "white",
                             fontWeight: 800,
                             fontSize: 12,
                             cursor: busy ? "not-allowed" : "pointer",
@@ -476,7 +479,7 @@ export default function PortfolioPage() {
                         style={{
                           marginTop: 12,
                           paddingTop: 12,
-                          borderTop: "1px solid rgba(15,23,42,0.07)",
+                          borderTop: "1px solid rgba(255,255,255,0.07)",
                           display: "grid",
                           gridTemplateColumns: "1fr 1fr 1fr",
                           gap: 8,
@@ -511,9 +514,9 @@ export default function PortfolioPage() {
                             width: "100%",
                             padding: "7px 0",
                             borderRadius: 10,
-                            border: "1px solid rgba(15,23,42,0.08)",
-                            background: "rgba(15,23,42,0.02)",
-                            color: "rgba(15,23,42,0.65)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "rgba(255,255,255,0.02)",
+                            color: "rgba(255,255,255,0.65)",
                             fontSize: 11.5,
                             fontWeight: 700,
                             cursor: "pointer",
@@ -536,10 +539,10 @@ export default function PortfolioPage() {
                                   borderRadius: 999,
                                   border:
                                     periodDays === p.days
-                                      ? "1px solid rgba(184,134,11,0.4)"
-                                      : "1px solid rgba(15,23,42,0.1)",
-                                  background: periodDays === p.days ? "rgba(184,134,11,0.1)" : "#FFFFFF",
-                                  color: periodDays === p.days ? "#8A6A0A" : "rgba(15,23,42,0.6)",
+                                      ? "1px solid rgba(245,215,110,0.4)"
+                                      : "1px solid rgba(255,255,255,0.1)",
+                                  background: periodDays === p.days ? "rgba(245,215,110,0.1)" : "rgba(12,20,38,0.92)",
+                                  color: periodDays === p.days ? "#F5D76E" : "rgba(255,255,255,0.6)",
                                   fontSize: 11.5,
                                   fontWeight: 800,
                                   cursor: "pointer",
@@ -549,7 +552,7 @@ export default function PortfolioPage() {
                               </button>
                             ))}
                           </div>
-                          <div style={{ borderRadius: 12, border: "1px solid rgba(15,23,42,0.08)", padding: "10px 6px 6px" }}>
+                          <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", padding: "10px 6px 6px" }}>
                             <CandlestickChart candles={candles} />
                           </div>
                         </div>
@@ -584,7 +587,7 @@ export default function PortfolioPage() {
                           fontSize: 11,
                           fontWeight: 800,
                           marginTop: 2,
-                          color: s.profit_pct >= 0 ? "#16A34A" : "#DC2626",
+                          color: s.profit_pct >= 0 ? "#86efac" : "#fca5a5",
                         }}
                       >
                         {s.profit_pct >= 0 ? "+" : ""}
@@ -596,7 +599,7 @@ export default function PortfolioPage() {
                     style={{
                       marginTop: 12,
                       paddingTop: 12,
-                      borderTop: "1px solid rgba(15,23,42,0.07)",
+                      borderTop: "1px solid rgba(255,255,255,0.07)",
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
                       gap: 8,
