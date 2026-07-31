@@ -765,7 +765,7 @@ export function buildHierarchyIndex(
     if (!parsePropertyCoords(it)) continue;
     const poly =
       distGeoOpt && distGeoOpt.features?.length
-        ? findDistrictPolygonFeature(distGeoOpt, it.city, String(it.district ?? ""))
+        ? findDistrictPolygonFeatureIndexed(distGeoOpt, it.city, String(it.district ?? ""))
         : null;
     if (!validateRealCoordsAgainstParents(it, ixSnapshot, poly)) {
       coordOutsideParentByItemId.add(stableMapItemId(it));
@@ -2259,6 +2259,72 @@ export function findDistrictPolygonFeature(
     if (!sameMapCity(safeStr(p?.city) || safeStr(p?.NAME_1), cityName)) continue;
     if (!sameMapDistrict(safeStr(p?.district) || safeStr(p?.NAME_2) || safeStr(p?.name), districtName)) continue;
     return f as Feature<Polygon | MultiPolygon>;
+  }
+  return null;
+}
+
+type DistrictPolygonIndex = {
+  exactByKey: Map<string, Feature<Polygon | MultiPolygon>>;
+  byCity: Map<string, Feature<Polygon | MultiPolygon>[]>;
+};
+
+const districtPolygonIndexCache = new WeakMap<FeatureCollection, DistrictPolygonIndex>();
+
+/**
+ * findDistrictPolygonFeature ~6800 ilan × ~900 ilçe polygonunu her ilan için baştan
+ * tarıyordu (Levenshtein dahil) — bu O(N×M) tarama tek başına 10 saniyeyi buluyordu.
+ * Aynı distGeo referansı için index bir kez kurulur (WeakMap'te tutulur), sonrasında
+ * çoğu ilan tam eşleşmeyle O(1) bulunur; yalnızca eşleşmeyenler kendi ili içindeki
+ * (tüm ülke değil) adaylarla eski bulanık (fuzzy) mantıkla karşılaştırılır.
+ */
+function getDistrictPolygonIndex(distGeo: FeatureCollection): DistrictPolygonIndex {
+  const cached = districtPolygonIndexCache.get(distGeo);
+  if (cached) return cached;
+
+  const exactByKey = new Map<string, Feature<Polygon | MultiPolygon>>();
+  const byCity = new Map<string, Feature<Polygon | MultiPolygon>[]>();
+
+  for (const f of distGeo.features || []) {
+    const p = f.properties as Record<string, unknown> | undefined;
+    const g = f.geometry;
+    if (!g || (g.type !== "Polygon" && g.type !== "MultiPolygon")) continue;
+    const feat = f as Feature<Polygon | MultiPolygon>;
+
+    const cityNorm = normalizeText(safeStr(p?.city) || safeStr(p?.NAME_1));
+    const districtNorm = normalizeText(safeStr(p?.district) || safeStr(p?.NAME_2) || safeStr(p?.name));
+
+    const exactKey = `${cityNorm}|${districtNorm}`;
+    if (!exactByKey.has(exactKey)) exactByKey.set(exactKey, feat);
+
+    const list = byCity.get(cityNorm);
+    if (list) list.push(feat);
+    else byCity.set(cityNorm, [feat]);
+  }
+
+  const index: DistrictPolygonIndex = { exactByKey, byCity };
+  districtPolygonIndexCache.set(distGeo, index);
+  return index;
+}
+
+function findDistrictPolygonFeatureIndexed(
+  distGeo: FeatureCollection,
+  cityName: string,
+  districtName: string
+): Feature<Polygon | MultiPolygon> | null {
+  if (!distGeo.features?.length) return null;
+  const index = getDistrictPolygonIndex(distGeo);
+
+  const cityNorm = normalizeText(cityName);
+  const districtNorm = normalizeText(districtName);
+  const exact = index.exactByKey.get(`${cityNorm}|${districtNorm}`);
+  if (exact) return exact;
+
+  const candidates = index.byCity.get(cityNorm);
+  if (!candidates) return null;
+  for (const f of candidates) {
+    const p = f.properties as Record<string, unknown> | undefined;
+    if (!sameMapDistrict(safeStr(p?.district) || safeStr(p?.NAME_2) || safeStr(p?.name), districtName)) continue;
+    return f;
   }
   return null;
 }

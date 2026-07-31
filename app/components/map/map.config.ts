@@ -1,7 +1,7 @@
 /** Mapbox: center = [lng, lat] — Türkiye geneli (useMapCamera TURKEY ile uyumlu) */
 export const MAP_CENTER_LNG = 35.2;
 export const MAP_CENTER_LAT = 39.1;
-export const MAP_ZOOM = 4.8;
+export const MAP_ZOOM = 4.05;
 
 /** Geçerli TR arsa aralığı (derece) */
 export const TR_LAT_MIN = 35;

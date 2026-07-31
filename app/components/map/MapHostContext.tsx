@@ -10,10 +10,20 @@ import type { MapViewProps } from "./map.types";
  * kurulur ve sekmeler arası geçişte hiç unmount olmaz — sadece Anasayfa dışındayken
  * görünmez/etkileşimsiz yapılır. Anasayfa kendi state'ini (items, seçim callback'leri)
  * setMapProps ile buraya "yayınlar"; harita hep aynı örnek olarak kalır.
+ *
+ * chromeInsets: TopBar/BottomTabBar tam viewport yüksekliğinde opak barlar olduğu
+ * için kalıcı harita konteyneri inset:0 (tüm ekran) yaparsa haritanın kendi iç
+ * overlay'leri (Bölgeler paneli, zoom kontrolleri, attribution) TopBar'ın ARKASINDA
+ * kalır — DOM'da var ama görsel olarak TopBar'ın altında gizlenir. AppShell bu
+ * barların gerçek render yüksekliğini ölçüp buraya yayınlar; harita konteyneri de
+ * tam o boşluğu kaplar (eskiden Dashboard'un kendi "top:headerH" div'inin yaptığı gibi).
  */
+
+type ChromeInsets = { top: number; bottom: number };
 
 type MapHostContextValue = {
   setMapProps: (props: MapViewProps | null) => void;
+  setChromeInsets: (insets: ChromeInsets) => void;
 };
 
 const MapHostContext = createContext<MapHostContextValue | null>(null);
@@ -24,7 +34,13 @@ export function useMapHost(): MapHostContextValue {
   return ctx;
 }
 
-function PersistentMapHost({ mapProps }: { mapProps: MapViewProps | null }) {
+function PersistentMapHost({
+  mapProps,
+  chromeInsets,
+}: {
+  mapProps: MapViewProps | null;
+  chromeInsets: ChromeInsets;
+}) {
   const pathname = usePathname();
   const isDashboard = pathname === "/dashboard";
 
@@ -32,7 +48,10 @@ function PersistentMapHost({ mapProps }: { mapProps: MapViewProps | null }) {
     <div
       style={{
         position: "fixed",
-        inset: 0,
+        left: 0,
+        right: 0,
+        top: chromeInsets.top,
+        bottom: chromeInsets.bottom,
         zIndex: 0,
         visibility: isDashboard ? "visible" : "hidden",
         pointerEvents: isDashboard ? "auto" : "none",
@@ -45,11 +64,15 @@ function PersistentMapHost({ mapProps }: { mapProps: MapViewProps | null }) {
 
 export function MapHostProvider({ children }: { children: React.ReactNode }) {
   const [mapProps, setMapProps] = useState<MapViewProps | null>(null);
-  const value = useMemo(() => ({ setMapProps }), []);
+  // Gerçek TopBar/BottomTabBar yüksekliklerine yakın varsayılanlarla başlar — 0'dan
+  // gerçeğe ani bir sıçrama olmasın diye (mapbox konteyner resize sırasında stil
+  // yüklemesini bozabiliyor).
+  const [chromeInsets, setChromeInsets] = useState<ChromeInsets>({ top: 56, bottom: 64 });
+  const value = useMemo(() => ({ setMapProps, setChromeInsets }), []);
 
   return (
     <MapHostContext.Provider value={value}>
-      <PersistentMapHost mapProps={mapProps} />
+      <PersistentMapHost mapProps={mapProps} chromeInsets={chromeInsets} />
       {children}
     </MapHostContext.Provider>
   );
