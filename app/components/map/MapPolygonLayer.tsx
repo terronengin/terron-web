@@ -130,10 +130,14 @@ export function MapPolygonLayer(props: MapPolygonLayerProps) {
   const fillId = isProv ? L_PROV_FILL : L_DIST_FILL;
   const glowId = isProv ? L_PROV_GLOW : L_DIST_GLOW;
   const outId = isProv ? L_PROV_OUT : L_DIST_OUT;
-  const key = props.mode === "prov-region" ? "prov-all" : props.mode === "prov-city" ? "prov-filtered" : "dist";
 
+  // ÖNEMLİ: buraya mode'a göre değişen bir React `key` KOYMA. "prov-region"/"prov-city" aynı
+  // Mapbox sourceId'yi ("src-prov") paylaşıyor — key değişirse React Source'u tamamen
+  // unmount/remount eder, bu da removeSource+addSource'u kamera flyTo animasyonuyla aynı anda
+  // tetikleyip mapbox-gl'nin iç _updateTerrain'inde "Cannot read properties of undefined
+  // (reading 'get')" çökmesine yol açıyordu (bölge baloncuğuna tıklayınca uygulama çöküyordu).
   return (
-    <Source key={key} id={sourceId} type="geojson" data={data} promoteId={(promoteId ?? "id") as string}>
+    <Source id={sourceId} type="geojson" data={data} promoteId={(promoteId ?? "id") as string}>
       <Layer id={fillId} type="fill" paint={fillPaint} />
       <Layer id={glowId} type="line" paint={lineGlowPaint} />
       <Layer id={outId} type="line" paint={lineOutPaint} />

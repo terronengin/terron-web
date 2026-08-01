@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { MapErrorBoundary } from "./MapErrorBoundary";
 import MapViewV2 from "./MapViewV2";
 import type { MapViewProps } from "./map.types";
 
@@ -70,7 +71,11 @@ function PersistentMapHost({
         pointerEvents: isDashboard ? "auto" : "none",
       }}
     >
-      {mapProps ? <MapViewV2 {...mapProps} /> : null}
+      {mapProps ? (
+        <MapErrorBoundary>
+          <MapViewV2 {...mapProps} />
+        </MapErrorBoundary>
+      ) : null}
     </div>
   );
 }

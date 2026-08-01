@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { BottomTabBar } from "./BottomTabBar";
 import { TopBar } from "./TopBar";
 import { useMapHost } from "./map/MapHostContext";
@@ -18,6 +19,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const topRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const { setChromeInsets } = useMapHost();
+  const pathname = usePathname();
+  // /dashboard'un ARKASINDA kalıcı harita render oluyor (bkz. MapHostContext) — bu içerik
+  // sarmalayıcısı pointer-events:auto olursa, dashboard'un kendi boş alanlarındaki gerçek
+  // dokunuşlar haritaya hiç ulaşamadan bu kutuda takılır. Sadece /dashboard'da "none" yapıp
+  // diğer tüm sayfalarda (Market, Portföy, vb.) normal "auto" davranışını koruyoruz.
+  const isMapRoute = pathname === "/dashboard";
 
   useEffect(() => {
     const topEl = topRef.current;
@@ -49,7 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div ref={topRef} style={{ pointerEvents: "auto" }}>
         <TopBar />
       </div>
-      <div style={{ flex: 1, position: "relative", minHeight: 0, pointerEvents: "auto" }}>{children}</div>
+      <div style={{ flex: 1, position: "relative", minHeight: 0, pointerEvents: isMapRoute ? "none" : "auto" }}>{children}</div>
       <div ref={bottomRef} style={{ pointerEvents: "auto" }}>
         <BottomTabBar />
       </div>

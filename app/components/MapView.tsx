@@ -795,23 +795,15 @@ export default function MapView(props: MapViewProps) {
       >
         <NavigationControl position="bottom-right" />
 
-        {level === "region" && (
+        {/* region ve city aynı Mapbox source'u ("src-prov") paylaşıyor — tek JSX konumunda
+            birleştirilmiş, aksi halde level region<->city arasında değişince React bu
+            Source'u komple unmount/remount ederdi (bkz. MapPolygonLayer.tsx'teki not). */}
+        {(level === "region" || level === "city") && (
           <MapPolygonLayer
-            mode="prov-region"
+            mode={level === "region" ? "prov-region" : "prov-city"}
             sourceId={POLY_SOURCES.region}
-            data={provGeo}
-            fillPaint={fillRegion}
-            lineGlowPaint={lineGlow}
-            lineOutPaint={lineOut}
-            promoteId="id"
-          />
-        )}
-        {level === "city" && (
-          <MapPolygonLayer
-            mode="prov-city"
-            sourceId={POLY_SOURCES.city}
-            data={activeProvinceGeo}
-            fillPaint={fillDefault}
+            data={level === "region" ? provGeo : activeProvinceGeo}
+            fillPaint={level === "region" ? fillRegion : fillDefault}
             lineGlowPaint={lineGlow}
             lineOutPaint={lineOut}
             promoteId="id"
