@@ -484,11 +484,36 @@ function siblingZeroSumJitter(keys: string[], base: number[], parentSeed: string
   return next;
 }
 
+type HierarchyIndexCacheEntry = { signature: string; index: HierarchyIndex };
+let hierarchyIndexCache: HierarchyIndexCacheEntry | null = null;
+
 /**
- * Tüm property listesi için tek geçişte hierarchy indeksi.
- * useMemo(() => buildHierarchyIndex(items), [items]) ile bir kez üretilmelidir.
+ * Anasayfa her ziyarette (sekme değişince) kendi state'ini sıfırdan kurduğu için
+ * items/distGeo referansları hep "yeni" görünür ve useMemo boşa çıkar — aynı ~6800
+ * ilan seti için pahalı hierarchy inşasını tekrar tekrar tetikler (donma hissi
+ * buradan geliyordu). İçerik imzasına göre önbellek: aynı veri seti için tekrar
+ * ziyarette anında döner, gerçekten değiştiğinde yeniden hesaplar.
  */
 export function buildHierarchyIndex(
+  properties: readonly MapItem[],
+  options?: BuildHierarchyIndexOptions
+): HierarchyIndex {
+  const n = properties.length;
+  const first = n > 0 ? stableMapItemId(properties[0]!) : "";
+  const last = n > 0 ? stableMapItemId(properties[n - 1]!) : "";
+  const distCount = options?.distGeo?.features?.length ?? 0;
+  const signature = `${n}:${first}:${last}:${distCount}`;
+
+  if (hierarchyIndexCache && hierarchyIndexCache.signature === signature) {
+    return hierarchyIndexCache.index;
+  }
+
+  const index = buildHierarchyIndexUncached(properties, options);
+  hierarchyIndexCache = { signature, index };
+  return index;
+}
+
+function buildHierarchyIndexUncached(
   properties: readonly MapItem[],
   options?: BuildHierarchyIndexOptions
 ): HierarchyIndex {
