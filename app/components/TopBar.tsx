@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { ensureAndLoadWallet, formatTRY } from "../../lib/wallet";
 import { useI18n } from "@/lib/i18n/I18nProvider";
+import { WalletModal } from "./WalletModal";
 
 export function TopBar() {
   const pathname = usePathname();
@@ -13,6 +14,7 @@ export function TopBar() {
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [walletOpen, setWalletOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -81,7 +83,8 @@ export function TopBar() {
 
       <div style={{ flex: 1 }} />
 
-      <div
+      <button
+        onClick={() => setWalletOpen(true)}
         style={{
           fontSize: 12.5,
           fontWeight: 700,
@@ -93,11 +96,19 @@ export function TopBar() {
           whiteSpace: "nowrap",
           flexShrink: 0,
           fontVariantNumeric: "tabular-nums",
+          cursor: "pointer",
         }}
         title={t("topbar.walletTooltip")}
       >
         {walletBalance != null ? `₺${formatTRY(walletBalance)}` : "—"}
-      </div>
+      </button>
+
+      <WalletModal
+        open={walletOpen}
+        onClose={() => setWalletOpen(false)}
+        balance={walletBalance}
+        onBalanceChange={setWalletBalance}
+      />
 
       <button
         onClick={() => router.push("/profile")}
