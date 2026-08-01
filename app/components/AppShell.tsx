@@ -43,13 +43,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         display: "flex",
         flexDirection: "column",
         color: "white",
+        pointerEvents: "none",
       }}
     >
-      <div ref={topRef}>
+      <div ref={topRef} style={{ pointerEvents: "auto" }}>
         <TopBar />
       </div>
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>{children}</div>
-      <div ref={bottomRef}>
+      <div style={{ flex: 1, position: "relative", minHeight: 0, pointerEvents: "none" }}>{children}</div>
+      <div ref={bottomRef} style={{ pointerEvents: "auto" }}>
         <BottomTabBar />
       </div>
     </div>

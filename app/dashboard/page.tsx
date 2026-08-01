@@ -1582,7 +1582,7 @@ function DashboardPageInner() {
 
   return (
     <AppShell>
-    <div style={{ position: "absolute", inset: 0, color: "white" }}>
+    <div style={{ position: "absolute", inset: 0, color: "white", pointerEvents: "none" }}>
       {panelOpen && (
         <div
           onClick={() => setPanelOpen(false)}
@@ -1594,6 +1594,7 @@ function DashboardPageInner() {
             bottom: 0,
             background: "rgba(0,0,0,0.55)",
             zIndex: 40,
+            pointerEvents: "auto",
           }}
         />
       )}
@@ -1614,6 +1615,7 @@ function DashboardPageInner() {
           padding: 16,
           overflowY: "auto",
           backdropFilter: "blur(10px)",
+          pointerEvents: "auto",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -1892,7 +1894,12 @@ function DashboardPageInner() {
         </div>
       </div>
 
-      <section style={{ position: "absolute", inset: 0 }}>
+      {/* Kalıcı harita kök seviyede, bu section'ın ARKASINDA render oluyor (bkz. MapHostContext).
+          section inset:0 kapladığı için pointerEvents:none olmazsa, içindeki tıklanabilir
+          alanların DIŞINDAKİ her nokta (yani haritanın büyük kısmı) tıklamaları yutuyordu —
+          gerçek dokunuşlarda haritaya hiç ulaşmıyordu. Her gerçek alt-öğe kendi pointerEvents:"auto"
+          ile tekrar etkileşimli hale getiriliyor. */}
+      <section style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         {!panelOpen && (
           <button
             onClick={() => setPanelOpen(true)}
@@ -1913,6 +1920,7 @@ function DashboardPageInner() {
               alignItems: "center",
               justifyContent: "center",
               backdropFilter: "blur(10px)",
+              pointerEvents: "auto",
             }}
             aria-label="Filtreleri aç"
             title="Filtreler"
@@ -1935,6 +1943,7 @@ function DashboardPageInner() {
                   top: headerH,
                   background: "rgba(0,0,0,0.28)",
                   zIndex: 11,
+                  pointerEvents: "auto",
                 }}
               />
             )}
@@ -1950,6 +1959,7 @@ function DashboardPageInner() {
                 background: "rgba(9,14,26,0.97)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 backdropFilter: "blur(14px)",
+                pointerEvents: "auto",
                 ...(isMobile
                   ? {
                       left: 10,
