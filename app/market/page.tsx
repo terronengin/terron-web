@@ -1,12 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 import { CandlestickChart } from "@/app/components/CandlestickChart";
 import { CHART_PERIODS, computeCandles } from "@/lib/candlestick";
-import { getCachedProperties } from "@/lib/propertiesCache";
+import { getCachedProperties, invalidatePropertiesCache } from "@/lib/propertiesCache";
 import { getDailyChangePct } from "@/lib/priceTrend";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
+import { getActiveBuyQuote, executePropertyBuy } from "@/lib/buyFlow";
+import { supabase } from "@/lib/supabaseClient";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
 import { PropertyDetailPanel } from "../components/PropertyDetailPanel";
@@ -67,13 +68,18 @@ const selectStyle: React.CSSProperties = {
 };
 
 export default function MarketPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<PropertyRow[]>([]);
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState<number>(90);
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [buyOpenId, setBuyOpenId] = useState<string | null>(null);
+  const [buyM2Str, setBuyM2Str] = useState("");
+  const [buyLoading, setBuyLoading] = useState(false);
+  const [buyMsg, setBuyMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +94,16 @@ export default function MarketPage() {
         if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) setUserId(data.user?.id ?? null);
+    });
     return () => {
       cancelled = true;
     };
@@ -289,7 +305,12 @@ export default function MarketPage() {
                         </div>
 
                         <button
-                          onClick={() => router.push(`/dashboard?p=${it.id}`)}
+                          onClick={() => {
+                            const isOpen = buyOpenId === it.id;
+                            setBuyOpenId(isOpen ? null : it.id);
+                            setBuyMsg(null);
+                            if (!isOpen) setBuyM2Str(String(Math.max(1, Number(it.min_buy_m2 ?? 1))));
+                          }}
                           style={{
                             width: "100%",
                             marginTop: 12,
@@ -303,8 +324,137 @@ export default function MarketPage() {
                             cursor: "pointer",
                           }}
                         >
-                          Satın Al →
+                          {buyOpenId === it.id ? "Alımı Kapat ✕" : "Satın Al →"}
                         </button>
+
+                        {buyOpenId === it.id &&
+                          (() => {
+                            const m2Val = Math.max(0, Number(buyM2Str) || 0);
+                            const availableM2 =
+                              it.available_m2 != null ? Number(it.available_m2) : Number(it.total_area_m2 ?? 0);
+                            const minBuy = Math.max(1, Number(it.min_buy_m2 ?? 1));
+                            const { quote, effectiveM2 } = getActiveBuyQuote({
+                              property: it,
+                              m2: m2Val,
+                              budgetGross: 0,
+                              userId: userId ?? "global",
+                            });
+                            const canConfirm = effectiveM2 > 0 && quote.totalCost > 0 && !buyLoading;
+
+                            return (
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  padding: 12,
+                                  borderRadius: 14,
+                                  border: "1px solid rgba(255,255,255,0.10)",
+                                  background: "rgba(255,255,255,0.03)",
+                                }}
+                              >
+                                <div style={{ fontSize: 10, opacity: 0.6, fontWeight: 700, marginBottom: 6 }}>
+                                  Alınacak m² (min {minBuy.toLocaleString("tr-TR")} · kalan{" "}
+                                  {Math.round(availableM2).toLocaleString("tr-TR")} m²)
+                                </div>
+                                <input
+                                  type="number"
+                                  value={buyM2Str}
+                                  onChange={(e) => setBuyM2Str(e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    height: 42,
+                                    borderRadius: 12,
+                                    background: "rgba(12,20,38,0.92)",
+                                    border: "1px solid rgba(255,255,255,0.14)",
+                                    color: "white",
+                                    padding: "0 12px",
+                                    fontSize: 14,
+                                    outline: "none",
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    marginTop: 8,
+                                    fontSize: 12,
+                                    opacity: 0.85,
+                                  }}
+                                >
+                                  <span>Toplam tutar</span>
+                                  <b>₺{formatTRY(quote.totalCost)}</b>
+                                </div>
+
+                                <button
+                                  disabled={!canConfirm}
+                                  onClick={async () => {
+                                    setBuyLoading(true);
+                                    setBuyMsg(null);
+                                    const result = await executePropertyBuy({
+                                      property: it,
+                                      m2: m2Val,
+                                      budgetGross: 0,
+                                      userId: userId ?? "global",
+                                    });
+                                    setBuyLoading(false);
+                                    if (result.ok) {
+                                      setBuyMsg({
+                                        text: `${result.m2.toLocaleString("tr-TR")} m² satın alındı ✓ (₺${formatTRY(result.totalPaid)})`,
+                                        isError: false,
+                                      });
+                                      setItems((prev) =>
+                                        prev.map((p) => {
+                                          if (p.id !== it.id) return p;
+                                          const total = Number(p.total_area_m2 ?? 0);
+                                          const prevAvail = p.available_m2 != null ? Number(p.available_m2) : total;
+                                          const prevSold = Number(p.sold_m2 ?? 0);
+                                          return {
+                                            ...p,
+                                            available_m2: Math.max(0, prevAvail - result.m2),
+                                            sold_m2: prevSold + result.m2,
+                                          };
+                                        })
+                                      );
+                                      invalidatePropertiesCache();
+                                    } else {
+                                      setBuyMsg({ text: result.error, isError: true });
+                                    }
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    marginTop: 10,
+                                    padding: "11px 0",
+                                    borderRadius: 12,
+                                    border: "none",
+                                    background: canConfirm ? "#F5D76E" : "rgba(255,255,255,0.08)",
+                                    color: canConfirm ? "#0a0f1a" : "rgba(255,255,255,0.4)",
+                                    fontWeight: 800,
+                                    fontSize: 13,
+                                    cursor: canConfirm ? "pointer" : "not-allowed",
+                                  }}
+                                >
+                                  {buyLoading ? "İşleniyor…" : "Onayla ve Satın Al"}
+                                </button>
+
+                                {buyMsg && (
+                                  <div
+                                    style={{
+                                      marginTop: 10,
+                                      padding: "8px 10px",
+                                      borderRadius: 10,
+                                      fontSize: 12.5,
+                                      background: buyMsg.isError ? "rgba(239,68,68,0.10)" : "rgba(34,197,94,0.10)",
+                                      border: buyMsg.isError
+                                        ? "1px solid rgba(239,68,68,0.18)"
+                                        : "1px solid rgba(34,197,94,0.18)",
+                                      color: buyMsg.isError ? "#fca5a5" : "#86efac",
+                                    }}
+                                  >
+                                    {buyMsg.text}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                       </div>
                     )}
                   </div>
