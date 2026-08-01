@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div ref={topRef} style={{ pointerEvents: "auto" }}>
         <TopBar />
       </div>
-      <div style={{ flex: 1, position: "relative", minHeight: 0, pointerEvents: "none" }}>{children}</div>
+      <div style={{ flex: 1, position: "relative", minHeight: 0, pointerEvents: "auto" }}>{children}</div>
       <div ref={bottomRef} style={{ pointerEvents: "auto" }}>
         <BottomTabBar />
       </div>

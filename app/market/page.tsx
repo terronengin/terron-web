@@ -9,6 +9,7 @@ import { getDailyChangePct } from "@/lib/priceTrend";
 import { getTerronSalePricePerM2 } from "@/lib/propertySalePrice";
 import type { PropertyRow } from "@/lib/terron/propertyRow";
 import { AppShell } from "../components/AppShell";
+import { PropertyDetailPanel } from "../components/PropertyDetailPanel";
 
 function formatPct(n: number) {
   const s = n >= 0 ? "+" : "";
@@ -27,10 +28,6 @@ function PctBadge({ value, size = 12.5 }: { value: number; size?: number }) {
 }
 
 function formatTRY(n: number) {
-  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(n));
-}
-
-function formatM2(n: number) {
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(Math.round(n));
 }
 
@@ -191,8 +188,6 @@ export default function MarketPage() {
           ) : (
             <div>
               {filtered.slice(0, 200).map((it) => {
-                const total = Number(it.total_area_m2 ?? 0);
-                const available = it.available_m2 != null ? Number(it.available_m2) : total;
                 const px = getTerronSalePricePerM2(it, "market");
                 const regionDemand = cityDemand.get(it.city ?? "") ?? 0;
                 const dailyPct = getDailyChangePct(it, "market", regionDemand);
@@ -289,23 +284,8 @@ export default function MarketPage() {
                           <CandlestickChart candles={candles} />
                         </div>
 
-                        <div
-                          style={{
-                            marginTop: 12,
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: 8,
-                            fontSize: 12,
-                          }}
-                        >
-                          <div>
-                            <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>TOPLAM M²</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(total)}</div>
-                          </div>
-                          <div>
-                            <div style={{ opacity: 0.5, fontSize: 10, fontWeight: 700 }}>KALAN M²</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>{formatM2(available)}</div>
-                          </div>
+                        <div style={{ marginTop: 12 }}>
+                          <PropertyDetailPanel property={it} pricingScope="market" />
                         </div>
 
                         <button

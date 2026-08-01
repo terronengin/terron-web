@@ -3,6 +3,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../components/AppShell";
+import { PropertyDetailPanel } from "../components/PropertyDetailPanel";
 import { useMapHost } from "../components/map/MapHostContext";
 import { supabase } from "../../lib/supabaseClient";
 import { getCachedProperties, invalidatePropertiesCache } from "../../lib/propertiesCache";
@@ -41,7 +42,6 @@ type TrendBand = "" | "rising" | "flat" | "falling";
 type PriceBand = "" | "0-10000" | "10001-25000" | "25001-50000" | "50001-100000" | "100001+";
 type ZoningBand = "" | "imarli" | "imarsiz" | "bilinmiyor" | "mixed";
 type AreaBand = "" | "0-500" | "501-2000" | "2001-10000" | "10001+";
-type InsightTab = "arsa" | "gelisim" | "risk";
 
 type CartItem = {
   key: string;
@@ -107,7 +107,6 @@ function DashboardPageInner() {
   const [buyBudget, setBuyBudget] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  const [activeInsightTab, setActiveInsightTab] = useState<InsightTab>("arsa");
   const [keypadOpen, setKeypadOpen] = useState(false);
   const [keypadStr, setKeypadStr] = useState("0");
 
@@ -1521,7 +1520,6 @@ function DashboardPageInner() {
     const quote = getBuyQuoteForProperty(selected, safeMin);
     setBuyM2(safeMin);
     setBuyBudget(Math.round(quote.grossAssetValue));
-    setActiveInsightTab("arsa");
   }, [selected?.id]);
 
   const soldPct =
@@ -2015,328 +2013,7 @@ function DashboardPageInner() {
                   WebkitOverflowScrolling: "touch",
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    paddingBottom: 8,
-                    borderBottom: "1px solid rgba(255,255,255,0.06)",
-                  }}
-                >
-                  {showListedProperty(selected) ? (
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                      <span
-                        style={{
-                          fontSize: 8,
-                          fontWeight: 900,
-                          padding: "2px 6px",
-                          borderRadius: 999,
-                          background: "rgba(245,215,110,0.14)",
-                          border: "1px solid rgba(245,215,110,0.4)",
-                        }}
-                      >
-                        Yayında
-                      </span>
-                      {selected.is_verified ? (
-                        <span
-                          style={{
-                            fontSize: 8,
-                            fontWeight: 900,
-                            padding: "2px 6px",
-                            borderRadius: 999,
-                            background: "rgba(56,189,248,0.12)",
-                            border: "1px solid rgba(56,189,248,0.4)",
-                          }}
-                        >
-                          Doğrulandı
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 800,
-                      lineHeight: 1.25,
-                      maxHeight: "2.5em",
-                      overflow: "hidden",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical" as const,
-                    }}
-                  >
-                    {selected.title?.trim() ||
-                      selected.neighborhood ||
-                      selected.district ||
-                      selected.city}
-                  </div>
-                  <div style={{ fontSize: 10, opacity: 0.72, lineHeight: 1.3 }}>
-                    {selected.city}
-                    {selected.district ? ` · ${selected.district}` : ""}
-                    {selected.neighborhood ? ` · ${selected.neighborhood}` : ""}
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "baseline",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ fontSize: 10, opacity: 0.65 }}>
-                      Toplam <b>{formatNumber(selected.total_area_m2)}</b> m²
-                      {selected.zoning_status ? (
-                        <span style={{ marginLeft: 6, opacity: 0.55, fontSize: 9 }} title={String(selected.zoning_status)}>
-                          · {String(selected.zoning_status)}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 900, letterSpacing: 0.02, whiteSpace: "nowrap" }}>
-                      ₺{formatTRY(selectedPricePerM2 * Number(selected.total_area_m2 ?? 0))}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, 1fr)",
-                    gap: 6,
-                    marginTop: 8,
-                  }}
-                >
-                  {(
-                    [
-                      ["Gelişim", `%${formatInt(selected.development_score)}`],
-                      ["Risk", `%${formatInt(selected.risk_score)}`],
-                      ["30 gün", `${signedPct(selected.last_30d_change)}%`],
-                      ["Beklenti", `%${Number(selected.expected_annual_return ?? 0).toFixed(1)}`],
-                      ["₺/m²", `₺${formatTRY(selectedPricePerM2)}`],
-                      ["Doluluk", `%${Math.round(listingDemandRatio * 100)}`],
-                      [
-                        "Likidite",
-                        typeof selected.liquidity_score === "number" && Number.isFinite(selected.liquidity_score)
-                          ? `%${formatInt(selected.liquidity_score)}`
-                          : "—",
-                      ],
-                      [
-                        "İmar",
-                        selected.zoning_status
-                          ? String(selected.zoning_status).length > 28
-                            ? `${String(selected.zoning_status).slice(0, 26)}…`
-                            : String(selected.zoning_status)
-                          : "—",
-                      ],
-                      ["Arazi", selected.land_type?.trim() ? String(selected.land_type) : "—"],
-                    ] as const
-                  ).map(([label, val]) => (
-                    <div
-                      key={label}
-                      style={{
-                        padding: "6px 6px",
-                        borderRadius: 10,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}
-                    >
-                      <div style={{ fontSize: 9, opacity: 0.62, fontWeight: 700, letterSpacing: 0.2 }}>{label}</div>
-                      <div
-                        style={{
-                          fontSize: label === "İmar" ? 10 : 12,
-                          fontWeight: 900,
-                          marginTop: 2,
-                          lineHeight: 1.25,
-                          wordBreak: "break-word",
-                        }}
-                        title={label === "İmar" && selected.zoning_status ? String(selected.zoning_status) : undefined}
-                      >
-                        {val}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {selected.investment_thesis ? (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: "8px 8px",
-                      borderRadius: 12,
-                      background: "rgba(245,215,110,0.07)",
-                      border: "1px solid rgba(245,215,110,0.22)",
-                    }}
-                  >
-                    <div style={{ fontSize: 9, opacity: 0.72, fontWeight: 800, letterSpacing: 0.3 }}>Yatırım tezi</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, lineHeight: 1.4, opacity: 0.92 }}>
-                      {selected.investment_thesis}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 8 }}>
-                  <button
-                    onClick={() => setActiveInsightTab("arsa")}
-                    style={{ ...tabBtn(activeInsightTab === "arsa"), padding: "6px 6px", fontSize: 11 }}
-                  >
-                    Arsa
-                  </button>
-                  <button
-                    onClick={() => setActiveInsightTab("gelisim")}
-                    style={{ ...tabBtn(activeInsightTab === "gelisim"), padding: "6px 6px", fontSize: 11 }}
-                  >
-                    Gelişim
-                  </button>
-                  <button
-                    onClick={() => setActiveInsightTab("risk")}
-                    style={{ ...tabBtn(activeInsightTab === "risk"), padding: "6px 6px", fontSize: 11 }}
-                  >
-                    Risk
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: 8,
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    maxHeight: "min(200px, 30vh)",
-                    overflowY: "auto",
-                  }}
-                >
-                  {activeInsightTab === "arsa" && (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {selected.ai_summary ? (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            lineHeight: 1.45,
-                            padding: 8,
-                            borderRadius: 10,
-                            background: "rgba(245,215,110,0.08)",
-                            border: "1px solid rgba(245,215,110,0.2)",
-                          }}
-                        >
-                          <div style={{ fontSize: 9, opacity: 0.7, fontWeight: 800, marginBottom: 4 }}>
-                            Yatırım özeti
-                          </div>
-                          {selected.ai_summary}
-                        </div>
-                      ) : null}
-                      <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.45 }}>
-                        Ada/Parsel:{" "}
-                        {selected.ada_no || selected.parcel_no
-                          ? `${selected.ada_no ?? "—"} / ${selected.parcel_no ?? "—"}`
-                          : "—"}{" "}
-                        · İmar: {selected.zoning_status || "—"}
-                        <br />
-                        Kalan <b>{formatNumber(Math.round(selectedAvailableM2))}</b> m² · Satılan{" "}
-                        <b>{formatNumber(Math.round(selectedSoldM2))}</b> m²
-                      </div>
-
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Etrafında</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
-                            {selected.around_text?.trim() ? selected.around_text : inferNearbyText(selected)}
-                          </div>
-                        </div>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Özet</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4, lineHeight: 1.35 }}>
-                            {selected.summary_line?.trim() ? selected.summary_line : inferLandSummary(selected)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeInsightTab === "gelisim" && (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {selected.growth_story ? (
-                        <div style={{ fontSize: 11, opacity: 0.9, lineHeight: 1.45 }}>{selected.growth_story}</div>
-                      ) : null}
-                      <div style={{ fontSize: 11, opacity: 0.82, lineHeight: 1.45 }}>
-                        Gelişim <b>%{formatInt(selected.development_score)}</b> — ivme ve yerleşim baskısı birlikte okunur.
-                      </div>
-
-                      <MiniBars title="Son 5 Yıl Gelişim" values={developmentHistory} suffix="%" />
-
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Neden gelişiyor?</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferGrowthReason(selected)}</div>
-                        </div>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>İmar etkisi</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferZoningImpact(selected)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeInsightTab === "risk" && (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {selected.risk_factors ? (
-                        <div style={{ fontSize: 11, opacity: 0.9, lineHeight: 1.45 }}>{selected.risk_factors}</div>
-                      ) : null}
-                      <div style={{ fontSize: 11, opacity: 0.82, lineHeight: 1.45 }}>
-                        Risk <b>%{formatInt(selected.risk_score)}</b> — likidite ve imar belirsizliği birlikte değerlendirilir.
-                      </div>
-
-                      <MiniBars title="Son 5 Yıl Risk" values={riskHistory} suffix="%" />
-
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Likidite</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferLiquidityText(selected)}</div>
-                        </div>
-                        <div style={{ ...miniInfoCard, padding: 8 }}>
-                          <div style={{ ...miniInfoLabel, fontSize: 9 }}>Belirsizlik</div>
-                          <div style={{ ...miniInfoText, fontSize: 11, marginTop: 4 }}>{inferRiskText(selected)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 8,
-                    padding: 8,
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 10, opacity: 0.7 }}>Doluluk</span>
-                    <span style={{ fontSize: 11, fontWeight: 900 }}>{soldPct.toFixed(1)}%</span>
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 4,
-                      height: 5,
-                      borderRadius: 999,
-                      overflow: "hidden",
-                      background: "rgba(255,255,255,0.07)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${Math.max(0, Math.min(100, soldPct))}%`,
-                        height: "100%",
-                        background: "linear-gradient(90deg, rgba(245,215,110,0.85), rgba(245,215,110,0.95))",
-                      }}
-                    />
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 10, opacity: 0.65, lineHeight: 1.35 }}>
-                    Kalan {formatNumber(Math.round(selectedAvailableM2))} m² · Min. alım {formatNumber(selectedMinBuyM2)} m²
-                  </div>
-                </div>
+                <PropertyDetailPanel property={selected} pricingScope={userId ?? "global"} key={selected.id} />
 
                 <div
                   style={{
