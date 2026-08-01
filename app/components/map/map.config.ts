@@ -60,6 +60,11 @@ export const L_PARCEL_SHAPE_FILL = "parcel-shape-fill";
 export const L_PARCEL_SHAPE_GLOW = "parcel-shape-glow";
 export const L_PARCEL_SHAPE_OUT = "parcel-shape-out";
 
+/** Gerçekçi parsel poligonları (~50-2000m²) parmakla dokunmak için çok küçük —
+ * görünmez, geniş dairesel bir dokunma hedefi aynı merkez noktasına eklenir. */
+export const SRC_PARCEL_HITAREA = "src-parcel-hitarea";
+export const L_PARCEL_HITAREA = "parcel-hitarea";
+
 /** Seçili ilan vurgusu (circle); eski symbol/point layer’lar kaldırıldı */
 export const PROPERTY_POINT_LAYER_IDS = [L_SELECTED_GLOW, L_SELECTED_POINT] as const;
 

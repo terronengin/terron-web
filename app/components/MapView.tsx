@@ -7,6 +7,7 @@ import {
   L_FOCUS_FILL,
   L_FOCUS_GLOW,
   L_FOCUS_OUT,
+  L_PARCEL_HITAREA,
   L_PARCEL_SHAPE_FILL,
   L_PARCEL_SHAPE_GLOW,
   L_PARCEL_SHAPE_OUT,
@@ -16,6 +17,7 @@ import {
   MAP_CENTER_LNG,
   MAP_ZOOM,
   POLY_SOURCES,
+  SRC_PARCEL_HITAREA,
   SRC_PARCEL_SHAPES,
   SRC_SELECTED,
 } from "./map/map.config";
@@ -41,7 +43,7 @@ import { MapOverlayPanel } from "./map/MapOverlayPanel";
 import { MapPolygonLayer } from "./map/MapPolygonLayer";
 import { fillPaintDefault, fillPaintRegionView, lineGlowPaint, lineOutPaint } from "./map/map.paint";
 import type { HierarchyBounds, HierarchyIndex, MapItem, MapViewProps } from "./map/map.types";
-import { buildParcelShapesGeo } from "./map/parcelShape";
+import { buildParcelHitAreaGeo, buildParcelShapesGeo } from "./map/parcelShape";
 import { useMapCamera } from "./map/useMapCamera";
 import { useMapHierarchy } from "./map/useMapHierarchy";
 
@@ -340,6 +342,7 @@ export default function MapView(props: MapViewProps) {
 
   /** Parsel seviyesi: nokta yerine gerçek m2'ye uygun, düzensiz kenarlı arsa şekli */
   const parcelShapesGeo = useMemo(() => buildParcelShapesGeo(parcelItems), [parcelItems]);
+  const parcelHitAreaGeo = useMemo(() => buildParcelHitAreaGeo(parcelItems), [parcelItems]);
 
   /** Polygon hover’ın hangi source’ta olduğu (level değişince eski source’a güvenli clear için) */
   const polyHoverSourceRef = useRef<string | null>(null);
@@ -593,7 +596,12 @@ export default function MapView(props: MapViewProps) {
     }
 
     if (level === "parcel") {
-      const shapeLayerIds = filterExistingLayerIds(map, [L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT]);
+      const shapeLayerIds = filterExistingLayerIds(map, [
+        L_PARCEL_SHAPE_FILL,
+        L_PARCEL_SHAPE_GLOW,
+        L_PARCEL_SHAPE_OUT,
+        L_PARCEL_HITAREA,
+      ]);
       const shapeHits =
         shapeLayerIds.length > 0
           ? map.queryRenderedFeatures(e.point as never, { layers: shapeLayerIds })
@@ -685,7 +693,12 @@ export default function MapView(props: MapViewProps) {
     }
 
     if (level === "parcel") {
-      const shapeLayerIds = filterExistingLayerIds(map, [L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT]);
+      const shapeLayerIds = filterExistingLayerIds(map, [
+        L_PARCEL_SHAPE_FILL,
+        L_PARCEL_SHAPE_GLOW,
+        L_PARCEL_SHAPE_OUT,
+        L_PARCEL_HITAREA,
+      ]);
       const shapeHits =
         shapeLayerIds.length > 0
           ? map.queryRenderedFeatures(e.point as never, { layers: shapeLayerIds })
@@ -736,7 +749,7 @@ export default function MapView(props: MapViewProps) {
     }
     if (level === "parcel") {
       arr.push(L_FOCUS_FILL, L_FOCUS_GLOW, L_FOCUS_OUT);
-      arr.push(L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT);
+      arr.push(L_PARCEL_SHAPE_FILL, L_PARCEL_SHAPE_GLOW, L_PARCEL_SHAPE_OUT, L_PARCEL_HITAREA);
     }
     return arr;
   }, [activePoly, level, pointsMapItems.length, props.selected?.id, selectedGeo.features.length]);
@@ -820,6 +833,15 @@ export default function MapView(props: MapViewProps) {
         {level === "parcel" && (
           <>
             <MapPolygonLayer mode="parcel-focus" sourceId={POLY_SOURCES.parcelFocus} data={parcelFocusGeo} />
+            {/* Görünmez, geniş dokunma hedefi — gerçekçi parsel şekli (~50-2000m²) parmakla
+                isabet ettirmek için çok küçük kalıyordu; şeklin altında aynı merkezde durur. */}
+            <Source id={SRC_PARCEL_HITAREA} type="geojson" data={parcelHitAreaGeo} promoteId="id">
+              <Layer
+                id={L_PARCEL_HITAREA}
+                type="circle"
+                paint={{ "circle-radius": 22, "circle-color": "#000000", "circle-opacity": 0 }}
+              />
+            </Source>
             <MapPolygonLayer
               mode="parcel-shapes"
               sourceId={SRC_PARCEL_SHAPES}

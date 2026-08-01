@@ -91,6 +91,28 @@ export function buildParcelShapesGeo(items: readonly MapItem[]): FeatureCollecti
   return { type: "FeatureCollection", features };
 }
 
+/**
+ * Gerçekçi parsel poligonları (~50-2000m²) parmakla dokunmak için çok küçük
+ * kalıyor. Aynı merkez noktasında, görünmez ama geniş bir daire (dokunma
+ * hedefi) üretir — tıklama sorgusu bu katmanı da içerince arsanın tam
+ * sınırını isabet ettirmeden de seçim çalışır.
+ */
+export function buildParcelHitAreaGeo(items: readonly MapItem[]): FeatureCollection<import("geojson").Point, { id: string }> {
+  const features: Feature<import("geojson").Point, { id: string }>[] = [];
+  for (const it of items) {
+    const c = parsePropertyCoords(it);
+    if (!c) continue;
+    const id = stableMapItemId(it);
+    features.push({
+      type: "Feature",
+      id,
+      properties: { id },
+      geometry: { type: "Point", coordinates: [c.lng, c.lat] },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 export type SimpleBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 /** buildHierarchyIndex'in getPolygonBounds hook'u için — parsel/mahalle/ilçe bbox'ları artık şekil kapsar. */
