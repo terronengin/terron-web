@@ -372,12 +372,7 @@ export default function LoginPage() {
           }
 
           .terron-globe-col {
-            order: 2;
-            min-height: 300px !important;
-          }
-
-          .terron-form-col {
-            order: 1;
+            min-height: 260px !important;
           }
         }
 
@@ -391,32 +386,6 @@ export default function LoginPage() {
             min-height: 260px !important;
           }
 
-          .terron-title {
-            font-size: 31px !important;
-            letter-spacing: 0.8px !important;
-          }
-
-          .terron-civil {
-            font-size: 9px !important;
-            letter-spacing: 4px !important;
-            margin-top: 5px !important;
-          }
-
-          .terron-subline {
-            font-size: 8.5px !important;
-            letter-spacing: 1.4px !important;
-            margin-top: 6px !important;
-          }
-
-          .terron-user-badge {
-            min-width: 132px !important;
-            padding: 7px 12px !important;
-          }
-
-          .terron-user-badge-value {
-            font-size: 17px !important;
-          }
-
           .terron-glass-input {
             min-height: 48px !important;
             padding: 0 12px !important;
@@ -426,8 +395,7 @@ export default function LoginPage() {
             font-size: 14px !important;
           }
 
-          .terron-main-action,
-          .terron-secondary-action {
+          .terron-main-action {
             min-height: 44px !important;
             font-size: 14px !important;
           }
@@ -495,117 +463,74 @@ export default function LoginPage() {
           className="terron-main-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: isRegister ? "1fr" : "1.03fr 0.97fr",
+            gridTemplateColumns: isRegister ? "1fr" : "0.95fr 1.05fr",
             gap: 14,
             alignItems: "stretch",
             marginTop: 12,
           }}
         >
-          {!isRegister && (
+          <div className="terron-form-col" style={{ position: "relative", zIndex: 2 }}>
             <div
-              className="terron-globe-col"
               style={{
-                position: "relative",
-                minHeight: 500,
-                borderRadius: 24,
-                overflow: "hidden",
-                border: "1px solid rgba(255,255,255,0.05)",
-                background: "rgba(255,255,255,0.02)",
-                backdropFilter: "blur(6px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 16,
               }}
             >
-              <TerronHeroGlobe />
-            </div>
-          )}
-
-          <div className="terron-form-col" style={{ position: "relative", zIndex: 2 }}>
-            <div style={{ textAlign: "center", marginBottom: 12 }}>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <div
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span
                   className="terron-title"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    padding: "10px 22px",
-                    borderRadius: 18,
+                    padding: "6px 12px",
+                    borderRadius: 10,
                     border: "1px solid rgba(255,255,255,0.10)",
                     background:
-                      "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)",
-                    boxShadow:
-                      "0 16px 34px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -8px 18px rgba(0,0,0,0.20)",
+                      "linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%)",
                     color: "#f7f3e8",
-                    fontSize: 42,
-                    lineHeight: 0.96,
+                    fontSize: 18,
+                    lineHeight: 1,
                     fontWeight: 900,
-                    letterSpacing: 1.2,
-                    textShadow:
-                      "0 0 10px rgba(255,255,255,0.08), 0 0 18px rgba(247,210,122,0.14), 0 10px 22px rgba(0,0,0,0.30)",
-                    backdropFilter: "blur(10px)",
+                    letterSpacing: 0.8,
                   }}
                 >
                   TERRON
-                </div>
-
-                <div
+                </span>
+                <span
                   className="terron-civil"
                   style={{
-                    marginTop: 6,
-                    color: "rgba(246, 229, 190, 0.92)",
-                    fontSize: 10.5,
+                    color: "rgba(246, 229, 190, 0.68)",
+                    fontSize: 9,
                     fontWeight: 800,
-                    letterSpacing: 5.2,
-                    textShadow: "0 4px 14px rgba(0,0,0,0.24)",
+                    letterSpacing: 2.4,
                   }}
                 >
-                  CIVIL
-                </div>
-
-                <div
-                  className="terron-subline"
-                  style={{
-                    marginTop: 7,
-                    color: "rgba(223, 202, 151, 0.82)",
-                    fontSize: 9.5,
-                    fontWeight: 700,
-                    letterSpacing: 1.7,
-                  }}
-                >
-                  DIGITAL LAND INVESTMENT
-                </div>
+                  CIVIL · DIGITAL LAND INVESTMENT
+                </span>
               </div>
 
               <div
                 className="terron-user-badge"
                 style={{
                   display: "inline-flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 4,
-                  minWidth: 150,
-                  padding: "8px 14px",
-                  marginTop: 10,
-                  borderRadius: 16,
-                  border: "1px solid rgba(247,210,122,0.12)",
-                  background: "rgba(247,210,122,0.06)",
-                  boxShadow: "0 12px 24px rgba(0,0,0,0.14)",
-                  backdropFilter: "blur(8px)",
+                  alignItems: "baseline",
+                  gap: 6,
+                  padding: "6px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(247,210,122,0.14)",
+                  background: "rgba(247,210,122,0.05)",
                 }}
               >
                 <span
                   style={{
-                    color: "rgba(240, 210, 138, 0.86)",
+                    color: "rgba(240, 210, 138, 0.8)",
                     fontSize: 8.5,
                     fontWeight: 800,
-                    letterSpacing: 1.1,
+                    letterSpacing: 0.8,
                     textTransform: "uppercase",
                   }}
                 >
@@ -613,12 +538,7 @@ export default function LoginPage() {
                 </span>
                 <span
                   className="terron-user-badge-value"
-                  style={{
-                    color: "#ffffff",
-                    fontSize: 20,
-                    fontWeight: 900,
-                    lineHeight: 1,
-                  }}
+                  style={{ color: "#ffffff", fontSize: 13.5, fontWeight: 900 }}
                 >
                   {(displayUserCount ?? DEFAULT_DISPLAY_USER_COUNT).toLocaleString("tr-TR")}
                 </span>
@@ -628,7 +548,7 @@ export default function LoginPage() {
             <div
               style={{
                 borderRadius: 24,
-                padding: 15,
+                padding: 22,
                 border: "1px solid rgba(255,255,255,0.08)",
                 background: "rgba(8, 14, 26, 0.42)",
                 boxShadow:
@@ -636,6 +556,32 @@ export default function LoginPage() {
                 backdropFilter: "blur(14px)",
               }}
             >
+              <h1
+                style={{
+                  margin: "0 0 5px",
+                  fontSize: 25,
+                  fontWeight: 900,
+                  color: "#ffffff",
+                  letterSpacing: -0.2,
+                }}
+              >
+                {mode === "login" ? "Giriş Yap" : mode === "register" ? "Üyelik Oluştur" : "Şifre Sıfırlama"}
+              </h1>
+              <p
+                style={{
+                  margin: "0 0 18px",
+                  fontSize: 12.5,
+                  color: "rgba(200,208,222,0.62)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {mode === "login"
+                  ? "Hesabınıza erişmek için bilgilerinizi girin."
+                  : mode === "register"
+                    ? "Türkiye'nin dijital arsa yatırım platformuna katılın."
+                    : "E-posta adresinize sıfırlama bağlantısı gönderelim."}
+              </p>
+
               {mode === "login" && (
                 <div style={{ display: "grid", gap: 12 }}>
                   <GlassInput
@@ -705,17 +651,20 @@ export default function LoginPage() {
                     {loading ? "Bekleyin..." : "Giriş Yap"}
                   </button>
 
-                  <button
-                    className="terron-secondary-action"
-                    onClick={() => {
-                      setMode("register");
-                      setMsg(null);
-                    }}
-                    disabled={loading}
-                    style={secondaryButtonStyle}
-                  >
-                    Üyelik Oluştur
-                  </button>
+                  <div style={{ textAlign: "center", fontSize: 13, color: "rgba(200,208,222,0.62)" }}>
+                    Hesabınız yok mu?{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("register");
+                        setMsg(null);
+                      }}
+                      disabled={loading}
+                      style={{ ...linkButtonStyle, fontSize: 13, fontWeight: 800 }}
+                    >
+                      Üyelik oluşturun
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -733,16 +682,18 @@ export default function LoginPage() {
                     {loading ? "Gönderiliyor..." : "Şifre Sıfırlama Linki Gönder"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("login");
-                      setMsg(null);
-                    }}
-                    style={secondaryButtonStyle}
-                  >
-                    Girişe Dön
-                  </button>
+                  <div style={{ textAlign: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("login");
+                        setMsg(null);
+                      }}
+                      style={{ ...linkButtonStyle, fontSize: 13, fontWeight: 800 }}
+                    >
+                      ← Girişe dön
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -830,16 +781,18 @@ export default function LoginPage() {
                     {loading ? "Üyelik oluşturuluyor..." : "Hesabı Oluştur"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("login");
-                      setMsg(null);
-                    }}
-                    style={secondaryButtonStyle}
-                  >
-                    Giriş Ekranına Dön
-                  </button>
+                  <div style={{ textAlign: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("login");
+                        setMsg(null);
+                      }}
+                      style={{ ...linkButtonStyle, fontSize: 13, fontWeight: 800 }}
+                    >
+                      ← Giriş ekranına dön
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -860,8 +813,41 @@ export default function LoginPage() {
                   {msg}
                 </div>
               )}
+
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  color: "rgba(180,190,205,0.5)",
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: 0.2,
+                }}
+              >
+                🔒 Verileriniz 256-bit SSL ile şifrelenir · KVKK uyumlu
+              </div>
             </div>
           </div>
+
+          {!isRegister && (
+            <div
+              className="terron-globe-col"
+              style={{
+                position: "relative",
+                minHeight: 500,
+                borderRadius: 24,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.05)",
+                background: "rgba(255,255,255,0.02)",
+                backdropFilter: "blur(6px)",
+              }}
+            >
+              <TerronHeroGlobe />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1094,28 +1080,14 @@ const primaryButtonStyle: React.CSSProperties = {
   width: "100%",
   minHeight: 48,
   padding: "12px 16px",
-  borderRadius: 18,
-  border: "1px solid rgba(247,210,122,0.24)",
-  background: "linear-gradient(135deg, rgba(247,224,160,0.96) 0%, rgba(216,171,83,0.96) 48%, rgba(183,131,44,0.96) 100%)",
-  color: "#09111f",
-  fontSize: 16,
+  borderRadius: 14,
+  border: "none",
+  background: "linear-gradient(135deg, #F3D68A 0%, #C9962F 100%)",
+  color: "#12161f",
+  fontSize: 15.5,
   fontWeight: 900,
   cursor: "pointer",
-  boxShadow: "0 16px 28px rgba(212,166,74,0.22), inset 0 1px 0 rgba(255,255,255,0.34)",
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  width: "100%",
-  minHeight: 44,
-  padding: "12px 16px",
-  borderRadius: 18,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.04)",
-  color: "#f3d18a",
-  fontSize: 15,
-  fontWeight: 800,
-  cursor: "pointer",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 10px 20px rgba(201,150,47,0.26)",
 };
 
 const linkButtonStyle: React.CSSProperties = {
